@@ -1,0 +1,45 @@
+# Build output
+build/
+**/build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# ESP-IDF generated artifacts
+*.bin
+*.elf
+*.map
+*.lst
+*.sdf
+*.tmp
+sdkconfig.old
+sdkconfig.cmake
+sdkconfig.h
+sdkconfig.json
+
+# Logs and traces
+log/
+*.log
+
+# Partition and flash helper files
+flasher_args.json
+flash_args
+flash_args.in
+flash_app_args
+flash_bootloader_args
+flash_project_args
+partition-table/
+*.flash_args
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# VS Code and local IDE files
+.vscode/
+*.code-workspace
+
+# OS junk
+.DS_Store
+Thumbs.db
