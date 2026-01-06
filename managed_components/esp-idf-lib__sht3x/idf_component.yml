@@ -1,0 +1,33 @@
+dependencies:
+  esp-idf-lib/esp_idf_lib_helpers:
+    version: '*'
+  esp-idf-lib/i2cdev:
+    version: '*'
+description: Driver for Sensirion SHT30/SHT31/SHT35 digital temperature and humidity
+  sensor
+discussion: https://github.com/esp-idf-lib/core/discussions
+documentation: https://esp-idf-lib.github.io/sht3x/
+files:
+  exclude:
+  - docs/**/*
+issues: https://github.com/esp-idf-lib/sht3x/issues
+license: BSD-3
+maintainers:
+- Ruslan V. Uss (@UncleRus) <unclerus@gmail.com>
+repository: git://github.com/esp-idf-lib/sht3x.git
+repository_info:
+  commit_sha: 2d16e72bc3765f326cfdf1efb8b92d5463f2a798
+  path: .
+targets:
+- esp32
+- esp32c2
+- esp32c3
+- esp32c5
+- esp32c6
+- esp32c61
+- esp32h2
+- esp32p4
+- esp32s2
+- esp32s3
+url: https://github.com/esp-idf-lib/core
+version: 1.0.8

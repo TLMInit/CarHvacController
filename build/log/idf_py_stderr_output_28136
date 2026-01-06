@@ -1,0 +1,1564 @@
+Command: cmake -G Ninja -B C:\Users\Admin\Documents\CarHvacController\build -DPYTHON_DEPS_CHECKED=1 -DPYTHON=C:\Users\Admin\.espressif\python_env\idf6.1_py3.11_env\Scripts\python.exe -DESP_PLATFORM=1 -DCCACHE_ENABLE=False C:\Users\Admin\Documents\CarHvacController
+CMake Warning at C:/Users/Admin/esp/master/esp-idf/tools/cmake/git_submodules.cmake:4 (message):
+  Git executable was not found.  Git submodule checks will not be executed.
+  If you have any build issues at all, start by adding git executable to the
+  PATH and rerun cmake to not see this warning again.
+Call Stack (most recent call first):
+  C:/Users/Admin/esp/master/esp-idf/tools/cmake/idf.cmake:41 (include)
+  C:/Users/Admin/esp/master/esp-idf/tools/cmake/project.cmake:29 (include)
+  CMakeLists.txt:7 (include)
+
+
+Configuration Report                                                           
++-----------------------------------------------------------------------------+
+|  Parser Version: 1                                                          |
+|  Verbosity: default                                                         |
+|  Defaults policy: sdkconfig                                                 |
+|  Status: Finished with notifications                                        |
+|                                                                             |
+| Miscellaneous                                                               |
+| +-------------------------------------------------------------------------+ |
+| | * Trying to set symbol ESPTOOLPY_FLASHSIZE_2MB to n, but it is          | |
+| | currently selected by choice ESPTOOLPY_FLASHSIZE. For setting it to n,  | |
+| | set another choice symbol to y instead.                                 | |
+| | * Trying to set symbol SPIRAM_MODE_QUAD to n, but it is currently       | |
+| | selected by choice SPIRAM_MODE. For setting it to n, set another choice | |
+| | symbol to y instead.                                                    | |
+| +-------------------------------------------------------------------------+ |
+| Disabled Symbols/Choices With User-Set Value                                |
+| +-------------------------------------------------------------------------+ |
+| | * SOC_ADC_SUPPORTED (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_UART_SUPPORTED (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PCNT_SUPPORTED (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_WIFI_SUPPORTED (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_TWAI_SUPPORTED (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_GDMA_SUPPORTED (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_GPTIMER_SUPPORTED (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_LCD_I80_SUPPORTED (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_LCD_RGB_SUPPORTED (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MCPWM_SUPPORTED (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_DEDICATED_GPIO_SUPPORTED (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CACHE_SUPPORT_WRAP (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ULP_SUPPORTED (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ULP_FSM_SUPPORTED (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RISCV_COPROC_SUPPORTED (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_BT_SUPPORTED (defined at                                          | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_USB_OTG_SUPPORTED (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_USB_SERIAL_JTAG_SUPPORTED (defined at                             | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CCOMP_TIMER_SUPPORTED (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ASYNC_MEMCPY_SUPPORTED (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SUPPORTS_SECURE_DL_MODE (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_EFUSE_KEY_PURPOSE_FIELD (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SDMMC_HOST_SUPPORTED (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RTC_FAST_MEM_SUPPORTED (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RTC_SLOW_MEM_SUPPORTED (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RTC_MEM_SUPPORTED (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PSRAM_DMA_CAPABLE (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_XT_WDT_SUPPORTED (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2S_SUPPORTED (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RMT_SUPPORTED (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SDM_SUPPORTED (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_GPSPI_SUPPORTED (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_LEDC_SUPPORTED (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2C_SUPPORTED (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SYSTIMER_SUPPORTED (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SUPPORT_COEXISTENCE (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_TEMP_SENSOR_SUPPORTED (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_AES_SUPPORTED (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MPI_SUPPORTED (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SHA_SUPPORTED (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_HMAC_SUPPORTED (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_DIG_SIGN_SUPPORTED (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_FLASH_ENC_SUPPORTED (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SECURE_BOOT_SUPPORTED (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MEMPROT_SUPPORTED (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_TOUCH_SENSOR_SUPPORTED (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_BOD_SUPPORTED (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_XTAL_SUPPORT_40M (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_APPCPU_HAS_CLOCK_GATING_BUG (defined at                           | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_RTC_CTRL_SUPPORTED (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_DIG_CTRL_SUPPORTED (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_ARBITER_SUPPORTED (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_DIG_IIR_FILTER_SUPPORTED (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_MONITOR_SUPPORTED (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_DMA_SUPPORTED (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_PERIPH_NUM (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 2 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_MAX_CHANNEL_NUM (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 10 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_ATTEN_NUM (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 4 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_DIGI_CONTROLLER_NUM (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 2 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_PATT_LEN_MAX (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 24 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_DIGI_MIN_BITWIDTH (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 12 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_DIGI_MAX_BITWIDTH (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 12 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_DIGI_RESULT_BYTES (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 4 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_DIGI_DATA_BYTES_PER_CONV (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 4 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_DIGI_IIR_FILTER_NUM (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 2 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_SAMPLE_FREQ_THRES_HIGH (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 83333 from                                          | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_SAMPLE_FREQ_THRES_LOW (defined at                             | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 611 from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_RTC_MIN_BITWIDTH (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 12 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_RTC_MAX_BITWIDTH (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 12 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_CALIBRATION_V1_SUPPORTED (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ADC_SELF_HW_CALI_SUPPORTED (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_APB_BACKUP_DMA (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_BROWNOUT_RESET_SUPPORTED (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CACHE_WRITEBACK_SUPPORTED (defined at                             | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CACHE_FREEZE_SUPPORTED (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CPU_CORES_NUM (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 2 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CPU_INTR_NUM (defined at                                          | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 32 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CPU_HAS_FPU (defined at                                           | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CPU_BREAKPOINTS_NUM (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 2 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CPU_WATCHPOINTS_NUM (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 2 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CPU_WATCHPOINT_MAX_REGION_SIZE (defined at                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 64 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_DS_SIGNATURE_MAX_BIT_LEN (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 4096 from                                           | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_DS_KEY_PARAM_MD_IV_LENGTH (defined at                             | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 16 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_DS_KEY_CHECK_MAX_WAIT_US (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 1100 from                                           | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_GPIO_PORT (defined at                                             | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 1 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_GPIO_PIN_COUNT (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 49 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_GPIO_SUPPORT_PIN_GLITCH_FILTER (defined at                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_GPIO_SUPPORT_FORCE_HOLD (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_GPIO_VALID_GPIO_MASK (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 0x1FFFFFFFFFFFF from                                | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_GPIO_VALID_DIGITAL_IO_PAD_MASK (defined at                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 0x0001FFFFFC000000 from                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2C_NUM (defined at                                               | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 2 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2C_FIFO_LEN (defined at                                          | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 32 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2C_CMD_REG_NUM (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 8 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2C_SUPPORT_SLAVE (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2C_SUPPORT_HW_CLR_BUS (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2C_SUPPORT_XTAL (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2C_SUPPORT_RTC (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2S_HW_VERSION_2 (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2S_SUPPORTS_PCM (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2S_SUPPORTS_PDM (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2S_SUPPORTS_PDM_TX (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2S_SUPPORTS_PDM_RX (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2S_PDM_MAX_TX_LINES (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 2 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2S_PDM_MAX_RX_LINES (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 4 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_I2S_SUPPORTS_TDM (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_LEDC_SUPPORT_APB_CLOCK (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_LEDC_SUPPORT_XTAL_CLOCK (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_LEDC_CHANNEL_NUM (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 8 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_LEDC_TIMER_BIT_WIDTH (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 14 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_LEDC_SUPPORT_FADE_STOP (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MCPWM_SWSYNC_CAN_PROPAGATE (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MMU_LINEAR_ADDRESS_REGION_NUM (defined at                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 1 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MMU_PERIPH_NUM (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 1 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MPU_MIN_REGION_SIZE (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 0x20000000 from                                     | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MPU_REGIONS_MAX_NUM (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 8 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RMT_MEM_WORDS_PER_CHANNEL (defined at                             | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 48 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RMT_SUPPORT_RX_PINGPONG (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RMT_SUPPORT_TX_LOOP_COUNT (defined at                             | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RMT_SUPPORT_TX_LOOP_AUTO_STOP (defined at                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RMT_SUPPORT_DMA (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RTC_CNTL_CPU_PD_DMA_BUS_WIDTH (defined at                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 128 from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RTC_CNTL_CPU_PD_REG_FILE_NUM (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 549 from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RTC_CNTL_TAGMEM_PD_DMA_BUS_WIDTH (defined at                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 128 from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RTCIO_PIN_COUNT (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 22 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RTCIO_INPUT_OUTPUT_SUPPORTED (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RTCIO_HOLD_SUPPORTED (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RTCIO_WAKE_SUPPORTED (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SPI_PERIPH_NUM (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 3 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SPI_MAXIMUM_BUFFER_SIZE (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 64 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SPI_SUPPORT_SLAVE_HD_VER2 (defined at                             | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SPI_SUPPORT_OCT (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MEMSPI_IS_INDEPENDENT (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MEMSPI_SRC_FREQ_80M_SUPPORTED (defined at                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MEMSPI_SRC_FREQ_40M_SUPPORTED (defined at                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MEMSPI_SRC_FREQ_20M_SUPPORTED (defined at                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SPIRAM_SUPPORTED (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SPIRAM_XIP_SUPPORTED (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SYSTIMER_COUNTER_NUM (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 2 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SYSTIMER_ALARM_NUM (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 3 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SYSTIMER_BIT_WIDTH_LO (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 32 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SYSTIMER_BIT_WIDTH_HI (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 20 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SYSTIMER_FIXED_DIVIDER (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SYSTIMER_INT_LEVEL (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SYSTIMER_ALARM_MISS_COMPENSATE (defined at                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_TOUCH_PROXIMITY_CHANNEL_NUM (defined at                           | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 3 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_TWAI_CONTROLLER_NUM (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 1 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_UART_NUM (defined at                                              | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 3 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_UART_FIFO_LEN (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 128 from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_UART_BITRATE_MAX (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 5000000 from                                        | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_UART_SUPPORT_WAKEUP_INT (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_UART_SUPPORT_APB_CLK (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_UART_SUPPORT_RTC_CLK (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_UART_SUPPORT_XTAL_CLK (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_USB_OTG_PERIPH_NUM (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 1 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SHA_DMA_MAX_BUFFER_SIZE (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 3968 from                                           | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SHA_SUPPORT_DMA (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SHA_SUPPORT_RESUME (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SHA_GDMA (defined at                                              | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SHA_SUPPORT_SHA1 (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SHA_SUPPORT_SHA224 (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SHA_SUPPORT_SHA256 (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SHA_SUPPORT_SHA384 (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SHA_SUPPORT_SHA512 (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SHA_SUPPORT_SHA512_224 (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SHA_SUPPORT_SHA512_256 (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SHA_SUPPORT_SHA512_T (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RSA_MAX_BIT_LEN (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 4096 from                                           | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_AES_SUPPORT_DMA (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_AES_GDMA (defined at                                              | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_AES_SUPPORT_AES_128 (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_AES_SUPPORT_AES_256 (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_EXT0_WAKEUP (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_EXT1_WAKEUP (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_EXT_WAKEUP (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_WIFI_WAKEUP (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_BT_WAKEUP (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_TOUCH_SENSOR_WAKEUP (defined at                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_CPU_PD (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_TAGMEM_PD (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_RTC_PERIPH_PD (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_RC_FAST_PD (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_VDDSDIO_PD (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_MAC_BB_PD (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_MODEM_PD (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CONFIGURABLE_VDDSDIO_SUPPORTED (defined at                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_SUPPORT_DEEPSLEEP_CHECK_STUB_ONLY (defined at                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_CPU_RETENTION_BY_RTCCNTL (defined at                           | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PM_MODEM_RETENTION_BY_BACKUPDMA (defined at                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CLK_RC_FAST_D256_SUPPORTED (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_RTC_SLOW_CLK_SUPPORT_RC_FAST_D256 (defined at                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CLK_RC_FAST_SUPPORT_CALIBRATION (defined at                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_CLK_XTAL32K_SUPPORTED (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_EFUSE_DIS_DOWNLOAD_ICACHE (defined at                             | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_EFUSE_DIS_DOWNLOAD_DCACHE (defined at                             | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_EFUSE_HARD_DIS_JTAG (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_EFUSE_DIS_USB_JTAG (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_EFUSE_SOFT_DIS_JTAG (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_EFUSE_DIS_DIRECT_BOOT (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_EFUSE_DIS_ICACHE (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_EFUSE_BLOCK9_KEY_PURPOSE_QUIRK (defined at                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SECURE_BOOT_V2_RSA (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_EFUSE_SECURE_BOOT_KEY_DIGESTS (defined at                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 3 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_EFUSE_REVOKE_BOOT_KEY_DIGESTS (defined at                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SUPPORT_SECURE_BOOT_REVOKE_KEY (defined at                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_FLASH_ENCRYPTED_XTS_AES_BLOCK_MAX (defined at                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 64 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_FLASH_ENCRYPTION_XTS_AES (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_FLASH_ENCRYPTION_XTS_AES_OPTIONS (defined at                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_FLASH_ENCRYPTION_XTS_AES_128 (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_FLASH_ENCRYPTION_XTS_AES_256 (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MEMPROT_CPU_PREFETCH_PAD_SIZE (defined at                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 16 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MEMPROT_MEM_ALIGN_SIZE (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 256 from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PHY_DIG_REGS_MEM_SIZE (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 21 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_MAC_BB_PD_MEM_SIZE (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 192 from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_WIFI_LIGHT_SLEEP_CLK_WIDTH (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 12 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SPI_MEM_SUPPORT_AUTO_WAIT_IDLE (defined at                        | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SPI_MEM_SUPPORT_AUTO_SUSPEND (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SPI_MEM_SUPPORT_AUTO_RESUME (defined at                           | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SPI_MEM_SUPPORT_SW_SUSPEND (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SPI_MEM_SUPPORT_CONFIG_GPIO_BY_EFUSE (defined at                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SPI_MEM_SUPPORT_WRAP (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_COEX_HW_PTI (defined at                                           | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_EXTERNAL_COEX_LEADER_TX_LINE (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SDMMC_USE_GPIO_MATRIX (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SDMMC_NUM_SLOTS (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value 2 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_SDMMC_SUPPORT_XTAL_CLOCK (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_TEMPERATURE_SENSOR_SUPPORT_FAST_RC (defined at                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_WIFI_HW_TSF (defined at                                           | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_WIFI_FTM_SUPPORT (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_WIFI_GCMP_SUPPORT (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_WIFI_WAPI_SUPPORT (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_WIFI_CSI_SUPPORT (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_WIFI_MESH_SUPPORT (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_WIFI_SUPPORT_VARIABLE_BEACON_WINDOW (defined at                   | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_WIFI_PHY_NEEDS_USB_WORKAROUND (defined at                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_BLE_SUPPORTED (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_BLE_MESH_SUPPORTED (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_BLE_50_SUPPORTED (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_BLE_DEVICE_PRIVACY_SUPPORTED (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_BLUFI_SUPPORTED (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_ULP_HAS_ADC (defined at                                           | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SOC_PHY_COMBO_MODULE (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf\./components/soc/esp32s3/include/socà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * IDF_CMAKE (defined at C:/Users/Admin/esp/master/esp-idf/Kconfig:9)    | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * IDF_TARGET_ARCH_XTENSA (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf/Kconfig:59) with user-set value y     | |
+| | from C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6             | |
+| | * IDF_TARGET_ARCH (defined at                                           | |
+| | C:/Users/Admin/esp/master/esp-idf/Kconfig:63) with user-set value       | |
+| | xtensa from C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6      | |
+| | * IDF_TARGET (defined at C:/Users/Admin/esp/master/esp-idf/Kconfig:68)  | |
+| | with user-set value esp32s3 from                                        | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * IDF_TARGET_ESP32S3 (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf/Kconfig:93) with user-set value y     | |
+| | from C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6             | |
+| | * IDF_FIRMWARE_CHIP_ID (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf/Kconfig:165) with user-set value      | |
+| | 0x0009 from C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6      | |
+| | * APP_BUILD_GENERATE_BINARIES (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf/Kconfig:263) with user-set value y    | |
+| | from C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6             | |
+| | * APP_BUILD_BOOTLOADER (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf/Kconfig:266) with user-set value y    | |
+| | from C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6             | |
+| | * APP_BUILD_USE_FLASH_SECTIONS (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf/Kconfig:279) with user-set value y    | |
+| | from C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6             | |
+| | * BOOTLOADER_OFFSET_IN_FLASH (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf/components/bootloader/Kconfig.projbuà | |
+| | with user-set value 0x0 from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * BOOTLOADER_LOG_LEVEL (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf/components/bootloader\Kconfig.log:44) | |
+| | with user-set value 3 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * BOOTLOADER_RESERVE_RTC_SIZE (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf/components/bootloader/Kconfig.projbuà | |
+| | with user-set value 0 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SECURE_BOOT_V2_RSA_SUPPORTED (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf/components/bootloader/Kconfig.projbuà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SECURE_BOOT_V2_PREFERRED (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf/components/bootloader/Kconfig.projbuà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SECURE_ROM_DL_MODE_ENABLED (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf/components/bootloader/Kconfig.projbuà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_CRC_LE (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_CRC_BE (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_MZ_CRC32 (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_JPEG_DECODE (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_UART_CLK_IS_XTAL (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_RETARGETABLE_LOCKING (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_USB_OTG_NUM (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value 3 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_USB_SERIAL_DEVICE_NUM (defined at                             | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value 4 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_ERASE_0_REGION_BUG (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_ENCRYPTED_WRITES_USING_LEGACY_DRV (defined at             | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_GET_CLK_FREQ (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_HAL_WDT (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_NEEDS_SWSETUP_WORKAROUND (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_LAYOUT_TABLE (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_SPI_FLASH (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_ETS_PRINTF_BUG (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_NEWLIB_NANO_FORMAT (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_NEEDS_SET_CACHE_MMU_SIZE (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_RAM_APP_NEEDS_MMU_INIT (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_FLASH_COUNT_PAGES_BUG (defined at                         | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_CACHE_SUSPEND_WAITI_BUG (defined at                       | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_ROM_HAS_CACHE_WRITEBACK_BUG (defined at                           | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_rom\./esp32s3//Kconfià | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESPTOOLPY_FLASHMODE (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esptool_py/Kconfig.projbuà | |
+| | with user-set value dio from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESPTOOLPY_FLASHFREQ (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esptool_py/Kconfig.projbuà | |
+| | with user-set value 80m from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESPTOOLPY_FLASHSIZE (defined at                                       | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esptool_py/Kconfig.projbuà | |
+| | with user-set value 16MB from                                           | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESPTOOLPY_BEFORE (defined at                                          | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esptool_py/Kconfig.projbuà | |
+| | with user-set value default_reset from                                  | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESPTOOLPY_AFTER (defined at                                           | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esptool_py/Kconfig.projbuà | |
+| | with user-set value hard_reset from                                     | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESPTOOLPY_MONITOR_BAUD (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esptool_py/Kconfig.projbuà | |
+| | with user-set value 115200 from                                         | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * PARTITION_TABLE_CUSTOM_FILENAME (defined at                           | |
+| | C:/Users/Admin/esp/master/esp-idf/components/partition_table/Kconfig.pà | |
+| | with user-set value partitions.csv from                                 | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpotlok_ty                  | |
+| | * PARTITION_TABLE_FILENAME (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf/components/partition_table/Kconfig.pà | |
+| | with user-set value partitions_singleapp.csv from                       | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * COMPILER_OPTIMIZATION_ASSERTION_LEVEL (defined at                     | |
+| | C:/Users/Admin/esp/master/esp-idf/Kconfig:467) with user-set value 2    | |
+| | from C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6             | |
+| | * BT_ALARM_MAX_NUM (defined at                                          | |
+| | C:/Users/Admin/esp/master/esp-idf/components/bt/common/Kconfig.in:1)    | |
+| | with user-set value 50 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * EFUSE_MAX_BLK_LEN (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf/components/efuse/Kconfig:66) with     | |
+| | user-set value 256 from                                                 | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SPI_MASTER_IN_IRAM (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_driver_spi/Kconfig:3)  | |
+| | with user-set value n from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ETH_ENABLED (defined at                                               | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_eth/Kconfig:4) with    | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP32S3_REV_MIN_FULL (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support\./port/espà | |
+| | with user-set value 0 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_REV_MIN_FULL (defined at                                          | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support\./port/espà | |
+| | with user-set value 0 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP32S3_REV_MAX_FULL (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support\./port/espà | |
+| | with user-set value 99 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_REV_MAX_FULL (defined at                                          | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support\./port/espà | |
+| | with user-set value 99 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_MAC_ADDR_UNIVERSE_WIFI_STA (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support/Kconfig:27) | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_MAC_ADDR_UNIVERSE_WIFI_AP (defined at                             | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support/Kconfig:30) | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_MAC_ADDR_UNIVERSE_BT (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support/Kconfig:33) | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_MAC_ADDR_UNIVERSE_ETH (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support/Kconfig:36) | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_MAC_UNIVERSAL_MAC_ADDRESSES_FOUR (defined at                      | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support/Kconfig:48) | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP32S3_UNIVERSAL_MAC_ADDRESSES (defined at                           | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support\./port/espà | |
+| | with user-set value 4 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_SLEEP_RTC_BUS_ISO_WORKAROUND (defined at                          | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support/Kconfig:13à | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * XTAL_FREQ (defined at                                                 | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support\./port/espà | |
+| | with user-set value 40 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_BROWNOUT_DET_LVL (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support\./power_suà | |
+| | with user-set value 7 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_BROWNOUT_USE_INTR (defined at                                     | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_hw_support\./power_suà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * LIBC_NEWLIB_NANO_FORMAT (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_libc/Kconfig:106) with | |
+| | user-set value n from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_NETIF_USES_TCPIP_WITH_BSD_API (defined at                         | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_netif/Kconfig:52) with | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_NETIF_RECEIVE_REPORT_ERRORS (defined at                           | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_netif/Kconfig:62) with | |
+| | user-set value n from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_PHY_MAX_TX_POWER (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_phy/Kconfig:92) with   | |
+| | user-set value 20 from                                                  | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_PHY_CALIBRATION_MODE (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_phy/Kconfig:154) with  | |
+| | user-set value 0 from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SPIRAM_CLK_IO (defined at                                             | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_psram\./esp32s3/Kconfà | |
+| | with user-set value 30 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SPIRAM_CS_IO (defined at                                              | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_psram\./esp32s3/Kconfà | |
+| | with user-set value 26 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SPIRAM_SPEED (defined at                                              | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_psram\./esp32s3/Kconfà | |
+| | with user-set value 80 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED (defined at                       | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_stdio/Kconfig:57) with | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_CONSOLE_UART (defined at                                          | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_stdio/Kconfig:63) with | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_CONSOLE_UART_NUM (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_stdio/Kconfig:87) with | |
+| | user-set value 0 from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_CONSOLE_UART_BAUDRATE (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_stdio/Kconfig:150)     | |
+| | with user-set value 115200 from                                         | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpotlok_ty                  | |
+| | * ESP_DEFAULT_CPU_FREQ_MHZ (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_system\./port/soc/espà | |
+| | with user-set value 160 from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP32S3_INSTRUCTION_CACHE_SIZE (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_system\./port/soc/espà | |
+| | with user-set value 0x4000 from                                         | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP32S3_ICACHE_ASSOCIATED_WAYS (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_system\./port/soc/espà | |
+| | with user-set value 8 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP32S3_INSTRUCTION_CACHE_LINE_SIZE (defined at                       | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_system\./port/soc/espà | |
+| | with user-set value 32 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP32S3_DATA_CACHE_SIZE (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_system\./port/soc/espà | |
+| | with user-set value 0x8000 from                                         | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP32S3_DCACHE_ASSOCIATED_WAYS (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_system\./port/soc/espà | |
+| | with user-set value 8 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP32S3_DATA_CACHE_LINE_SIZE (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_system\./port/soc/espà | |
+| | with user-set value 32 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP32S3_TRACEMEM_RESERVE_DRAM (defined at                             | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_system\./port/soc/espà | |
+| | with user-set value 0x0 from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_SYSTEM_RTC_FAST_MEM_AS_HEAP_DEPCHECK (defined at                  | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_system/Kconfig:111)    | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_MAIN_TASK_AFFINITY (defined at                                    | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_system/Kconfig:257)    | |
+| | with user-set value 0x0 from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_IPC_ISR_ENABLE (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_system/Kconfig:502)    | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_TIME_FUNCS_USE_RTC_TIMER (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_timer/Kconfig:16) with | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_TIME_FUNCS_USE_ESP_TIMER (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_timer/Kconfig:19) with | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_TIMER_TASK_AFFINITY (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_timer/Kconfig:54) with | |
+| | user-set value 0x0 from                                                 | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_TIMER_IMPL_SYSTIMER (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_timer/Kconfig:120)     | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * APPTRACE_LOCK_ENABLE (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf/components/app_trace/Kconfig.apptracà | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_WIFI_ENABLED (defined at                                          | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_wifi/Kconfig:4) with   | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_WIFI_TX_BUFFER_TYPE (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_wifi/Kconfig:84) with  | |
+| | user-set value 1 from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_WIFI_CACHE_TX_BUFFER_NUM (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_wifi/Kconfig:104) with | |
+| | user-set value 32 from                                                  | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_WIFI_DYNAMIC_RX_MGMT_BUF (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_wifi/Kconfig:150) with | |
+| | user-set value 0 from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * ESP_WIFI_AMSDU_TX_ENABLED (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf/components/esp_wifi/Kconfig:214) with | |
+| | user-set value n from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * FATFS_CODEPAGE (defined at                                            | |
+| | C:/Users/Admin/esp/master/esp-idf/components/fatfs/Kconfig:92) with     | |
+| | user-set value 437 from                                                 | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * FREERTOS_TICK_SUPPORT_SYSTIMER (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf/components/freertos/Kconfig:461) with | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * FREERTOS_SYSTICK_USES_SYSTIMER (defined at                            | |
+| | C:/Users/Admin/esp/master/esp-idf/components/freertos/Kconfig:505) with | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * FREERTOS_NO_AFFINITY (defined at                                      | |
+| | C:/Users/Admin/esp/master/esp-idf/components/freertos/Kconfig:607) with | |
+| | user-set value 0x7FFFFFFF from                                          | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * FREERTOS_SUPPORT_STATIC_ALLOCATION (defined at                        | |
+| | C:/Users/Admin/esp/master/esp-idf/components/freertos/Kconfig:615) with | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * FREERTOS_DEBUG_OCDAWARE (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf/components/freertos/Kconfig:622) with | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * HAL_DEFAULT_ASSERTION_LEVEL (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf/components/hal/Kconfig:27) with       | |
+| | user-set value 2 from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * LOG_DEFAULT_LEVEL (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf/components/log\./Kconfig.level:32)    | |
+| | with user-set value 3 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * LOG_MAXIMUM_LEVEL (defined at                                         | |
+| | C:/Users/Admin/esp/master/esp-idf/components/log\./Kconfig.level:78)    | |
+| | with user-set value 3 from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * LWIP_TCPIP_TASK_AFFINITY (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf/components/lwip/Kconfig:920) with     | |
+| | user-set value 0x7FFFFFFF from                                          | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * MBEDTLS_TLS_SERVER (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf/components/mbedtls/Kconfig:589) with  | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * MBEDTLS_TLS_CLIENT (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf/components/mbedtls/Kconfig:592) with  | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * OPENTHREAD_NETWORK_NAME (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf/components/openthread/Kconfig:90)     | |
+| | with user-set value OpenThread-ESP from                                 | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * OPENTHREAD_MESH_LOCAL_PREFIX (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf/components/openthread/Kconfig:94)     | |
+| | with user-set value fd00:db8:a0:0::/64 from                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * OPENTHREAD_NETWORK_CHANNEL (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf/components/openthread/Kconfig:101)    | |
+| | with user-set value 15 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * OPENTHREAD_NETWORK_PANID (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf/components/openthread/Kconfig:106)    | |
+| | with user-set value 0x1234 from                                         | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * OPENTHREAD_NETWORK_EXTPANID (defined at                               | |
+| | C:/Users/Admin/esp/master/esp-idf/components/openthread/Kconfig:111)    | |
+| | with user-set value dead00beef00cafe from                               | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * OPENTHREAD_NETWORK_MASTERKEY (defined at                              | |
+| | C:/Users/Admin/esp/master/esp-idf/components/openthread/Kconfig:117)    | |
+| | with user-set value 00112233445566778899aabbccddeeff from               | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * OPENTHREAD_NETWORK_PSKC (defined at                                   | |
+| | C:/Users/Admin/esp/master/esp-idf/components/openthread/Kconfig:123)    | |
+| | with user-set value 104810e2315100afd6bc9215a6bfac53 from               | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * OPENTHREAD_RX_ON_WHEN_IDLE (defined at                                | |
+| | C:/Users/Admin/esp/master/esp-idf/components/openthread/Kconfig:386)    | |
+| | with user-set value y from                                              | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * OPENTHREAD_XTAL_ACCURACY (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf/components/openthread/Kconfig:476)    | |
+| | with user-set value 130 from                                            | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * PTHREAD_TASK_CORE_DEFAULT (defined at                                 | |
+| | C:/Users/Admin/esp/master/esp-idf/components/pthread/Kconfig:37) with   | |
+| | user-set value -1 from                                                  | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * MMU_PAGE_SIZE_64KB (defined at                                        | |
+| | C:/Users/Admin/esp/master/esp-idf/components/soc/Kconfig:25) with       | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * MMU_PAGE_MODE (defined at                                             | |
+| | C:/Users/Admin/esp/master/esp-idf/components/soc/Kconfig:30) with       | |
+| | user-set value 64KB from                                                | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * MMU_PAGE_SIZE (defined at                                             | |
+| | C:/Users/Admin/esp/master/esp-idf/components/soc/Kconfig:37) with       | |
+| | user-set value 0x10000 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SPI_FLASH_BROWNOUT_RESET (defined at                                  | |
+| | C:/Users/Admin/esp/master/esp-idf/components/spi_flash/Kconfig:16) with | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * SPI_FLASH_HPM_ON (defined at                                          | |
+| | C:/Users/Admin/esp/master/esp-idf/components/spi_flash/Kconfig:56) with | |
+| | user-set value y from                                                   | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * WL_SECTOR_SIZE (defined at                                            | |
+| | C:/Users/Admin/esp/master/esp-idf/components/wear_levelling/Kconfig:27) | |
+| | with user-set value 4096 from                                           | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| | * LV_COLOR_DEPTH (defined at                                            | |
+| | C:/Users/Admin/Documents/CarHvacController/managed_components/lvgl__lvà | |
+| | with user-set value 16 from                                             | |
+| | C:\Users\Admin\AppData\Local\Temp\kconfgen_tmpzm5q0dz6                  | |
+| +-------------------------------------------------------------------------+ |
++-----------------------------------------------------------------------------+
+CMake Warning at C:/Users/Admin/esp/master/esp-idf/tools/cmake/component_validation.cmake:106 (message):
+  Private include directory
+  'C:/Users/Admin/esp/master/esp-idf/components/esp_wifi/wifi_apps/roaming_app/include'
+  belongs to component esp_wifi but is being used by component
+  wpa_supplicant.  It is recommended to define the component dependency for
+  wpa_supplicant on the component esp_wifi, i.e.  'idf_component_register(...
+  PRIV_REQUIRES esp_wifi)' in the CMakeLists.txt of wpa_supplicant, and
+  specify the included directory as idf_component_register(...
+  PRIV_INCLUDE_DIRS <dir relative to component>) in the CMakeLists.txt of
+  component esp_wifi.
+Call Stack (most recent call first):
+  C:/Users/Admin/esp/master/esp-idf/tools/cmake/component_validation.cmake:130 (__component_validation_check_include_dirs)
+  C:/Users/Admin/esp/master/esp-idf/CMakeLists.txt:353 (__component_validation_run_checks)
+
+
+CMake Warning at C:/Users/Admin/esp/master/esp-idf/tools/cmake/component_validation.cmake:106 (message):
+  Private include directory
+  'C:/Users/Admin/esp/master/esp-idf/components/esp_wifi/wifi_apps/roaming_app/src'
+  belongs to component esp_wifi but is being used by component
+  wpa_supplicant.  It is recommended to define the component dependency for
+  wpa_supplicant on the component esp_wifi, i.e.  'idf_component_register(...
+  PRIV_REQUIRES esp_wifi)' in the CMakeLists.txt of wpa_supplicant, and
+  specify the included directory as idf_component_register(...
+  PRIV_INCLUDE_DIRS <dir relative to component>) in the CMakeLists.txt of
+  component esp_wifi.
+Call Stack (most recent call first):
+  C:/Users/Admin/esp/master/esp-idf/tools/cmake/component_validation.cmake:130 (__component_validation_check_include_dirs)
+  C:/Users/Admin/esp/master/esp-idf/CMakeLists.txt:353 (__component_validation_run_checks)
+
+
+CMake Warning at C:/Users/Admin/esp/master/esp-idf/tools/cmake/component_validation.cmake:106 (message):
+  Private include directory
+  'C:/Users/Admin/esp/master/esp-idf/components/wpa_supplicant/src' belongs
+  to component wpa_supplicant but is being used by component esp_wifi.  It is
+  recommended to define the component dependency for esp_wifi on the
+  component wpa_supplicant, i.e.  'idf_component_register(...  PRIV_REQUIRES
+  wpa_supplicant)' in the CMakeLists.txt of esp_wifi, and specify the
+  included directory as idf_component_register(...  PRIV_INCLUDE_DIRS <dir
+  relative to component>) in the CMakeLists.txt of component wpa_supplicant.
+Call Stack (most recent call first):
+  C:/Users/Admin/esp/master/esp-idf/tools/cmake/component_validation.cmake:130 (__component_validation_check_include_dirs)
+  C:/Users/Admin/esp/master/esp-idf/CMakeLists.txt:353 (__component_validation_run_checks)
+
+
+CMake Warning at C:/Users/Admin/esp/master/esp-idf/tools/cmake/component_validation.cmake:106 (message):
+  Private include directory
+  'C:/Users/Admin/esp/master/esp-idf/components/wpa_supplicant/esp_supplicant/src'
+  belongs to component wpa_supplicant but is being used by component
+  esp_wifi.  It is recommended to define the component dependency for
+  esp_wifi on the component wpa_supplicant, i.e.  'idf_component_register(...
+  PRIV_REQUIRES wpa_supplicant)' in the CMakeLists.txt of esp_wifi, and
+  specify the included directory as idf_component_register(...
+  PRIV_INCLUDE_DIRS <dir relative to component>) in the CMakeLists.txt of
+  component wpa_supplicant.
+Call Stack (most recent call first):
+  C:/Users/Admin/esp/master/esp-idf/tools/cmake/component_validation.cmake:130 (__component_validation_check_include_dirs)
+  C:/Users/Admin/esp/master/esp-idf/CMakeLists.txt:353 (__component_validation_run_checks)
+
+
+Traceback (most recent call last):
+  File "C:\Users\Admin\esp\master\esp-idf\components\esp_rom\gen_gdbinit.py", line 72, in <module>
+    gdbinit_lines = generate_gdbinit_rom_add_symbols(target)
+  File "C:\Users\Admin\esp\master\esp-idf\components\esp_rom\gen_gdbinit.py", line 31, in generate_gdbinit_rom_add_symbols
+    raise OSError(
+        'ESP_ROM_ELF_DIR environment variable is not defined. Please try to run IDF "install" and "export" scripts.'
+    )
+OSError: ESP_ROM_ELF_DIR environment variable is not defined. Please try to run IDF "install" and "export" scripts.
+CMake Warning at C:/Users/Admin/esp/master/esp-idf/tools/cmake/gdbinit.cmake:52 (message):
+  Error while generating esp_rom gdbinit
+Call Stack (most recent call first):
+  C:/Users/Admin/esp/master/esp-idf/tools/cmake/project.cmake:357 (__generate_gdbinit)
+  C:/Users/Admin/esp/master/esp-idf/tools/cmake/project.cmake:972 (__project_info)
+  CMakeLists.txt:8 (project)
+
+
