@@ -694,21 +694,6 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("C:/Users/Admin/Documents/CarHvacController/build/esp-idf/esp-idf-lib__esp_idf_lib_helpers/cmake_install.cmake")
-endif()
-
-if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  # Include the install script for the subdirectory.
-  include("C:/Users/Admin/Documents/CarHvacController/build/esp-idf/esp-idf-lib__i2cdev/cmake_install.cmake")
-endif()
-
-if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  # Include the install script for the subdirectory.
-  include("C:/Users/Admin/Documents/CarHvacController/build/esp-idf/esp-idf-lib__sht3x/cmake_install.cmake")
-endif()
-
-if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  # Include the install script for the subdirectory.
   include("C:/Users/Admin/Documents/CarHvacController/build/esp-idf/espressif__onewire_bus/cmake_install.cmake")
 endif()
 

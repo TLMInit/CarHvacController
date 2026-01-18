@@ -3,7 +3,7 @@
  * @brief HVAC Sensor Management Implementation
  * 
  * Uses ESP-IDF managed components:
- * - esp-idf-lib/sht3x for SHT30-D sensor
+ * - Custom SHT30 driver using new I2C master API
  * - espressif/ds18b20 and espressif/onewire_bus for DS18B20 sensors
  * - ADS1115 driver for valve position feedback via analog inputs
  */
@@ -17,11 +17,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "driver/i2c_master.h"
 #include <math.h>
 #include <string.h>
-
-// SHT3x library from esp-idf-lib/sht3x component
-#include "sht3x.h"
 
 // DS18B20 library from espressif components
 #include "onewire_bus.h"
@@ -30,13 +28,22 @@
 static const char *TAG = "HVAC_SENSORS";
 
 /*******************************************************************************
+ * SHT30 Register Definitions (using new I2C master API)
+ ******************************************************************************/
+#define SHT30_CMD_MEASURE_HIGH_REP      0x2400  // High repeatability, no clock stretch
+#define SHT30_CMD_SOFT_RESET            0x30A2
+#define SHT30_CMD_READ_STATUS           0xF32D
+
+/*******************************************************************************
  * Private Data
  ******************************************************************************/
 
-// Sensor handles
-static sht3x_t sht30_dev;  // Device descriptor for esp-idf-lib/sht3x
+// SHT30 using new I2C master API
+static i2c_master_dev_handle_t sht30_dev_handle = NULL;
 static bool sht30_initialized = false;
-static onewire_bus_handle_t onewire_bus = NULL;  // Shared 1-Wire bus for both DS18B20 sensors
+
+// DS18B20 sensors
+static onewire_bus_handle_t onewire_bus = NULL;
 static ds18b20_device_handle_t ds18b20_coolant = NULL;
 static ds18b20_device_handle_t ds18b20_duct = NULL;
 
@@ -52,6 +59,9 @@ static SemaphoreHandle_t valve_mutex = NULL;
 // Configuration
 static uint32_t sensor_interval_ms = 1000;  // Default 1 second
 
+// Store the sensor I2C bus handle
+static i2c_master_bus_handle_t sensor_i2c_bus_handle = NULL;
+
 /*******************************************************************************
  * Private Functions
  ******************************************************************************/
@@ -61,28 +71,60 @@ static uint32_t get_time_ms(void)
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
 
+// CRC-8 calculation for SHT30
+static uint8_t sht30_crc8(const uint8_t *data, size_t len)
+{
+    uint8_t crc = 0xFF;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int j = 0; j < 8; j++) {
+            if (crc & 0x80) {
+                crc = (crc << 1) ^ 0x31;
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+    return crc;
+}
+
 static esp_err_t init_sht30(void)
 {
-    ESP_LOGI(TAG, "Initializing SHT30-D sensor");
+    ESP_LOGI(TAG, "Initializing SHT30-D sensor (new I2C master API)");
     
-    // Initialize device descriptor with esp-idf-lib API
-    esp_err_t ret = sht3x_init_desc(&sht30_dev, SHT30_I2C_ADDR, SHT30_I2C_PORT, 
-                                     SHT30_PIN_SDA, SHT30_PIN_SCL);
+    if (sensor_i2c_bus_handle == NULL) {
+        ESP_LOGE(TAG, "Sensor I2C bus not initialized");
+        sensor_data[SENSOR_CABIN_TEMP].status = SENSOR_STATUS_NOT_FOUND;
+        sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_NOT_FOUND;
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Add SHT30 device to the I2C bus
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = SHT30_I2C_ADDR,
+        .scl_speed_hz = SHT30_I2C_SPEED_HZ,
+    };
+    
+    esp_err_t ret = i2c_master_bus_add_device(sensor_i2c_bus_handle, &dev_cfg, &sht30_dev_handle);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to init SHT30 descriptor: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to add SHT30 to I2C bus: %s", esp_err_to_name(ret));
         sensor_data[SENSOR_CABIN_TEMP].status = SENSOR_STATUS_NOT_FOUND;
         sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_NOT_FOUND;
         return ret;
     }
     
-    // Initialize the sensor
-    ret = sht3x_init(&sht30_dev);
+    // Send soft reset command
+    uint8_t cmd[2] = {(SHT30_CMD_SOFT_RESET >> 8) & 0xFF, SHT30_CMD_SOFT_RESET & 0xFF};
+    ret = i2c_master_transmit(sht30_dev_handle, cmd, 2, 100);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize SHT30-D: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "SHT30 soft reset failed (sensor may not be connected): %s", esp_err_to_name(ret));
         sensor_data[SENSOR_CABIN_TEMP].status = SENSOR_STATUS_NOT_FOUND;
         sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_NOT_FOUND;
         return ret;
     }
+    
+    vTaskDelay(pdMS_TO_TICKS(20));  // Wait for reset
     
     sht30_initialized = true;
     ESP_LOGI(TAG, "SHT30-D initialized successfully");
@@ -176,14 +218,54 @@ static esp_err_t init_ds18b20_sensors(void)
 
 static void read_sht30(void)
 {
-    if (!sht30_initialized) {
+    if (!sht30_initialized || sht30_dev_handle == NULL) {
         return;
     }
     
-    float temperature, humidity;
-    // Use sht3x_measure which handles everything (start, wait, read)
-    esp_err_t ret = sht3x_measure(&sht30_dev, &temperature, &humidity);
+    esp_err_t ret;
+    float temperature = NAN, humidity = NAN;
     
+    // Send measurement command (high repeatability, no clock stretching)
+    uint8_t cmd[2] = {(SHT30_CMD_MEASURE_HIGH_REP >> 8) & 0xFF, SHT30_CMD_MEASURE_HIGH_REP & 0xFF};
+    ret = i2c_master_transmit(sht30_dev_handle, cmd, 2, 100);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "SHT30 measure command failed: %s", esp_err_to_name(ret));
+        goto update_status;
+    }
+    
+    // Wait for measurement (max 15ms for high repeatability)
+    vTaskDelay(pdMS_TO_TICKS(20));
+    
+    // Read 6 bytes: temp_msb, temp_lsb, temp_crc, hum_msb, hum_lsb, hum_crc
+    uint8_t data[6];
+    ret = i2c_master_receive(sht30_dev_handle, data, 6, 100);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "SHT30 read failed: %s", esp_err_to_name(ret));
+        goto update_status;
+    }
+    
+    // Verify CRC for temperature
+    if (sht30_crc8(data, 2) != data[2]) {
+        ESP_LOGW(TAG, "SHT30 temperature CRC error");
+        ret = ESP_ERR_INVALID_CRC;
+        goto update_status;
+    }
+    
+    // Verify CRC for humidity
+    if (sht30_crc8(data + 3, 2) != data[5]) {
+        ESP_LOGW(TAG, "SHT30 humidity CRC error");
+        ret = ESP_ERR_INVALID_CRC;
+        goto update_status;
+    }
+    
+    // Convert raw values to temperature and humidity
+    uint16_t temp_raw = (data[0] << 8) | data[1];
+    uint16_t hum_raw = (data[3] << 8) | data[4];
+    
+    temperature = -45.0f + 175.0f * ((float)temp_raw / 65535.0f);
+    humidity = 100.0f * ((float)hum_raw / 65535.0f);
+
+update_status:
     if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         if (ret == ESP_OK) {
             sensor_data[SENSOR_CABIN_TEMP].value = temperature;
@@ -198,7 +280,6 @@ static void read_sht30(void)
         } else {
             sensor_data[SENSOR_CABIN_TEMP].status = SENSOR_STATUS_ERROR;
             sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_ERROR;
-            ESP_LOGW(TAG, "SHT30 read error: %s", esp_err_to_name(ret));
         }
         xSemaphoreGive(sensor_mutex);
     }
@@ -306,9 +387,12 @@ static void read_valve_positions(void)
  * Public Functions
  ******************************************************************************/
 
-esp_err_t hvac_sensors_init(void)
+esp_err_t hvac_sensors_init(i2c_master_bus_handle_t i2c_bus)
 {
     ESP_LOGI(TAG, "Initializing HVAC sensors");
+    
+    // Store the I2C bus handle for SHT30
+    sensor_i2c_bus_handle = i2c_bus;
     
     // Create mutexes
     sensor_mutex = xSemaphoreCreateMutex();
@@ -330,7 +414,7 @@ esp_err_t hvac_sensors_init(void)
         sensor_data[i].last_update_ms = 0;
     }
     
-    // Initialize SHT30-D (esp-idf-lib version creates its own I2C bus)
+    // Initialize SHT30-D using new I2C master API
     init_sht30();
     
     // Initialize DS18B20 sensors
@@ -354,8 +438,9 @@ void hvac_sensors_deinit(void)
         onewire_bus_del(onewire_bus);
         onewire_bus = NULL;
     }
-    if (sht30_initialized) {
-        sht3x_free_desc(&sht30_dev);
+    if (sht30_dev_handle) {
+        i2c_master_bus_rm_device(sht30_dev_handle);
+        sht30_dev_handle = NULL;
         sht30_initialized = false;
     }
     if (sensor_mutex) {

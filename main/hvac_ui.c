@@ -46,35 +46,32 @@ static lv_obj_t *tabview = NULL;
 static lv_obj_t *tab_main = NULL;
 static lv_obj_t *tab_debug = NULL;
 
-// Temperature display
+// Temperature display (center)
 static lv_obj_t *lbl_cabin_temp = NULL;
 static lv_obj_t *lbl_target_temp = NULL;
 static lv_obj_t *lbl_humidity = NULL;
-static lv_obj_t *arc_temp = NULL;
 
-// Mode buttons
-static lv_obj_t *btn_mode_off = NULL;
+// Mode buttons (right side)
+static lv_obj_t *btn_mode_auto = NULL;
+static lv_obj_t *btn_mode_defrost = NULL;
 static lv_obj_t *btn_mode_face = NULL;
 static lv_obj_t *btn_mode_foot = NULL;
-static lv_obj_t *btn_mode_defrost = NULL;
-static lv_obj_t *btn_mode_auto = NULL;
 
-// Fan control
+// Fan control (bottom)
 static lv_obj_t *slider_fan = NULL;
 static lv_obj_t *lbl_fan_speed = NULL;
 
-// Temperature control
+// Temperature control (+/- buttons in center)
 static lv_obj_t *btn_temp_up = NULL;
 static lv_obj_t *btn_temp_down = NULL;
 
-// Feature buttons
+// Feature buttons (left side)
 static lv_obj_t *btn_ac = NULL;
 static lv_obj_t *btn_recirc = NULL;
 
 // Status indicators
 static lv_obj_t *lbl_coolant_temp = NULL;
 static lv_obj_t *lbl_duct_temp = NULL;
-static lv_obj_t *lbl_status = NULL;
 
 // Valve position indicators
 static lv_obj_t *lbl_center_valve_pos = NULL;
@@ -100,9 +97,10 @@ static bool last_valve_fault = false;
  * Private Functions - Event Handlers
  ******************************************************************************/
 
-static void btn_mode_off_handler(lv_event_t *e)
+// Message box close event handler - clears the global pointer when box is closed
+static void msgbox_close_handler(lv_event_t *e)
 {
-    hvac_controller_off();
+    msg_box = NULL;
 }
 
 static void btn_mode_face_handler(lv_event_t *e)
@@ -151,10 +149,8 @@ static void slider_fan_handler(lv_event_t *e)
         level = HVAC_FAN_MEDIUM;
     } else if (value == 4) {
         level = HVAC_FAN_MEDIUM_HIGH;
-    } else if (value == 5) {
-        level = HVAC_FAN_HIGH;
     } else {
-        level = HVAC_FAN_AUTO;
+        level = HVAC_FAN_HIGH;
     }
     
     hvac_controller_set_fan_level(level);
@@ -193,80 +189,72 @@ static void btn_save_cal_handler(lv_event_t *e)
 }
 
 /*******************************************************************************
- * Private Functions - UI Creation
+ * Private Functions - UI Creation (Landscape 320x240, Driver-Friendly)
  ******************************************************************************/
-static void create_temp_display(lv_obj_t *parent)
+
+// New layout: Center = temp display, Left = A/C + Recirc, Right = Mode buttons, Bottom = Fan slider
+
+static void create_center_temp_display(lv_obj_t *parent)
 {
-    // Temperature arc background
-    arc_temp = lv_arc_create(parent);
-    lv_obj_set_size(arc_temp, 140, 140);
-    lv_obj_align(arc_temp, LV_ALIGN_TOP_MID, 0, 10);
-    lv_arc_set_rotation(arc_temp, 135);
-    lv_arc_set_bg_angles(arc_temp, 0, 270);
-    lv_arc_set_range(arc_temp, 16, 30);
-    lv_arc_set_value(arc_temp, 22);
-    lv_obj_remove_style(arc_temp, NULL, LV_PART_KNOB);
-    lv_obj_clear_flag(arc_temp, LV_OBJ_FLAG_CLICKABLE);
+    // Center panel for temperature display (setpoint large, actual small below)
+    lv_obj_t *temp_panel = lv_obj_create(parent);
+    lv_obj_set_size(temp_panel, 150, 195);
+    lv_obj_align(temp_panel, LV_ALIGN_TOP_MID, -20, 0);
+    lv_obj_set_style_bg_color(temp_panel, UI_COLOR_PANEL, 0);
+    lv_obj_set_style_border_width(temp_panel, 1, 0);
+    lv_obj_set_style_border_color(temp_panel, UI_COLOR_ACCENT, 0);
+    lv_obj_set_style_radius(temp_panel, 8, 0);
+    lv_obj_set_style_pad_all(temp_panel, 5, 0);
+    lv_obj_clear_flag(temp_panel, LV_OBJ_FLAG_SCROLLABLE);
     
-    // Set arc colors
-    lv_obj_set_style_arc_color(arc_temp, UI_COLOR_OFF, LV_PART_MAIN);
-    lv_obj_set_style_arc_color(arc_temp, UI_COLOR_HIGHLIGHT, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(arc_temp, 10, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(arc_temp, 10, LV_PART_INDICATOR);
+    // Large setpoint temperature (main focus) - larger font with decimal
+    lbl_target_temp = lv_label_create(temp_panel);
+    lv_obj_align(lbl_target_temp, LV_ALIGN_TOP_MID, 0, 5);
+    lv_obj_set_style_text_font(lbl_target_temp, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(lbl_target_temp, UI_COLOR_HIGHLIGHT, 0);
+    lv_label_set_text(lbl_target_temp, "22.0°C");
     
-    // Cabin temperature (large, center)
-    lbl_cabin_temp = lv_label_create(parent);
-    lv_obj_align(lbl_cabin_temp, LV_ALIGN_TOP_MID, 0, 45);
-    lv_obj_set_style_text_font(lbl_cabin_temp, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(lbl_cabin_temp, UI_COLOR_TEXT, 0);
-    lv_label_set_text(lbl_cabin_temp, "--.-°C");
-    
-    // "Cabin" label
-    lv_obj_t *lbl_cabin = lv_label_create(parent);
-    lv_obj_align(lbl_cabin, LV_ALIGN_TOP_MID, 0, 80);
-    lv_obj_set_style_text_color(lbl_cabin, UI_COLOR_TEXT_DIM, 0);
-    lv_label_set_text(lbl_cabin, "Cabin");
-    
-    // Humidity
-    lbl_humidity = lv_label_create(parent);
-    lv_obj_align(lbl_humidity, LV_ALIGN_TOP_MID, 0, 100);
-    lv_obj_set_style_text_color(lbl_humidity, UI_COLOR_TEXT_DIM, 0);
-    lv_label_set_text(lbl_humidity, "-- %RH");
-    
-    // Target temperature with +/- buttons
-    btn_temp_down = lv_btn_create(parent);
-    lv_obj_set_size(btn_temp_down, 40, 40);
-    lv_obj_align(btn_temp_down, LV_ALIGN_TOP_LEFT, 10, 45);
+    // +/- buttons for temperature adjustment - moved down
+    btn_temp_down = lv_btn_create(temp_panel);
+    lv_obj_set_size(btn_temp_down, 65, 55);
+    lv_obj_align(btn_temp_down, LV_ALIGN_TOP_LEFT, 0, 40);
     lv_obj_set_style_bg_color(btn_temp_down, UI_COLOR_COOL, 0);
     lv_obj_add_event_cb(btn_temp_down, btn_temp_down_handler, LV_EVENT_CLICKED, NULL);
-    
     lv_obj_t *lbl_minus = lv_label_create(btn_temp_down);
     lv_label_set_text(lbl_minus, LV_SYMBOL_MINUS);
+    lv_obj_set_style_text_font(lbl_minus, &lv_font_montserrat_22, 0);
     lv_obj_center(lbl_minus);
     
-    btn_temp_up = lv_btn_create(parent);
-    lv_obj_set_size(btn_temp_up, 40, 40);
-    lv_obj_align(btn_temp_up, LV_ALIGN_TOP_RIGHT, -10, 45);
+    btn_temp_up = lv_btn_create(temp_panel);
+    lv_obj_set_size(btn_temp_up, 65, 55);
+    lv_obj_align(btn_temp_up, LV_ALIGN_TOP_RIGHT, 0, 40);
     lv_obj_set_style_bg_color(btn_temp_up, UI_COLOR_HEAT, 0);
     lv_obj_add_event_cb(btn_temp_up, btn_temp_up_handler, LV_EVENT_CLICKED, NULL);
-    
     lv_obj_t *lbl_plus = lv_label_create(btn_temp_up);
     lv_label_set_text(lbl_plus, LV_SYMBOL_PLUS);
+    lv_obj_set_style_text_font(lbl_plus, &lv_font_montserrat_22, 0);
     lv_obj_center(lbl_plus);
     
-    // Target temp label
-    lbl_target_temp = lv_label_create(parent);
-    lv_obj_align(lbl_target_temp, LV_ALIGN_TOP_MID, 0, 125);
-    lv_obj_set_style_text_font(lbl_target_temp, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(lbl_target_temp, UI_COLOR_HIGHLIGHT, 0);
-    lv_label_set_text(lbl_target_temp, "Set: 22.0°C");
+    // Smaller actual cabin temperature - moved down
+    lbl_cabin_temp = lv_label_create(temp_panel);
+    lv_obj_align(lbl_cabin_temp, LV_ALIGN_TOP_MID, 0, 105);
+    lv_obj_set_style_text_font(lbl_cabin_temp, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(lbl_cabin_temp, UI_COLOR_TEXT, 0);
+    lv_label_set_text(lbl_cabin_temp, "Cabin: --.-°C");
+    
+    // Humidity below cabin temp
+    lbl_humidity = lv_label_create(temp_panel);
+    lv_obj_align(lbl_humidity, LV_ALIGN_TOP_MID, 0, 125);
+    lv_obj_set_style_text_color(lbl_humidity, UI_COLOR_TEXT_DIM, 0);
+    lv_label_set_text(lbl_humidity, "-- %RH");
 }
 
 static lv_obj_t* create_mode_button(lv_obj_t *parent, const char *text, 
-                                    lv_event_cb_t handler, lv_coord_t x, lv_coord_t y)
+                                    lv_event_cb_t handler, lv_coord_t x, lv_coord_t y,
+                                    lv_coord_t w, lv_coord_t h)
 {
     lv_obj_t *btn = lv_btn_create(parent);
-    lv_obj_set_size(btn, 44, 36);
+    lv_obj_set_size(btn, w, h);
     lv_obj_set_pos(btn, x, y);
     lv_obj_set_style_bg_color(btn, UI_COLOR_PANEL, 0);
     lv_obj_set_style_bg_color(btn, UI_COLOR_ACCENT, LV_STATE_CHECKED);
@@ -281,55 +269,17 @@ static lv_obj_t* create_mode_button(lv_obj_t *parent, const char *text,
     return btn;
 }
 
-static void create_mode_buttons(lv_obj_t *parent)
+static void create_left_buttons(lv_obj_t *parent)
 {
-    // Mode buttons row
-    lv_coord_t y_pos = 155;
-    lv_coord_t x_start = 5;
-    lv_coord_t x_step = 47;
+    // Left side: A/C and Recirc buttons (stacked vertically, same size as mode buttons)
+    lv_coord_t btn_w = 48;
+    lv_coord_t btn_h = 80;
+    lv_coord_t gap = 1;
     
-    btn_mode_off = create_mode_button(parent, "OFF", btn_mode_off_handler, x_start, y_pos);
-    btn_mode_face = create_mode_button(parent, LV_SYMBOL_UP, btn_mode_face_handler, x_start + x_step, y_pos);
-    btn_mode_foot = create_mode_button(parent, LV_SYMBOL_DOWN, btn_mode_foot_handler, x_start + x_step*2, y_pos);
-    btn_mode_defrost = create_mode_button(parent, "DEF", btn_mode_defrost_handler, x_start + x_step*3, y_pos);
-    btn_mode_auto = create_mode_button(parent, "AUTO", btn_mode_auto_handler, x_start + x_step*4, y_pos);
-    
-    // Set OFF as initially checked
-    lv_obj_add_state(btn_mode_off, LV_STATE_CHECKED);
-}
-
-static void create_fan_control(lv_obj_t *parent)
-{
-    // Fan icon
-    lv_obj_t *lbl_fan_icon = lv_label_create(parent);
-    lv_obj_align(lbl_fan_icon, LV_ALIGN_BOTTOM_LEFT, 10, -45);
-    lv_label_set_text(lbl_fan_icon, LV_SYMBOL_REFRESH);
-    lv_obj_set_style_text_color(lbl_fan_icon, UI_COLOR_TEXT, 0);
-    
-    // Fan slider
-    slider_fan = lv_slider_create(parent);
-    lv_obj_set_size(slider_fan, 150, 20);
-    lv_obj_align(slider_fan, LV_ALIGN_BOTTOM_LEFT, 35, -45);
-    lv_slider_set_range(slider_fan, 0, 6);
-    lv_slider_set_value(slider_fan, 0, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(slider_fan, UI_COLOR_PANEL, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(slider_fan, UI_COLOR_HIGHLIGHT, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(slider_fan, UI_COLOR_TEXT, LV_PART_KNOB);
-    lv_obj_add_event_cb(slider_fan, slider_fan_handler, LV_EVENT_VALUE_CHANGED, NULL);
-    
-    // Fan speed label
-    lbl_fan_speed = lv_label_create(parent);
-    lv_obj_align(lbl_fan_speed, LV_ALIGN_BOTTOM_RIGHT, -10, -45);
-    lv_obj_set_style_text_color(lbl_fan_speed, UI_COLOR_TEXT, 0);
-    lv_label_set_text(lbl_fan_speed, "OFF");
-}
-
-static void create_feature_buttons(lv_obj_t *parent)
-{
     // A/C button
     btn_ac = lv_btn_create(parent);
-    lv_obj_set_size(btn_ac, 50, 30);
-    lv_obj_align(btn_ac, LV_ALIGN_BOTTOM_LEFT, 10, -10);
+    lv_obj_set_size(btn_ac, btn_w, btn_h);
+    lv_obj_align(btn_ac, LV_ALIGN_TOP_LEFT, -5, 5);
     lv_obj_set_style_bg_color(btn_ac, UI_COLOR_PANEL, 0);
     lv_obj_set_style_bg_color(btn_ac, UI_COLOR_COOL, LV_STATE_CHECKED);
     lv_obj_add_flag(btn_ac, LV_OBJ_FLAG_CHECKABLE);
@@ -337,12 +287,13 @@ static void create_feature_buttons(lv_obj_t *parent)
     
     lv_obj_t *lbl_ac = lv_label_create(btn_ac);
     lv_label_set_text(lbl_ac, "A/C");
+    lv_obj_set_style_text_font(lbl_ac, &lv_font_montserrat_14, 0);
     lv_obj_center(lbl_ac);
     
     // Recirculation button
     btn_recirc = lv_btn_create(parent);
-    lv_obj_set_size(btn_recirc, 50, 30);
-    lv_obj_align(btn_recirc, LV_ALIGN_BOTTOM_LEFT, 70, -10);
+    lv_obj_set_size(btn_recirc, btn_w, btn_h);
+    lv_obj_align(btn_recirc, LV_ALIGN_TOP_LEFT, -5, 5 + btn_h + gap);
     lv_obj_set_style_bg_color(btn_recirc, UI_COLOR_PANEL, 0);
     lv_obj_set_style_bg_color(btn_recirc, UI_COLOR_ON, LV_STATE_CHECKED);
     lv_obj_add_flag(btn_recirc, LV_OBJ_FLAG_CHECKABLE);
@@ -350,116 +301,83 @@ static void create_feature_buttons(lv_obj_t *parent)
     
     lv_obj_t *lbl_recirc = lv_label_create(btn_recirc);
     lv_label_set_text(lbl_recirc, LV_SYMBOL_LOOP);
+    lv_obj_set_style_text_font(lbl_recirc, &lv_font_montserrat_16, 0);
     lv_obj_center(lbl_recirc);
 }
 
-static void create_status_panel(lv_obj_t *parent)
+static void create_right_mode_buttons(lv_obj_t *parent)
 {
-    // Status panel on the right
-    lv_obj_t *panel = lv_obj_create(parent);
-    lv_obj_set_size(panel, 100, 60);
-    lv_obj_align(panel, LV_ALIGN_BOTTOM_RIGHT, -5, -5);
-    lv_obj_set_style_bg_color(panel, UI_COLOR_PANEL, 0);
-    lv_obj_set_style_border_width(panel, 0, 0);
-    lv_obj_set_style_radius(panel, 5, 0);
-    lv_obj_set_style_pad_all(panel, 5, 0);
+    // Right side: Auto, Defrost, Center (face), Legs (foot) - 2x2 grid
+    lv_coord_t x_start = 210;
+    lv_coord_t y_start = 5;
+    lv_coord_t btn_w = 48;
+    lv_coord_t btn_h = 70;
+    lv_coord_t gap = 4;
     
-    // Coolant temp
-    lv_obj_t *lbl_coolant_icon = lv_label_create(panel);
-    lv_obj_align(lbl_coolant_icon, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_label_set_text(lbl_coolant_icon, LV_SYMBOL_WARNING);
-    lv_obj_set_style_text_color(lbl_coolant_icon, UI_COLOR_HEAT, 0);
-    lv_obj_set_style_text_font(lbl_coolant_icon, &lv_font_montserrat_14, 0);
+    // Row 1: AUTO, DEF
+    btn_mode_auto = create_mode_button(parent, "AUTO", btn_mode_auto_handler, 
+                                       x_start, y_start, btn_w, btn_h);
+    btn_mode_defrost = create_mode_button(parent, "DEF", btn_mode_defrost_handler, 
+                                          x_start + btn_w + gap, y_start, btn_w, btn_h);
     
-    lbl_coolant_temp = lv_label_create(panel);
-    lv_obj_align(lbl_coolant_temp, LV_ALIGN_TOP_LEFT, 15, 0);
-    lv_label_set_text(lbl_coolant_temp, "--°C");
-    lv_obj_set_style_text_color(lbl_coolant_temp, UI_COLOR_TEXT_DIM, 0);
-    lv_obj_set_style_text_font(lbl_coolant_temp, &lv_font_montserrat_14, 0);
+    // Row 2: CENTER (face), LEGS (foot)
+    btn_mode_face = create_mode_button(parent, LV_SYMBOL_UP, btn_mode_face_handler, 
+                                       x_start, y_start + btn_h + gap, btn_w, btn_h);
+    btn_mode_foot = create_mode_button(parent, LV_SYMBOL_DOWN, btn_mode_foot_handler, 
+                                       x_start + btn_w + gap, y_start + btn_h + gap, btn_w, btn_h);
     
-    // Duct temp
-    lv_obj_t *lbl_duct_icon = lv_label_create(panel);
-    lv_obj_align(lbl_duct_icon, LV_ALIGN_TOP_LEFT, 0, 15);
-    lv_label_set_text(lbl_duct_icon, LV_SYMBOL_CHARGE);
-    lv_obj_set_style_text_color(lbl_duct_icon, UI_COLOR_COOL, 0);
-    lv_obj_set_style_text_font(lbl_duct_icon, &lv_font_montserrat_14, 0);
-    
-    lbl_duct_temp = lv_label_create(panel);
-    lv_obj_align(lbl_duct_temp, LV_ALIGN_TOP_LEFT, 15, 15);
-    lv_label_set_text(lbl_duct_temp, "--°C");
-    lv_obj_set_style_text_color(lbl_duct_temp, UI_COLOR_TEXT_DIM, 0);
-    lv_obj_set_style_text_font(lbl_duct_temp, &lv_font_montserrat_14, 0);
-    
-    // Status text
-    lbl_status = lv_label_create(panel);
-    lv_obj_align(lbl_status, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_label_set_text(lbl_status, "Ready");
-    lv_obj_set_style_text_color(lbl_status, UI_COLOR_ON, 0);
-    lv_obj_set_style_text_font(lbl_status, &lv_font_montserrat_14, 0);
+    // Set AUTO as initially checked
+    lv_obj_add_state(btn_mode_auto, LV_STATE_CHECKED);
 }
 
-static void create_valve_positions_panel(lv_obj_t *parent)
+static void create_fan_control(lv_obj_t *parent)
 {
-    // Valve positions panel (left bottom)
-    lv_obj_t *panel = lv_obj_create(parent);
-    lv_obj_set_size(panel, 150, 65);
-    lv_obj_align(panel, LV_ALIGN_BOTTOM_LEFT, 5, -5);
-    lv_obj_set_style_bg_color(panel, UI_COLOR_PANEL, 0);
-    lv_obj_set_style_border_width(panel, 0, 0);
-    lv_obj_set_style_radius(panel, 5, 0);
-    lv_obj_set_style_pad_all(panel, 3, 0);
+    // Fan control panel - full width at very bottom
+    lv_obj_t *fan_panel = lv_obj_create(parent);
+    lv_obj_set_size(fan_panel, 320, 38);
+    lv_obj_align(fan_panel, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_color(fan_panel, UI_COLOR_PANEL, 0);
+    lv_obj_set_style_border_width(fan_panel, 0, 0);
+    lv_obj_set_style_radius(fan_panel, 0, 0);
+    lv_obj_set_style_pad_all(fan_panel, 5, 0);
+    lv_obj_clear_flag(fan_panel, LV_OBJ_FLAG_SCROLLABLE);
     
-    // Small font for valve positions
-    lv_obj_t *lbl_center_icon = lv_label_create(panel);
-    lv_obj_align(lbl_center_icon, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_label_set_text(lbl_center_icon, "C:");
-    lv_obj_set_style_text_color(lbl_center_icon, UI_COLOR_ACCENT, 0);
-    lv_obj_set_style_text_font(lbl_center_icon, &lv_font_montserrat_14, 0);
+    // Fan icon
+    lv_obj_t *lbl_fan_icon = lv_label_create(fan_panel);
+    lv_obj_align(lbl_fan_icon, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_label_set_text(lbl_fan_icon, LV_SYMBOL_REFRESH);
+    lv_obj_set_style_text_color(lbl_fan_icon, UI_COLOR_TEXT, 0);
+    lv_obj_set_style_text_font(lbl_fan_icon, &lv_font_montserrat_16, 0);
     
-    lbl_center_valve_pos = lv_label_create(panel);
-    lv_obj_align(lbl_center_valve_pos, LV_ALIGN_TOP_LEFT, 20, 0);
-    lv_label_set_text(lbl_center_valve_pos, "--%%");
-    lv_obj_set_style_text_color(lbl_center_valve_pos, UI_COLOR_TEXT_DIM, 0);
-    lv_obj_set_style_text_font(lbl_center_valve_pos, &lv_font_montserrat_14, 0);
+    // Fan slider - wider for easier touch
+    slider_fan = lv_slider_create(fan_panel);
+    lv_obj_set_size(slider_fan, 220, 22);
+    lv_obj_align(slider_fan, LV_ALIGN_LEFT_MID, 25, 0);
+    lv_slider_set_range(slider_fan, 0, 5);  // 0-5 for OFF, Low, Med-Lo, Med, Med-Hi, High (no auto)
+    lv_slider_set_value(slider_fan, 0, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(slider_fan, lv_color_hex(0x2a2a4e), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(slider_fan, UI_COLOR_HIGHLIGHT, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(slider_fan, UI_COLOR_TEXT, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(slider_fan, 8, LV_PART_KNOB);  // Larger knob
+    lv_obj_add_event_cb(slider_fan, slider_fan_handler, LV_EVENT_VALUE_CHANGED, NULL);
     
-    // Foot valve
-    lv_obj_t *lbl_foot_icon = lv_label_create(panel);
-    lv_obj_align(lbl_foot_icon, LV_ALIGN_TOP_LEFT, 0, 15);
-    lv_label_set_text(lbl_foot_icon, "F:");
-    lv_obj_set_style_text_color(lbl_foot_icon, UI_COLOR_ACCENT, 0);
-    lv_obj_set_style_text_font(lbl_foot_icon, &lv_font_montserrat_14, 0);
-    
-    lbl_foot_valve_pos = lv_label_create(panel);
-    lv_obj_align(lbl_foot_valve_pos, LV_ALIGN_TOP_LEFT, 20, 15);
-    lv_label_set_text(lbl_foot_valve_pos, "--%%");
-    lv_obj_set_style_text_color(lbl_foot_valve_pos, UI_COLOR_TEXT_DIM, 0);
-    lv_obj_set_style_text_font(lbl_foot_valve_pos, &lv_font_montserrat_14, 0);
-    
-    // Windscreen valve
-    lv_obj_t *lbl_windscreen_icon = lv_label_create(panel);
-    lv_obj_align(lbl_windscreen_icon, LV_ALIGN_TOP_LEFT, 65, 0);
-    lv_label_set_text(lbl_windscreen_icon, "W:");
-    lv_obj_set_style_text_color(lbl_windscreen_icon, UI_COLOR_ACCENT, 0);
-    lv_obj_set_style_text_font(lbl_windscreen_icon, &lv_font_montserrat_14, 0);
-    
-    lbl_windscreen_valve_pos = lv_label_create(panel);
-    lv_obj_align(lbl_windscreen_valve_pos, LV_ALIGN_TOP_LEFT, 85, 0);
-    lv_label_set_text(lbl_windscreen_valve_pos, "--%%");
-    lv_obj_set_style_text_color(lbl_windscreen_valve_pos, UI_COLOR_TEXT_DIM, 0);
-    lv_obj_set_style_text_font(lbl_windscreen_valve_pos, &lv_font_montserrat_14, 0);
-    
-    // Coolant valve
-    lv_obj_t *lbl_coolant_icon = lv_label_create(panel);
-    lv_obj_align(lbl_coolant_icon, LV_ALIGN_TOP_LEFT, 65, 15);
-    lv_label_set_text(lbl_coolant_icon, "A:");
-    lv_obj_set_style_text_color(lbl_coolant_icon, UI_COLOR_ACCENT, 0);
-    lv_obj_set_style_text_font(lbl_coolant_icon, &lv_font_montserrat_14, 0);
-    
-    lbl_coolant_valve_pos = lv_label_create(panel);
-    lv_obj_align(lbl_coolant_valve_pos, LV_ALIGN_TOP_LEFT, 85, 15);
-    lv_label_set_text(lbl_coolant_valve_pos, "--%%");
-    lv_obj_set_style_text_color(lbl_coolant_valve_pos, UI_COLOR_TEXT_DIM, 0);
-    lv_obj_set_style_text_font(lbl_coolant_valve_pos, &lv_font_montserrat_14, 0);
+    // Fan speed label
+    lbl_fan_speed = lv_label_create(fan_panel);
+    lv_obj_align(lbl_fan_speed, LV_ALIGN_RIGHT_MID, -5, 0);
+    lv_obj_set_style_text_color(lbl_fan_speed, UI_COLOR_TEXT, 0);
+    lv_obj_set_style_text_font(lbl_fan_speed, &lv_font_montserrat_14, 0);
+    lv_label_set_text(lbl_fan_speed, "OFF");
+}
+
+static void create_hidden_labels(lv_obj_t *parent)
+{
+    // Create hidden dummy labels for data that's shown in debug screen
+    // This avoids NULL pointer crashes in hvac_ui_update when debug tab not visible
+    lbl_coolant_temp = lv_label_create(parent);
+    lv_obj_add_flag(lbl_coolant_temp, LV_OBJ_FLAG_HIDDEN);
+    lbl_duct_temp = lv_label_create(parent);
+    lv_obj_add_flag(lbl_duct_temp, LV_OBJ_FLAG_HIDDEN);
+    // Note: Valve position labels are created in debug screen now
 }
 
 /*******************************************************************************
@@ -469,7 +387,6 @@ static void create_valve_positions_panel(lv_obj_t *parent)
 static void update_mode_buttons(hvac_mode_t mode)
 {
     // Clear all checked states
-    lv_obj_clear_state(btn_mode_off, LV_STATE_CHECKED);
     lv_obj_clear_state(btn_mode_face, LV_STATE_CHECKED);
     lv_obj_clear_state(btn_mode_foot, LV_STATE_CHECKED);
     lv_obj_clear_state(btn_mode_defrost, LV_STATE_CHECKED);
@@ -478,7 +395,7 @@ static void update_mode_buttons(hvac_mode_t mode)
     // Set the active mode
     switch (mode) {
         case HVAC_MODE_OFF:
-            lv_obj_add_state(btn_mode_off, LV_STATE_CHECKED);
+            // No button checked when OFF
             break;
         case HVAC_MODE_FACE:
         case HVAC_MODE_FACE_FOOT:
@@ -496,6 +413,16 @@ static void update_mode_buttons(hvac_mode_t mode)
             break;
         default:
             break;
+    }
+    
+    // Disable/enable fan slider based on auto mode
+    if (mode == HVAC_MODE_AUTO) {
+        lv_obj_add_state(slider_fan, LV_STATE_DISABLED);
+        lv_obj_set_style_opa(slider_fan, LV_OPA_50, 0);
+        lv_label_set_text(lbl_fan_speed, "Auto");
+    } else {
+        lv_obj_clear_state(slider_fan, LV_STATE_DISABLED);
+        lv_obj_set_style_opa(slider_fan, LV_OPA_COVER, 0);
     }
 }
 
@@ -530,9 +457,10 @@ static void update_fan_slider(hvac_fan_speed_t level)
             text = "High";
             break;
         case HVAC_FAN_AUTO:
-            slider_val = 6;
+            // Don't update slider in auto mode - it's disabled
             text = "Auto";
-            break;
+            lv_label_set_text(lbl_fan_speed, text);
+            return;
         default:
             break;
     }
@@ -543,86 +471,135 @@ static void update_fan_slider(hvac_fan_speed_t level)
 
 static void create_debug_screen(lv_obj_t *parent)
 {
-    // Thermal Adaptation Status Panel
-    lv_obj_t *panel_thermal = lv_obj_create(parent);
-    lv_obj_set_size(panel_thermal, 220, 80);
-    lv_obj_align(panel_thermal, LV_ALIGN_TOP_MID, 0, 5);
-    lv_obj_set_style_bg_color(panel_thermal, UI_COLOR_PANEL, 0);
-    lv_obj_set_style_border_width(panel_thermal, 1, 0);
-    lv_obj_set_style_border_color(panel_thermal, UI_COLOR_ACCENT, 0);
-    lv_obj_set_style_radius(panel_thermal, 8, 0);
+    // Debug screen layout for landscape (320x~200 usable)
+    // Clean layout: Sensors left, Valves center, System right, Buttons bottom
     
-    lv_obj_t *lbl_thermal_title = lv_label_create(panel_thermal);
-    lv_obj_align(lbl_thermal_title, LV_ALIGN_TOP_LEFT, 5, 3);
-    lv_label_set_text(lbl_thermal_title, "Thermal Adaptation");
-    lv_obj_set_style_text_color(lbl_thermal_title, UI_COLOR_HIGHLIGHT, 0);
-    lv_obj_set_style_text_font(lbl_thermal_title, &lv_font_montserrat_14, 0);
+    // === LEFT COLUMN: Temperatures ===
+    lv_obj_t *panel_temps = lv_obj_create(parent);
+    lv_obj_set_size(panel_temps, 100, 120);
+    lv_obj_align(panel_temps, LV_ALIGN_TOP_LEFT, 2, 2);
+    lv_obj_set_style_bg_color(panel_temps, UI_COLOR_PANEL, 0);
+    lv_obj_set_style_border_width(panel_temps, 1, 0);
+    lv_obj_set_style_border_color(panel_temps, UI_COLOR_ACCENT, 0);
+    lv_obj_set_style_radius(panel_temps, 6, 0);
+    lv_obj_set_style_pad_all(panel_temps, 5, 0);
+    lv_obj_clear_flag(panel_temps, LV_OBJ_FLAG_SCROLLABLE);
     
-    lbl_thermal_status = lv_label_create(panel_thermal);
-    lv_obj_align(lbl_thermal_status, LV_ALIGN_TOP_LEFT, 5, 23);
-    lv_label_set_text(lbl_thermal_status, "Loading...");
-    lv_obj_set_style_text_color(lbl_thermal_status, UI_COLOR_TEXT, 0);
-    lv_obj_set_style_text_font(lbl_thermal_status, &lv_font_montserrat_14, 0);
+    lv_obj_t *lbl_temps_title = lv_label_create(panel_temps);
+    lv_obj_align(lbl_temps_title, LV_ALIGN_TOP_MID, 0, 0);
+    lv_label_set_text(lbl_temps_title, "Temps");
+    lv_obj_set_style_text_color(lbl_temps_title, UI_COLOR_HIGHLIGHT, 0);
+    lv_obj_set_style_text_font(lbl_temps_title, &lv_font_montserrat_14, 0);
     
-    // Raw Sensors Panel
-    lv_obj_t *panel_sensors = lv_obj_create(parent);
-    lv_obj_set_size(panel_sensors, 220, 85);
-    lv_obj_align(panel_sensors, LV_ALIGN_TOP_MID, 0, 90);
-    lv_obj_set_style_bg_color(panel_sensors, UI_COLOR_PANEL, 0);
-    lv_obj_set_style_border_width(panel_sensors, 1, 0);
-    lv_obj_set_style_border_color(panel_sensors, UI_COLOR_ACCENT, 0);
-    lv_obj_set_style_radius(panel_sensors, 8, 0);
-    
-    lv_obj_t *lbl_sensors_title = lv_label_create(panel_sensors);
-    lv_obj_align(lbl_sensors_title, LV_ALIGN_TOP_LEFT, 5, 3);
-    lv_label_set_text(lbl_sensors_title, "Raw Sensors");
-    lv_obj_set_style_text_color(lbl_sensors_title, UI_COLOR_HIGHLIGHT, 0);
-    lv_obj_set_style_text_font(lbl_sensors_title, &lv_font_montserrat_14, 0);
-    
-    lbl_raw_sensors = lv_label_create(panel_sensors);
-    lv_obj_align(lbl_raw_sensors, LV_ALIGN_TOP_LEFT, 5, 23);
-    lv_label_set_text(lbl_raw_sensors, "Loading...");
+    lbl_raw_sensors = lv_label_create(panel_temps);
+    lv_obj_align(lbl_raw_sensors, LV_ALIGN_TOP_LEFT, 0, 20);
+    lv_label_set_text(lbl_raw_sensors, "Cabin: --\nCoolant: --\nDuct: --\nHumid: --");
     lv_obj_set_style_text_color(lbl_raw_sensors, UI_COLOR_TEXT, 0);
-    lv_obj_set_style_text_font(lbl_raw_sensors, &lv_font_montserrat_14, 0);
     
-    // System Info Panel
+    // === CENTER COLUMN: Valves ===
+    lv_obj_t *panel_valves = lv_obj_create(parent);
+    lv_obj_set_size(panel_valves, 100, 120);
+    lv_obj_align(panel_valves, LV_ALIGN_TOP_MID, 0, 2);
+    lv_obj_set_style_bg_color(panel_valves, UI_COLOR_PANEL, 0);
+    lv_obj_set_style_border_width(panel_valves, 1, 0);
+    lv_obj_set_style_border_color(panel_valves, UI_COLOR_ACCENT, 0);
+    lv_obj_set_style_radius(panel_valves, 6, 0);
+    lv_obj_set_style_pad_all(panel_valves, 5, 0);
+    lv_obj_clear_flag(panel_valves, LV_OBJ_FLAG_SCROLLABLE);
+    
+    lv_obj_t *lbl_valves_title = lv_label_create(panel_valves);
+    lv_obj_align(lbl_valves_title, LV_ALIGN_TOP_MID, 0, 0);
+    lv_label_set_text(lbl_valves_title, "Valves");
+    lv_obj_set_style_text_color(lbl_valves_title, UI_COLOR_HIGHLIGHT, 0);
+    lv_obj_set_style_text_font(lbl_valves_title, &lv_font_montserrat_14, 0);
+    
+    // Valve labels with positions
+    lv_obj_t *lbl_v1 = lv_label_create(panel_valves);
+    lv_obj_align(lbl_v1, LV_ALIGN_TOP_LEFT, 0, 20);
+    lv_label_set_text(lbl_v1, "Center:");
+    lv_obj_set_style_text_color(lbl_v1, UI_COLOR_TEXT_DIM, 0);
+    
+    lbl_center_valve_pos = lv_label_create(panel_valves);
+    lv_obj_align(lbl_center_valve_pos, LV_ALIGN_TOP_RIGHT, 0, 20);
+    lv_label_set_text(lbl_center_valve_pos, "--%");
+    lv_obj_set_style_text_color(lbl_center_valve_pos, UI_COLOR_TEXT, 0);
+    
+    lv_obj_t *lbl_v2 = lv_label_create(panel_valves);
+    lv_obj_align(lbl_v2, LV_ALIGN_TOP_LEFT, 0, 40);
+    lv_label_set_text(lbl_v2, "Foot:");
+    lv_obj_set_style_text_color(lbl_v2, UI_COLOR_TEXT_DIM, 0);
+    
+    lbl_foot_valve_pos = lv_label_create(panel_valves);
+    lv_obj_align(lbl_foot_valve_pos, LV_ALIGN_TOP_RIGHT, 0, 40);
+    lv_label_set_text(lbl_foot_valve_pos, "--%");
+    lv_obj_set_style_text_color(lbl_foot_valve_pos, UI_COLOR_TEXT, 0);
+    
+    lv_obj_t *lbl_v3 = lv_label_create(panel_valves);
+    lv_obj_align(lbl_v3, LV_ALIGN_TOP_LEFT, 0, 60);
+    lv_label_set_text(lbl_v3, "Defrost:");
+    lv_obj_set_style_text_color(lbl_v3, UI_COLOR_TEXT_DIM, 0);
+    
+    lbl_windscreen_valve_pos = lv_label_create(panel_valves);
+    lv_obj_align(lbl_windscreen_valve_pos, LV_ALIGN_TOP_RIGHT, 0, 60);
+    lv_label_set_text(lbl_windscreen_valve_pos, "--%");
+    lv_obj_set_style_text_color(lbl_windscreen_valve_pos, UI_COLOR_TEXT, 0);
+    
+    lv_obj_t *lbl_v4 = lv_label_create(panel_valves);
+    lv_obj_align(lbl_v4, LV_ALIGN_TOP_LEFT, 0, 80);
+    lv_label_set_text(lbl_v4, "Coolant:");
+    lv_obj_set_style_text_color(lbl_v4, UI_COLOR_TEXT_DIM, 0);
+    
+    lbl_coolant_valve_pos = lv_label_create(panel_valves);
+    lv_obj_align(lbl_coolant_valve_pos, LV_ALIGN_TOP_RIGHT, 0, 80);
+    lv_label_set_text(lbl_coolant_valve_pos, "--%");
+    lv_obj_set_style_text_color(lbl_coolant_valve_pos, UI_COLOR_TEXT, 0);
+    
+    // === RIGHT COLUMN: System & Thermal ===
     lv_obj_t *panel_system = lv_obj_create(parent);
-    lv_obj_set_size(panel_system, 220, 65);
-    lv_obj_align(panel_system, LV_ALIGN_TOP_MID, 0, 180);
+    lv_obj_set_size(panel_system, 100, 120);
+    lv_obj_align(panel_system, LV_ALIGN_TOP_RIGHT, -2, 2);
     lv_obj_set_style_bg_color(panel_system, UI_COLOR_PANEL, 0);
     lv_obj_set_style_border_width(panel_system, 1, 0);
     lv_obj_set_style_border_color(panel_system, UI_COLOR_ACCENT, 0);
-    lv_obj_set_style_radius(panel_system, 8, 0);
+    lv_obj_set_style_radius(panel_system, 6, 0);
+    lv_obj_set_style_pad_all(panel_system, 5, 0);
+    lv_obj_clear_flag(panel_system, LV_OBJ_FLAG_SCROLLABLE);
     
     lv_obj_t *lbl_system_title = lv_label_create(panel_system);
-    lv_obj_align(lbl_system_title, LV_ALIGN_TOP_LEFT, 5, 3);
-    lv_label_set_text(lbl_system_title, "System Info");
+    lv_obj_align(lbl_system_title, LV_ALIGN_TOP_MID, 0, 0);
+    lv_label_set_text(lbl_system_title, "System");
     lv_obj_set_style_text_color(lbl_system_title, UI_COLOR_HIGHLIGHT, 0);
     lv_obj_set_style_text_font(lbl_system_title, &lv_font_montserrat_14, 0);
     
     lbl_system_info = lv_label_create(panel_system);
-    lv_obj_align(lbl_system_info, LV_ALIGN_TOP_LEFT, 5, 23);
-    lv_label_set_text(lbl_system_info, "Loading...");
+    lv_obj_align(lbl_system_info, LV_ALIGN_TOP_LEFT, 0, 20);
+    lv_label_set_text(lbl_system_info, "Uptime: --\nHeap: --");
     lv_obj_set_style_text_color(lbl_system_info, UI_COLOR_TEXT, 0);
-    lv_obj_set_style_text_font(lbl_system_info, &lv_font_montserrat_14, 0);
     
-    // Control Buttons
+    lbl_thermal_status = lv_label_create(panel_system);
+    lv_obj_align(lbl_thermal_status, LV_ALIGN_TOP_LEFT, 0, 55);
+    lv_label_set_text(lbl_thermal_status, "Thermal:\n--");
+    lv_obj_set_style_text_color(lbl_thermal_status, UI_COLOR_TEXT_DIM, 0);
+    
+    // === BOTTOM: Control Buttons ===
     btn_reset_cal = lv_btn_create(parent);
-    lv_obj_set_size(btn_reset_cal, 100, 35);
-    lv_obj_align(btn_reset_cal, LV_ALIGN_BOTTOM_LEFT, 15, -10);
+    lv_obj_set_size(btn_reset_cal, 95, 45);
+    lv_obj_align(btn_reset_cal, LV_ALIGN_BOTTOM_LEFT, 5, -5);
     lv_obj_set_style_bg_color(btn_reset_cal, UI_COLOR_WARNING, 0);
     lv_obj_add_event_cb(btn_reset_cal, btn_reset_cal_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lbl_reset = lv_label_create(btn_reset_cal);
     lv_label_set_text(lbl_reset, "Reset Cal");
+    lv_obj_set_style_text_font(lbl_reset, &lv_font_montserrat_14, 0);
     lv_obj_center(lbl_reset);
     
     btn_save_cal = lv_btn_create(parent);
-    lv_obj_set_size(btn_save_cal, 100, 35);
-    lv_obj_align(btn_save_cal, LV_ALIGN_BOTTOM_RIGHT, -15, -10);
+    lv_obj_set_size(btn_save_cal, 95, 45);
+    lv_obj_align(btn_save_cal, LV_ALIGN_BOTTOM_RIGHT, -5, -5);
     lv_obj_set_style_bg_color(btn_save_cal, UI_COLOR_ON, 0);
     lv_obj_add_event_cb(btn_save_cal, btn_save_cal_handler, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lbl_save = lv_label_create(btn_save_cal);
     lv_label_set_text(lbl_save, "Save Cal");
+    lv_obj_set_style_text_font(lbl_save, &lv_font_montserrat_14, 0);
     lv_obj_center(lbl_save);
 }
 
@@ -638,27 +615,25 @@ esp_err_t hvac_ui_init(void)
     scr_main = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_main, UI_COLOR_BG, 0);
     
-    // Create tabview with bottom tabs
-    tabview = lv_tabview_create(scr_main, LV_DIR_BOTTOM, 35);
+    // Create tabview with hidden tabs (swipe to navigate)
+    tabview = lv_tabview_create(scr_main, LV_DIR_BOTTOM, 0);  // 0 height hides tab bar
     lv_obj_set_style_bg_color(tabview, UI_COLOR_BG, 0);
     
     // Create tabs
     tab_main = lv_tabview_add_tab(tabview, "Main");
     tab_debug = lv_tabview_add_tab(tabview, "Debug");
     
-    // Set tab button colors
-    lv_obj_t *tab_btns = lv_tabview_get_tab_btns(tabview);
-    lv_obj_set_style_bg_color(tab_btns, UI_COLOR_PANEL, 0);
-    lv_obj_set_style_text_color(tab_btns, UI_COLOR_TEXT, 0);
-    lv_obj_set_style_text_color(tab_btns, UI_COLOR_HIGHLIGHT, LV_PART_ITEMS | LV_STATE_CHECKED);
+    // Disable scrolling on tabs (but allow swipe between tabs)
+    lv_obj_clear_flag(tab_main, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(tab_debug, LV_OBJ_FLAG_SCROLLABLE);
     
     // Create main tab UI components
-    create_temp_display(tab_main);
-    create_mode_buttons(tab_main);
+    // Layout: Left=A/C+Recirc, Center=Temp, Right=Modes, Bottom=Fan
+    create_left_buttons(tab_main);
+    create_center_temp_display(tab_main);
+    create_right_mode_buttons(tab_main);
     create_fan_control(tab_main);
-    create_feature_buttons(tab_main);
-    create_status_panel(tab_main);
-    create_valve_positions_panel(tab_main);
+    create_hidden_labels(tab_main);
     
     // Create debug tab UI
     create_debug_screen(tab_debug);
@@ -682,28 +657,13 @@ void hvac_ui_update(void)
     // Update cabin temperature
     if (!isnan(state.cabin_temp_c)) {
         if (state.temp_unit == TEMP_UNIT_CELSIUS) {
-            snprintf(buf, sizeof(buf), "%.1f°C", state.cabin_temp_c);
+            snprintf(buf, sizeof(buf), "Cabin: %.1f°C", state.cabin_temp_c);
         } else {
-            snprintf(buf, sizeof(buf), "%.1f°F", hvac_controller_c_to_f(state.cabin_temp_c));
+            snprintf(buf, sizeof(buf), "Cabin: %.1f°F", hvac_controller_c_to_f(state.cabin_temp_c));
         }
         lv_label_set_text(lbl_cabin_temp, buf);
-        
-        // Update temperature arc
-        int arc_val = (int)(state.cabin_temp_c);
-        if (arc_val < 16) arc_val = 16;
-        if (arc_val > 30) arc_val = 30;
-        lv_arc_set_value(arc_temp, arc_val);
-        
-        // Color based on heating/cooling
-        if (state.is_heating) {
-            lv_obj_set_style_arc_color(arc_temp, UI_COLOR_HEAT, LV_PART_INDICATOR);
-        } else if (state.is_cooling) {
-            lv_obj_set_style_arc_color(arc_temp, UI_COLOR_COOL, LV_PART_INDICATOR);
-        } else {
-            lv_obj_set_style_arc_color(arc_temp, UI_COLOR_HIGHLIGHT, LV_PART_INDICATOR);
-        }
     } else {
-        lv_label_set_text(lbl_cabin_temp, "--.-°C");
+        lv_label_set_text(lbl_cabin_temp, "Cabin: --.-°C");
     }
     
     // Update humidity
@@ -714,13 +674,22 @@ void hvac_ui_update(void)
         lv_label_set_text(lbl_humidity, "-- %RH");
     }
     
-    // Update target temperature
+    // Update target temperature (large setpoint display with decimal)
     if (state.temp_unit == TEMP_UNIT_CELSIUS) {
-        snprintf(buf, sizeof(buf), "Set: %.1f°C", state.target_temp_c);
+        snprintf(buf, sizeof(buf), "%.1f°C", state.target_temp_c);
     } else {
-        snprintf(buf, sizeof(buf), "Set: %.1f°F", hvac_controller_c_to_f(state.target_temp_c));
+        snprintf(buf, sizeof(buf), "%.1f°F", hvac_controller_c_to_f(state.target_temp_c));
     }
     lv_label_set_text(lbl_target_temp, buf);
+    
+    // Color setpoint based on heating/cooling state
+    if (state.is_heating) {
+        lv_obj_set_style_text_color(lbl_target_temp, UI_COLOR_HEAT, 0);
+    } else if (state.is_cooling) {
+        lv_obj_set_style_text_color(lbl_target_temp, UI_COLOR_COOL, 0);
+    } else {
+        lv_obj_set_style_text_color(lbl_target_temp, UI_COLOR_HIGHLIGHT, 0);
+    }
     
     // Update mode buttons only if changed
     if (state.mode != last_state.mode) {
@@ -774,29 +743,6 @@ void hvac_ui_update(void)
     
     snprintf(buf, sizeof(buf), "%d%%", state.coolant_valve_pos);
     lv_label_set_text(lbl_coolant_valve_pos, buf);
-    
-    if (state.sensor_fault) {
-        lv_label_set_text(lbl_status, "Sensor Fault");
-        lv_obj_set_style_text_color(lbl_status, UI_COLOR_WARNING, 0);
-    } else if (state.valve_fault) {
-        lv_label_set_text(lbl_status, "Valve Fault");
-        lv_obj_set_style_text_color(lbl_status, UI_COLOR_WARNING, 0);
-    } else if (state.mode == HVAC_MODE_OFF) {
-        lv_label_set_text(lbl_status, "OFF");
-        lv_obj_set_style_text_color(lbl_status, UI_COLOR_TEXT_DIM, 0);
-    } else if (state.is_heating) {
-        lv_label_set_text(lbl_status, "Heating");
-        lv_obj_set_style_text_color(lbl_status, UI_COLOR_HEAT, 0);
-    } else if (state.is_cooling) {
-        lv_label_set_text(lbl_status, "Cooling");
-        lv_obj_set_style_text_color(lbl_status, UI_COLOR_COOL, 0);
-    } else if (state.temp_reached) {
-        lv_label_set_text(lbl_status, "Comfort");
-        lv_obj_set_style_text_color(lbl_status, UI_COLOR_ON, 0);
-    } else {
-        lv_label_set_text(lbl_status, "Active");
-        lv_obj_set_style_text_color(lbl_status, UI_COLOR_HIGHLIGHT, 0);
-    }
 
     if (state.sensor_fault && !last_sensor_fault) {
         hvac_ui_show_error("Sensor fault detected. Check sensor wiring.");
@@ -813,6 +759,24 @@ void hvac_ui_update(void)
     
     // Update debug screen (only when visible)
     if (lv_tabview_get_tab_act(tabview) == 1) {
+        // Temps panel - raw sensor readings
+        snprintf(buf, sizeof(buf),
+            "Cabin: %.1f°C\nCoolant: %.1f°C\nDuct: %.1f°C\nHumid: %.0f%%",
+            state.cabin_temp_c, state.coolant_temp_c,
+            state.duct_temp_c, state.cabin_humidity);
+        lv_label_set_text(lbl_raw_sensors, buf);
+        
+        // Valve positions are already updated above (always visible labels now)
+        
+        // System info
+        uint32_t uptime_sec = xTaskGetTickCount() * portTICK_PERIOD_MS / 1000;
+        uint32_t free_heap = esp_get_free_heap_size();
+        snprintf(buf, sizeof(buf),
+                "Up: %luh%lum\nHeap: %luKB",
+                uptime_sec / 3600, (uptime_sec % 3600) / 60,
+                free_heap / 1024);
+        lv_label_set_text(lbl_system_info, buf);
+        
         // Thermal adaptation status
         float heating_rate, cooling_rate, adaptive_gain;
         uint32_t sample_count;
@@ -821,28 +785,10 @@ void hvac_ui_update(void)
                                           &sample_count, &calibrated);
         
         snprintf(buf, sizeof(buf), 
-                "Heat: %.3f°C/min\nCool: %.3f°C/min\nGain: %.1f\nSamples: %lu %s",
-                heating_rate, cooling_rate, adaptive_gain, sample_count,
-                calibrated ? "[CAL]" : "[LEARNING]");
+                "Thermal:\n%.2f/%.2f %s",
+                heating_rate, cooling_rate,
+                calibrated ? "CAL" : "LRN");
         lv_label_set_text(lbl_thermal_status, buf);
-        
-        // Raw sensors
-        snprintf(buf, sizeof(buf),
-            "Cabin: %.2f°C\nHumid: %.1f%%\nCoolant: %.1f°C\nDuct: %.1f°C\nValves: 0x%02X\nFaults: S:%d V:%d",
-            state.cabin_temp_c, state.cabin_humidity,
-            state.coolant_temp_c, state.duct_temp_c,
-            state.valve_fault_mask,
-            state.sensor_fault, state.valve_fault);
-        lv_label_set_text(lbl_raw_sensors, buf);
-        
-        // System info
-        uint32_t uptime_sec = xTaskGetTickCount() * portTICK_PERIOD_MS / 1000;
-        uint32_t free_heap = esp_get_free_heap_size();
-        snprintf(buf, sizeof(buf),
-                "Uptime: %luh %lum %lus\nFree Heap: %lu KB",
-                uptime_sec / 3600, (uptime_sec % 3600) / 60, uptime_sec % 60,
-                free_heap / 1024);
-        lv_label_set_text(lbl_system_info, buf);
     }
     
     // Save state for comparison
@@ -863,20 +809,26 @@ void hvac_ui_show_error(const char *message)
 {
     if (msg_box != NULL) {
         lv_msgbox_close(msg_box);
+        msg_box = NULL;
     }
     
     msg_box = lv_msgbox_create(NULL, "Error", message, NULL, true);
     lv_obj_center(msg_box);
+    // Register handler to clear msg_box when user closes it
+    lv_obj_add_event_cb(msg_box, msgbox_close_handler, LV_EVENT_DELETE, NULL);
 }
 
 void hvac_ui_show_info(const char *message)
 {
     if (msg_box != NULL) {
         lv_msgbox_close(msg_box);
+        msg_box = NULL;
     }
     
     msg_box = lv_msgbox_create(NULL, "Info", message, NULL, true);
     lv_obj_center(msg_box);
+    // Register handler to clear msg_box when user closes it
+    lv_obj_add_event_cb(msg_box, msgbox_close_handler, LV_EVENT_DELETE, NULL);
 }
 
 void hvac_ui_hide_message(void)

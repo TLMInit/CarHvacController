@@ -1,10 +1,9 @@
 dependencies:
-  idf: ">=5.0"
+  idf: ">=4.4"
   lvgl/lvgl: "~8.4.0"
   espressif/esp_lcd_touch_cst816s: "^1.0.3"
-  # SHT30-D temperature/humidity sensor library - using esp-idf-lib version
-  esp-idf-lib/sht3x: "*"
   # DS18B20 temperature sensor (1-Wire) library
   espressif/ds18b20: "*"
   # OneWire bus driver for DS18B20
   espressif/onewire_bus: "*"
+  # Note: SHT30-D uses custom driver (new I2C master API), not esp-idf-lib

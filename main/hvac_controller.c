@@ -365,16 +365,26 @@ static void run_temperature_control(void)
     
     // Auto fan control
     if (hvac_state.fan_level == HVAC_FAN_AUTO) {
-        uint8_t auto_speed;
-        if (fabsf(error) > 5.0f) {
-            auto_speed = 100;  // High speed for large error
-        } else if (fabsf(error) > 3.0f) {
-            auto_speed = 70;
-        } else if (fabsf(error) > 1.0f) {
-            auto_speed = 50;
+        // Compute a continuous blower speed between LOW and 100% based on temperature error
+        float abs_error = fabsf(error);
+        float min_speed = (float)BTS7960_FAN_PERCENT_LOW;  // same as manual LOW
+        float auto_speed_f;
+
+        if (abs_error <= 0.5f) {
+            // Very close to target: stay at minimum auto speed
+            auto_speed_f = min_speed;
+        } else if (abs_error >= 5.0f) {
+            // Very large error: full speed
+            auto_speed_f = 100.0f;
         } else {
-            auto_speed = 30;   // Low speed when near target
+            // Linearly scale between min_speed and 100% as error grows
+            float t = (abs_error - 0.5f) / (5.0f - 0.5f);
+            if (t < 0.0f) t = 0.0f;
+            if (t > 1.0f) t = 1.0f;
+            auto_speed_f = min_speed + t * (100.0f - min_speed);
         }
+
+        uint8_t auto_speed = (uint8_t)(auto_speed_f + 0.5f); // round to nearest
         bts7960_set_speed(auto_speed);
         hvac_state.blower_speed = auto_speed;
     }

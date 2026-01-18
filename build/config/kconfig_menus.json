@@ -22509,7 +22509,10 @@
                                         "help": "If malloc() is capable of also allocating SPI-connected ram, its allocation strategy will prefer to\nallocate chunks less than this size in internal memory, while allocations larger than this will be\ndone from external RAM. If allocation from the preferred region fails, an attempt is made to allocate\nfrom the non-preferred region instead, so malloc() will not suddenly fail when either internal or\nexternal memory is full.",
                                         "id": "SPIRAM_MALLOC_ALWAYSINTERNAL",
                                         "name": "SPIRAM_MALLOC_ALWAYSINTERNAL",
-                                        "range": null,
+                                        "range": [
+                                            0,
+                                            131072
+                                        ],
                                         "title": "Maximum malloc() size, in bytes, to always put in internal memory",
                                         "type": "int"
                                     },
@@ -22529,7 +22532,10 @@
                                         "help": "Because the external/internal RAM allocation strategy is not always perfect, it sometimes may happen\nthat the internal memory is entirely filled up. This causes allocations that are specifically done in\ninternal memory, for example the stack for new tasks or memory to service DMA or have memory that's\nalso available when SPI cache is down, to fail. This option reserves a pool specifically for requests\nlike that; the memory in this pool is not given out when a normal malloc() is called.\n\nSet this to 0 to disable this feature.\n\nNote that because FreeRTOS stacks are forced to internal memory, they will also use this memory pool;\nbe sure to keep this in mind when adjusting this value.\n\nNote also that the DMA reserved pool may not be one single contiguous memory region, depending on the\nconfigured size and the static memory usage of the app.",
                                         "id": "SPIRAM_MALLOC_RESERVE_INTERNAL",
                                         "name": "SPIRAM_MALLOC_RESERVE_INTERNAL",
-                                        "range": null,
+                                        "range": [
+                                            0,
+                                            262144
+                                        ],
                                         "title": "Reserve this amount of bytes for data that specifically needs to be in DMA or internal memory",
                                         "type": "int"
                                     },
@@ -22905,10 +22911,7 @@
                         "help": "This baud rate is used by both the ESP-IDF Bootloader and the app (including\nboot log output and default standard input/output/error of the app).\n\nThe app's maximum baud rate depends on the UART clock source. If Power Management is disabled,\nthe UART clock source is the APB clock and all baud rates in the available range will be sufficiently\naccurate. If Power Management is enabled, REF_TICK clock source is used so the baud rate is divided\nfrom 1MHz. Baud rates above 1Mbps are not possible and values between 500Kbps and 1Mbps may not be\naccurate.\n\nIf the configuration is different in the Bootloader binary compared to the app binary, UART\nis reconfigured after the bootloader exits and the app starts.",
                         "id": "ESP_CONSOLE_UART_BAUDRATE",
                         "name": "ESP_CONSOLE_UART_BAUDRATE",
-                        "range": [
-                            1200,
-                            4000000
-                        ],
+                        "range": null,
                         "title": "UART console baud rate",
                         "type": "int"
                     },
@@ -26405,7 +26408,10 @@
                         "help": "Maximum long filename length. Can be reduced to save RAM.",
                         "id": "FATFS_MAX_LFN",
                         "name": "FATFS_MAX_LFN",
-                        "range": null,
+                        "range": [
+                            12,
+                            255
+                        ],
                         "title": "Max long filename length",
                         "type": "int"
                     },
@@ -35880,87 +35886,6 @@
                     {
                         "children": [],
                         "depends_on": null,
-                        "help": "Select this option to use the older ESP-IDF I2C driver API (driver/i2c.h)\ninstead of the newer driver API (driver/i2c_master.h).\n\nThis is automatically determined by the build system based on your ESP-IDF version.\nFor ESP-IDF versions prior to v5.3, the legacy driver will be used automatically.\nYou can manually override this setting if needed.",
-                        "id": "I2CDEV_USE_LEGACY_DRIVER",
-                        "name": "I2CDEV_USE_LEGACY_DRIVER",
-                        "range": null,
-                        "title": "Use Legacy I2C Driver API",
-                        "type": "bool"
-                    },
-                    {
-                        "children": [],
-                        "depends_on": "!IDF_TARGET_ESP8266",
-                        "help": "When enabled, internal pullup resistors are automatically enabled\nwhen both sda_pullup_en and scl_pullup_en are false (default state).\n\nUseful for development and prototyping. Disable for production \nsystems with external pullups to avoid interference.\n\nConsiderations:\n- May increase power consumption slightly\n- Could interfere with carefully tuned external pullups\n- Not recommended for battery-powered applications\n\nNote: This option only affects the modern i2cdev driver (ESP32 family).\nLegacy driver behavior is unchanged for compatibility.",
-                        "id": "I2CDEV_AUTO_ENABLE_PULLUPS",
-                        "name": "I2CDEV_AUTO_ENABLE_PULLUPS",
-                        "range": null,
-                        "title": "Automatically enable internal I2C pullups when not configured",
-                        "type": "bool"
-                    },
-                    {
-                        "children": [],
-                        "depends_on": null,
-                        "help": "Default SDA pin for I2C devices.",
-                        "id": "I2CDEV_DEFAULT_SDA_PIN",
-                        "name": "I2CDEV_DEFAULT_SDA_PIN",
-                        "range": null,
-                        "title": "Default I2C SDA pin",
-                        "type": "int"
-                    },
-                    {
-                        "children": [],
-                        "depends_on": null,
-                        "help": "Default SCL pin for I2C devices.",
-                        "id": "I2CDEV_DEFAULT_SCL_PIN",
-                        "name": "I2CDEV_DEFAULT_SCL_PIN",
-                        "range": null,
-                        "title": "Default I2C SCL pin",
-                        "type": "int"
-                    },
-                    {
-                        "children": [],
-                        "depends_on": null,
-                        "help": "Maximum number of devices that can be registered on a single I2C port.",
-                        "id": "I2CDEV_MAX_DEVICES_PER_PORT",
-                        "name": "I2CDEV_MAX_DEVICES_PER_PORT",
-                        "range": null,
-                        "title": "Maximum number of devices per I2C port",
-                        "type": "int"
-                    },
-                    {
-                        "children": [],
-                        "depends_on": null,
-                        "help": null,
-                        "id": "I2CDEV_TIMEOUT",
-                        "name": "I2CDEV_TIMEOUT",
-                        "range": [
-                            10,
-                            5000
-                        ],
-                        "title": "I2C transaction timeout, milliseconds",
-                        "type": "int"
-                    },
-                    {
-                        "children": [],
-                        "depends_on": null,
-                        "help": "Attention! After enabling this option, all I2C device\ndrivers will become non-thread safe. \nUse this option if you need to access your I2C devices\nfrom interrupt handlers.",
-                        "id": "I2CDEV_NOLOCK",
-                        "name": "I2CDEV_NOLOCK",
-                        "range": null,
-                        "title": "Disable the use of mutexes",
-                        "type": "bool"
-                    }
-                ],
-                "depends_on": null,
-                "id": "component-config-i2c-device-library-C:-Users-Admin-Documents-CarHvacController-managed_components-esp-idf-lib__i2cdev-Kconfig-1",
-                "title": "I2C Device Library",
-                "type": "menu"
-            },
-            {
-                "children": [
-                    {
-                        "children": [],
-                        "depends_on": null,
                         "help": null,
                         "id": "ESP_LCD_TOUCH_MAX_POINTS",
                         "name": "ESP_LCD_TOUCH_MAX_POINTS",
@@ -35988,6 +35913,24 @@
                 "depends_on": null,
                 "id": "component-config-esp-lcd-touch-C:-Users-Admin-Documents-CarHvacController-managed_components-espressif__esp_lcd_touch-Kconfig-1",
                 "title": "ESP LCD TOUCH",
+                "type": "menu"
+            },
+            {
+                "children": [
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "For some CST816 series chips, reading ID may cause initialization failure.",
+                        "id": "ESP_LCD_TOUCH_CST816S_DISABLE_READ_ID",
+                        "name": "ESP_LCD_TOUCH_CST816S_DISABLE_READ_ID",
+                        "range": null,
+                        "title": "Disable reading ID during initialization",
+                        "type": "bool"
+                    }
+                ],
+                "depends_on": null,
+                "id": "component-config-esp-lcd-touch-cst816s-C:-Users-Admin-Documents-CarHvacController-managed_components-espressif__esp_lcd_touch_cst816s-Kconfig-1",
+                "title": "ESP LCD TOUCH - CST816S",
                 "type": "menu"
             },
             {

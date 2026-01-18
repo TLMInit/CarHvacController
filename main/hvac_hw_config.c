@@ -190,6 +190,10 @@ esp_err_t hvac_hw_backlight_init(void)
 {
     ESP_LOGI(TAG, "Initializing LCD backlight PWM");
     
+    // First set GPIO direction to ensure backlight is controlled
+    gpio_set_direction(LCD_PIN_BACKLIGHT, GPIO_MODE_OUTPUT);
+    gpio_set_level(LCD_PIN_BACKLIGHT, 0);  // Start with backlight off
+    
     // Backlight PWM Timer configuration
     ledc_timer_config_t bl_timer = {
         .speed_mode = BACKLIGHT_LEDC_MODE,
@@ -200,19 +204,19 @@ esp_err_t hvac_hw_backlight_init(void)
     };
     ESP_ERROR_CHECK(ledc_timer_config(&bl_timer));
     
-    // Backlight PWM channel configuration
+    // Backlight PWM channel configuration - start with 0% duty (off)
     ledc_channel_config_t bl_channel = {
         .speed_mode = BACKLIGHT_LEDC_MODE,
         .channel = BACKLIGHT_LEDC_CHANNEL,
         .timer_sel = BACKLIGHT_LEDC_TIMER,
         .intr_type = LEDC_INTR_DISABLE,
         .gpio_num = LCD_PIN_BACKLIGHT,
-        .duty = BACKLIGHT_DEFAULT_DUTY,
+        .duty = 0,  // Start off, will be turned on after display init
         .hpoint = 0,
     };
     ESP_ERROR_CHECK(ledc_channel_config(&bl_channel));
     
-    ESP_LOGI(TAG, "Backlight initialized at 100%% brightness");
+    ESP_LOGI(TAG, "Backlight initialized (off, will turn on after display ready)");
     return ESP_OK;
 }
 

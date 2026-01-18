@@ -27,11 +27,16 @@ extern "C" {
 #define LCD_PIN_MISO            GPIO_NUM_40
 #define LCD_PIN_DC              GPIO_NUM_42
 #define LCD_PIN_CS              GPIO_NUM_45
-#define LCD_PIN_RST             GPIO_NUM_NC     // Not connected
+#define LCD_PIN_RST             -1              // Not connected
 #define LCD_PIN_BACKLIGHT       GPIO_NUM_1
 
-#define LCD_H_RES               240
-#define LCD_V_RES               320
+// Landscape orientation: 320 wide x 240 tall
+#define LCD_H_RES               320
+#define LCD_V_RES               240
+
+// Make LCD resolution available without LCD_ prefix for touch config
+#define DISPLAY_H_RES           LCD_H_RES
+#define DISPLAY_V_RES           LCD_V_RES
 #define LCD_PIXEL_CLOCK_HZ      (80 * 1000 * 1000)
 #define LCD_CMD_BITS            8
 #define LCD_PARAM_BITS          8
@@ -41,8 +46,8 @@ extern "C" {
 #define LCD_DRAW_BUFFER_HEIGHT  50
 #define LCD_INVERT_COLOR        true
 #define LCD_MIRROR_X            false
-#define LCD_MIRROR_Y            false
-#define LCD_SWAP_XY             false
+#define LCD_MIRROR_Y            true
+#define LCD_SWAP_XY             true   // Enable XY swap for landscape
 
 // SPI DMA Configuration
 #define LCD_SPI_DMA_CHANNEL     SPI_DMA_CH_AUTO
@@ -62,16 +67,17 @@ extern "C" {
 
 /*******************************************************************************
  * Touch Panel Configuration (CST816S via I2C)
+ * Configured for landscape orientation with XY swap
  ******************************************************************************/
 #define TOUCH_I2C_PORT          I2C_NUM_0
 #define TOUCH_PIN_SDA           GPIO_NUM_48
 #define TOUCH_PIN_SCL           GPIO_NUM_47
 #define TOUCH_I2C_ADDR          0x15
 #define TOUCH_I2C_SPEED_HZ      400000  // 400 kHz
-#define TOUCH_X_MAX             320
-#define TOUCH_Y_MAX             240
-#define TOUCH_PIN_RST           GPIO_NUM_NC
-#define TOUCH_PIN_INT           GPIO_NUM_NC
+#define TOUCH_X_MAX             LCD_H_RES   // 320 - landscape width
+#define TOUCH_Y_MAX             LCD_V_RES   // 240 - landscape height
+#define TOUCH_PIN_RST           -1
+#define TOUCH_PIN_INT           -1
 
 /*******************************************************************************
  * TB6612FNG Motor Driver Configuration (Valve Control)
@@ -95,19 +101,21 @@ extern "C" {
 #define TB6612_2_AIN1           GPIO_NUM_8      // Foot valve
 #define TB6612_2_AIN2           GPIO_NUM_7
 #define TB6612_2_PWMA           GPIO_NUM_21
-#define TB6612_2_BIN1           GPIO_NUM_20     // Windscreen valve
-#define TB6612_2_BIN2           GPIO_NUM_19
+// Note: GPIO19/20 are USB D-/D+ on ESP32-S3, cannot use! 
+// Note: GPIO3/46 are strapping pins, avoid if possible
+// Using GPIO5 and GPIO41 instead
+#define TB6612_2_BIN1           GPIO_NUM_5      // Windscreen valve direction 1
+#define TB6612_2_BIN2           GPIO_NUM_41     // Windscreen valve direction 2
 #define TB6612_2_PWMB           GPIO_NUM_10
 
 // TB6612FNG #3: Coolant Valve & Spare - STBY tied to 3V3 (always enabled)
-// Note: GPIO47/48 conflict with touch I2C, using GPIO35/36 instead
-#define TB6612_3_AIN1           GPIO_NUM_36     // Coolant valve direction 1
-#define TB6612_3_AIN2           GPIO_NUM_15     // Coolant valve direction 2
-#define TB6612_3_PWMA           GPIO_NUM_35     // Coolant valve PWM
-// Spare motor output - NOT CONNECTED for now (left in code for future use)
-#define TB6612_3_BIN1           GPIO_NUM_11     // Spare motor direction 1 (NC)
-#define TB6612_3_BIN2           GPIO_NUM_12     // Spare motor direction 2 (NC)
-#define TB6612_3_PWMB           GPIO_NUM_13     // Spare motor PWM (NC)
+// Note: GPIO33-37 are reserved for octal PSRAM on ESP32-S3!
+// Using GPIO11/12 for direction, GPIO13 for PWM
+#define TB6612_3_AIN1           GPIO_NUM_11     // Coolant valve direction 1
+#define TB6612_3_AIN2           GPIO_NUM_12     // Coolant valve direction 2
+#define TB6612_3_PWMA           GPIO_NUM_13     // Coolant valve PWM
+// Spare motor output - NOT USED (no more GPIO available)
+// If needed in future, may need to remove some functionality or use I2C GPIO expander
 
 // TB6612FNG PWM Configuration
 #define TB6612_PWM_FREQ_HZ      20000   // 20 kHz for quiet operation

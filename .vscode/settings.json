@@ -10,17 +10,18 @@
     },
     "idf.espIdfPathWin": "C:\\Users\\Admin\\esp\\master\\esp-idf",
     "idf.openOcdConfigs": [
-        "interface/ftdi/esp32_devkitj_v1.cfg",
-        "target/esp32s3.cfg"
+        "board/esp32s3-builtin.cfg"
     ],
-    "idf.portWin": "COM84",
+    "idf.portWin": "COM4",
     "idf.pythonBinPathWin": "C:\\Users\\Admin\\.espressif\\python_env\\idf6.1_py3.11_env\\Scripts\\python.exe",
     "idf.toolsPathWin": "C:\\Users\\Admin\\.espressif",
     "files.associations": {
         "esp_log.h": "c",
         "lv_demos.h": "c"
     },
-    "idf.flashType": "DFU",
+    "idf.flashType": "UART",
     "idf.pythonInstallPath": "C:\\Users\\Admin\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
-    "idf.currentSetup": "C:\\Users\\Admin\\esp\\master\\esp-idf"
+    "idf.currentSetup": "C:\\Users\\Admin\\esp\\master\\esp-idf",
+    "idf.monitorPort": "COM5",
+    "idf.flashBaudRate": "115200"
 }

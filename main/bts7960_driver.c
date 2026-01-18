@@ -37,13 +37,13 @@ static int16_t ramp_step_size = 0;
 
 // Fan level to speed mapping (percentage)
 static const uint8_t fan_level_speeds[] = {
-    0,      // HVAC_FAN_OFF
-    20,     // HVAC_FAN_LOW
-    35,     // HVAC_FAN_MEDIUM_LOW
-    50,     // HVAC_FAN_MEDIUM
-    70,     // HVAC_FAN_MEDIUM_HIGH
-    100,    // HVAC_FAN_HIGH
-    50,     // HVAC_FAN_AUTO (default to medium)
+    BTS7960_FAN_PERCENT_OFF,          // HVAC_FAN_OFF
+    BTS7960_FAN_PERCENT_LOW,          // HVAC_FAN_LOW
+    BTS7960_FAN_PERCENT_MEDIUM_LOW,   // HVAC_FAN_MEDIUM_LOW
+    BTS7960_FAN_PERCENT_MEDIUM,       // HVAC_FAN_MEDIUM
+    BTS7960_FAN_PERCENT_MEDIUM_HIGH,  // HVAC_FAN_MEDIUM_HIGH
+    BTS7960_FAN_PERCENT_HIGH,         // HVAC_FAN_HIGH
+    BTS7960_FAN_PERCENT_AUTO_DEFAULT, // HVAC_FAN_AUTO (default)
 };
 
 /*******************************************************************************

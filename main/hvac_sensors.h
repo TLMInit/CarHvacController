@@ -12,6 +12,7 @@
 #define HVAC_SENSORS_H
 
 #include "esp_err.h"
+#include "driver/i2c_master.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -77,9 +78,10 @@ typedef struct {
 
 /**
  * @brief Initialize all HVAC sensors
+ * @param i2c_bus I2C master bus handle for SHT30 sensor
  * @return ESP_OK on success
  */
-esp_err_t hvac_sensors_init(void);
+esp_err_t hvac_sensors_init(i2c_master_bus_handle_t i2c_bus);
 
 /**
  * @brief Deinitialize all sensors

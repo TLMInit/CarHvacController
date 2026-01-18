@@ -13,6 +13,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Fan speed percentage mapping
+#define BTS7960_FAN_PERCENT_OFF          0
+#define BTS7960_FAN_PERCENT_LOW          30
+#define BTS7960_FAN_PERCENT_MEDIUM_LOW   45
+#define BTS7960_FAN_PERCENT_MEDIUM       60
+#define BTS7960_FAN_PERCENT_MEDIUM_HIGH  80
+#define BTS7960_FAN_PERCENT_HIGH         100
+#define BTS7960_FAN_PERCENT_AUTO_DEFAULT 50
+
 #ifdef __cplusplus
 extern "C" {
 #endif
