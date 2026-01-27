@@ -13,10 +13,17 @@
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
 #include "driver/i2c_master.h"
+#include "driver/uart.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/*******************************************************************************
+ * Remote IO Configuration
+ * Set to 1 to use IO Node over UART, 0 for local IO (no UART)
+ ******************************************************************************/
+#define USE_REMOTE_IO           1
 
 /*******************************************************************************
  * Display Configuration (ST7789 via SPI)
@@ -90,30 +97,26 @@ extern "C" {
  ******************************************************************************/
 
 // TB6612FNG #1: Center Valves (2x) - STBY tied to 3V3 (always enabled)
+// TB6612FNG #1: Center Valves (2 motors) - STBY tied to 3V3 (always enabled)
 #define TB6612_1_AIN1           GPIO_NUM_4
-#define TB6612_1_AIN2           GPIO_NUM_6
-#define TB6612_1_PWMA           GPIO_NUM_2
-#define TB6612_1_BIN1           GPIO_NUM_17
+#define TB6612_1_AIN2           GPIO_NUM_16
+#define TB6612_1_PWMA           GPIO_NUM_17
+#define TB6612_1_BIN1           GPIO_NUM_5
 #define TB6612_1_BIN2           GPIO_NUM_18
-#define TB6612_1_PWMB           GPIO_NUM_16
+#define TB6612_1_PWMB           GPIO_NUM_15
 
 // TB6612FNG #2: Foot & Windscreen Valves - STBY tied to 3V3 (always enabled)
-#define TB6612_2_AIN1           GPIO_NUM_8      // Foot valve
-#define TB6612_2_AIN2           GPIO_NUM_7
-#define TB6612_2_PWMA           GPIO_NUM_21
-// Note: GPIO19/20 are USB D-/D+ on ESP32-S3, cannot use! 
-// Note: GPIO3/46 are strapping pins, avoid if possible
-// Using GPIO5 and GPIO41 instead
-#define TB6612_2_BIN1           GPIO_NUM_5      // Windscreen valve direction 1
-#define TB6612_2_BIN2           GPIO_NUM_41     // Windscreen valve direction 2
-#define TB6612_2_PWMB           GPIO_NUM_10
+#define TB6612_2_AIN1           GPIO_NUM_38     // Foot valve (from schematic)
+#define TB6612_2_AIN2           GPIO_NUM_39
+#define TB6612_2_PWMA           GPIO_NUM_40
+#define TB6612_2_BIN1           GPIO_NUM_41     // Windscreen valve
+#define TB6612_2_BIN2           GPIO_NUM_42
+#define TB6612_2_PWMB           GPIO_NUM_47
 
 // TB6612FNG #3: Coolant Valve & Spare - STBY tied to 3V3 (always enabled)
-// Note: GPIO33-37 are reserved for octal PSRAM on ESP32-S3!
-// Using GPIO11/12 for direction, GPIO13 for PWM
-#define TB6612_3_AIN1           GPIO_NUM_11     // Coolant valve direction 1
-#define TB6612_3_AIN2           GPIO_NUM_12     // Coolant valve direction 2
-#define TB6612_3_PWMA           GPIO_NUM_13     // Coolant valve PWM
+#define TB6612_3_AIN1           GPIO_NUM_12     // Coolant valve (from schematic)
+#define TB6612_3_AIN2           GPIO_NUM_14
+#define TB6612_3_PWMA           GPIO_NUM_13
 // Spare motor output - NOT USED (no more GPIO available)
 // If needed in future, may need to remove some functionality or use I2C GPIO expander
 
@@ -136,7 +139,7 @@ extern "C" {
  * 
  * BTS7960 is a high-current H-bridge for the HVAC blower motor
  ******************************************************************************/
-#define BTS7960_RPWM            GPIO_NUM_14     // Right PWM (speed control)
+#define BTS7960_RPWM            GPIO_NUM_1      // Right PWM (from schematic)
 // Note: R_EN tied to 3V3, L_EN tied to GND, L_PWM not connected
 
 // BTS7960 PWM Configuration
@@ -158,15 +161,27 @@ extern "C" {
 #define SHT30_I2C_SPEED_HZ      100000          // 100 kHz
 
 /*******************************************************************************
- * DS18B20 Temperature Sensors (1-Wire)
+ * DS18B20 Temperature Sensors (1-Wire) - ON REMOTE IO NODE
  * - One for coolant temperature
  * - One for duct air temperature
  ******************************************************************************/
-#define DS18B20_ONEWIRE_PIN     GPIO_NUM_9      // Shared 1-Wire bus for both sensors
+#define DS18B20_ONEWIRE_PIN     GPIO_NUM_7      // On IO Node
 #define DS18B20_MAX_SENSORS     2
 
 /*******************************************************************************
- * ADS1115 ADC Configuration (I2C)
+ * Remote IO Node UART Configuration
+ * All GPIO, PWM, I2C, 1-Wire operations go through UART to IO Node
+ * IO Node pins: TX=GPIO2, RX=GPIO21 at 921600 baud
+ ******************************************************************************/
+#if USE_REMOTE_IO
+#define REMOTE_IO_UART_NUM      UART_NUM_1
+#define REMOTE_IO_TX_PIN        GPIO_NUM_10     // Controller TX -> IO Node RX (GPIO21)
+#define REMOTE_IO_RX_PIN        GPIO_NUM_11     // Controller RX <- IO Node TX (GPIO2)  
+#define REMOTE_IO_BAUD_RATE     921600
+#endif // USE_REMOTE_IO
+
+/*******************************************************************************
+ * ADS1115 ADC Configuration (I2C) - ON REMOTE IO NODE
  * Two 16-bit ADC modules for analog signal measurement
  * - ADS1115 #1: 4 analog inputs (0-3V3 range)
  * - ADS1115 #2: 4 analog inputs (0-3V3 range)

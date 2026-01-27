@@ -1,6 +1,9 @@
 /**
  * @file ads1115_driver.c
  * @brief ADS1115 16-bit ADC driver implementation
+ * 
+ * When USE_REMOTE_IO=1, reads are performed via UART to the IO Node.
+ * When USE_REMOTE_IO=0, reads are performed via local I2C.
  */
 
 #include "ads1115_driver.h"
@@ -9,6 +12,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <math.h>
+
+#if USE_REMOTE_IO
+#include "remote_io.h"
+#endif
 
 static const char *TAG = "ADS1115";
 
@@ -55,19 +62,24 @@ static const char *TAG = "ADS1115";
  * @brief Driver state structure
  */
 typedef struct {
+#if !USE_REMOTE_IO
     i2c_master_dev_handle_t ads1115_1;  // Device at address 0x48
     i2c_master_dev_handle_t ads1115_2;  // Device at address 0x49
+#endif
     SemaphoreHandle_t mutex;
     bool initialized;
 } ads1115_driver_t;
 
 static ads1115_driver_t driver = {
+#if !USE_REMOTE_IO
     .ads1115_1 = NULL,
     .ads1115_2 = NULL,
+#endif
     .mutex = NULL,
     .initialized = false
 };
 
+#if !USE_REMOTE_IO
 /**
  * @brief Get the correct I2C device handle based on channel
  */
@@ -148,6 +160,7 @@ static esp_err_t ads1115_read_channel(i2c_master_dev_handle_t device,
     // Read the result
     return ads1115_read_conversion(device, value);
 }
+#endif // !USE_REMOTE_IO
 
 esp_err_t ads1115_init(i2c_master_bus_handle_t i2c_bus)
 {
@@ -155,6 +168,22 @@ esp_err_t ads1115_init(i2c_master_bus_handle_t i2c_bus)
         return ESP_OK;  // Already initialized
     }
     
+#if USE_REMOTE_IO
+    // Remote IO mode - no local I2C setup needed
+    // IO Node handles ADS1115 directly
+    (void)i2c_bus;  // Unused in remote mode
+    
+    // Create mutex for thread safety
+    driver.mutex = xSemaphoreCreateMutex();
+    if (!driver.mutex) {
+        ESP_LOGE(TAG, "Failed to create mutex");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    driver.initialized = true;
+    ESP_LOGI(TAG, "ADS1115 driver initialized (remote IO mode)");
+    return ESP_OK;
+#else
     if (!i2c_bus) {
         ESP_LOGE(TAG, "Invalid I2C bus handle");
         return ESP_ERR_INVALID_ARG;
@@ -192,6 +221,7 @@ esp_err_t ads1115_init(i2c_master_bus_handle_t i2c_bus)
     ESP_LOGI(TAG, "ADS1115 driver initialized successfully");
     
     return ESP_OK;
+#endif // USE_REMOTE_IO
 }
 
 esp_err_t ads1115_read_raw(ads1115_channel_t channel, ads1115_raw_t *value)
@@ -205,10 +235,19 @@ esp_err_t ads1115_read_raw(ads1115_channel_t channel, ads1115_raw_t *value)
         return ESP_FAIL;
     }
     
+#if USE_REMOTE_IO
+    // Read via remote IO Node
+    // Channels 0-3 use ADS1115_ADDR_1, channels 4-7 use ADS1115_ADDR_2
+    uint8_t i2c_addr = (channel < 4) ? ADS1115_ADDR_1 : ADS1115_ADDR_2;
+    uint8_t physical_ch = channel & 0x03;
+    
+    esp_err_t ret = remote_ads1115_read(0, i2c_addr, physical_ch, value);
+#else
     i2c_master_dev_handle_t device = ads1115_get_device(channel);
     uint8_t physical_ch = ads1115_get_physical_channel(channel);
     
     esp_err_t ret = ads1115_read_channel(device, physical_ch, value);
+#endif
     
     xSemaphoreGive(driver.mutex);
     
@@ -229,13 +268,20 @@ esp_err_t ads1115_read_mv(ads1115_channel_t channel, ads1115_mv_t *voltage)
     }
     
     // Convert to voltage in mV
-    // With 2.048V gain, 1 LSB = 0.0625 mV (for ±4096 counts)
-    // Full scale (2048) = 2048 mV = 2.048V
-    // Conversion: (raw / 32767) * 2048 mV, but we clamp to 0-3300mV
+    // ADS1115 with 2.048V gain gives ±2.048V range
+    // Single-ended input (0V-3.3V) appears as 0-32767 raw
+    // Conversion: (raw / 32767) * 2048 mV for positive readings
     
-    int32_t mv = (int32_t)raw;
-    mv = (mv * 2048) / 32767;  // Convert to ±2048 mV range
-    mv = (mv + 2048);           // Shift to 0-4096 mV (center was -2048)
+    int32_t mv;
+    if (raw < 0) {
+        // Negative readings shouldn't happen with single-ended, treat as 0
+        mv = 0;
+    } else {
+        // Positive: scale to 0-2048mV range, then scale to 0-3300mV
+        mv = ((int32_t)raw * 2048) / 32767;
+        // Scale from 2048mV range to actual 3300mV range
+        mv = (mv * 3300) / 2048;
+    }
     
     if (mv < 0) mv = 0;
     if (mv > 3300) mv = 3300;
@@ -246,6 +292,11 @@ esp_err_t ads1115_read_mv(ads1115_channel_t channel, ads1115_mv_t *voltage)
 
 valve_position_percent_t ads1115_voltage_to_position(ads1115_mv_t voltage)
 {
+    // Ignore tiny noise on floating channels
+    if (voltage < 50) {
+        return 0;
+    }
+
     // Linear conversion: 0 mV = 0%, 3300 mV = 100%
     uint32_t percent = (voltage * 100) / 3300;
     
@@ -276,6 +327,7 @@ esp_err_t ads1115_deinit(void)
         return ESP_OK;
     }
     
+#if !USE_REMOTE_IO
     if (driver.ads1115_1) {
         i2c_master_bus_rm_device(driver.ads1115_1);
         driver.ads1115_1 = NULL;
@@ -285,6 +337,7 @@ esp_err_t ads1115_deinit(void)
         i2c_master_bus_rm_device(driver.ads1115_2);
         driver.ads1115_2 = NULL;
     }
+#endif
     
     if (driver.mutex) {
         vSemaphoreDelete(driver.mutex);

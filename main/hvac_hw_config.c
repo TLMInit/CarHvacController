@@ -90,6 +90,7 @@ esp_err_t hvac_hw_pwm_init(void)
 {
     ESP_LOGI(TAG, "Initializing PWM timers and channels");
     
+#if !USE_REMOTE_IO
     // TB6612FNG PWM Timer configuration
     ledc_timer_config_t tb6612_timer = {
         .speed_mode = TB6612_LEDC_MODE,
@@ -181,6 +182,9 @@ esp_err_t hvac_hw_pwm_init(void)
         .hpoint = 0,
     };
     ESP_ERROR_CHECK(ledc_channel_config(&bts7960_rpwm));
+#else
+    ESP_LOGI(TAG, "Remote IO mode - skipping local motor PWM configuration");
+#endif
     
     ESP_LOGI(TAG, "PWM initialization complete");
     return ESP_OK;

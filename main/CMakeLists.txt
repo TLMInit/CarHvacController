@@ -6,4 +6,6 @@ idf_component_register(SRCS "main.c"
                             "hvac_sensors.c"
                             "hvac_controller.c"
                             "hvac_ui.c"
+                            "cobs_protocol.c"
+                            "remote_io_binary.c"
                     INCLUDE_DIRS ".")

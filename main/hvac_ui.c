@@ -6,6 +6,7 @@
 #include "hvac_ui.h"
 #include "hvac_controller.h"
 #include "hvac_hw_config.h"
+#include "hvac_sensors.h"
 
 #include <limits.h>
 #include <math.h>
@@ -85,6 +86,7 @@ static lv_obj_t *lbl_raw_sensors = NULL;
 static lv_obj_t *lbl_system_info = NULL;
 static lv_obj_t *btn_reset_cal = NULL;
 static lv_obj_t *btn_save_cal = NULL;
+static lv_obj_t *btn_onewire_read = NULL;
 
 // Message box
 static lv_obj_t *msg_box = NULL;
@@ -121,6 +123,19 @@ static void btn_mode_defrost_handler(lv_event_t *e)
 static void btn_mode_auto_handler(lv_event_t *e)
 {
     hvac_controller_set_mode(HVAC_MODE_AUTO);
+}
+
+static void btn_onewire_read_handler(lv_event_t *e)
+{
+    float temp_c = NAN;
+    esp_err_t ret = hvac_sensors_debug_read_onewire(&temp_c);
+    if (ret == ESP_OK && !isnan(temp_c)) {
+        char msg[48];
+        snprintf(msg, sizeof(msg), "1-Wire duct: %.2f C", temp_c);
+        hvac_ui_show_info(msg);
+    } else {
+        hvac_ui_show_error("1-Wire read failed");
+    }
 }
 
 static void btn_temp_up_handler(lv_event_t *e)
@@ -582,6 +597,16 @@ static void create_debug_screen(lv_obj_t *parent)
     lv_obj_set_style_text_color(lbl_thermal_status, UI_COLOR_TEXT_DIM, 0);
     
     // === BOTTOM: Control Buttons ===
+    btn_onewire_read = lv_btn_create(parent);
+    lv_obj_set_size(btn_onewire_read, 95, 45);
+    lv_obj_align(btn_onewire_read, LV_ALIGN_BOTTOM_MID, 0, -5);
+    lv_obj_set_style_bg_color(btn_onewire_read, UI_COLOR_ACCENT, 0);
+    lv_obj_add_event_cb(btn_onewire_read, btn_onewire_read_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_onewire = lv_label_create(btn_onewire_read);
+    lv_label_set_text(lbl_onewire, "Read 1W");
+    lv_obj_set_style_text_font(lbl_onewire, &lv_font_montserrat_14, 0);
+    lv_obj_center(lbl_onewire);
+
     btn_reset_cal = lv_btn_create(parent);
     lv_obj_set_size(btn_reset_cal, 95, 45);
     lv_obj_align(btn_reset_cal, LV_ALIGN_BOTTOM_LEFT, 5, -5);

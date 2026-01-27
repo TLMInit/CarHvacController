@@ -39,6 +39,9 @@
 
 // HVAC modules
 #include "hvac_hw_config.h"
+#if USE_REMOTE_IO
+#include "remote_io.h"
+#endif
 #include "tb6612fng_driver.h"
 #include "bts7960_driver.h"
 #include "ads1115_driver.h"
@@ -108,12 +111,15 @@ static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
         return;
     }
     
-    uint16_t raw_x, raw_y;
-    uint16_t strength;
+    esp_lcd_touch_point_data_t touch_data[1];
     uint8_t touch_cnt = 0;
     
-    // Get raw touch coordinates (before driver transformation)
-    if (esp_lcd_touch_get_coordinates(touch_handle, &raw_x, &raw_y, &strength, &touch_cnt, 1) && touch_cnt > 0) {
+    // Get raw touch coordinates using new API
+    ret = esp_lcd_touch_get_data(touch_handle, touch_data, &touch_cnt, 1);
+    if (ret == ESP_OK && touch_cnt > 0) {
+        uint16_t raw_x = touch_data[0].x;
+        uint16_t raw_y = touch_data[0].y;
+        
         // Manual transformation for landscape mode:
         // CST816S native is 240x320 (portrait), display is 320x240 (landscape)
         // Both axes were inverted, so invert both after swap
@@ -336,16 +342,34 @@ void app_main(void)
     // Initialize hardware
     ESP_LOGI(TAG, "Initializing hardware...");
     
-    // GPIO initialization
+#if USE_REMOTE_IO
+    // Initialize Remote IO Node communication FIRST
+    ESP_LOGI(TAG, "Initializing Remote IO Node connection...");
+    ESP_ERROR_CHECK(remote_io_init(REMOTE_IO_UART_NUM, REMOTE_IO_TX_PIN, 
+                                   REMOTE_IO_RX_PIN, REMOTE_IO_BAUD_RATE));
+    
+    // Wait for IO Node to be ready
+    ESP_LOGI(TAG, "Waiting for IO Node...");
+    esp_err_t io_ready = remote_io_wait_ready(3000);  // 3 second timeout
+    if (io_ready != ESP_OK) {
+        ESP_LOGW(TAG, "IO Node not responding, continuing anyway...");
+    } else {
+        ESP_LOGI(TAG, "IO Node connected!");
+    }
+#else
+    ESP_LOGI(TAG, "Remote IO disabled, using local IO only");
+#endif
+    
+    // Local GPIO initialization (backlight, etc - only pins on this board)
     ESP_ERROR_CHECK(hvac_hw_gpio_init());
     
-    // PWM initialization
+    // Local PWM initialization (backlight only)
     ESP_ERROR_CHECK(hvac_hw_pwm_init());
     
     // Backlight initialization
     ESP_ERROR_CHECK(hvac_hw_backlight_init());
     
-    // I2C buses initialization
+    // I2C buses initialization (touch panel only on this board)
     i2c_master_bus_handle_t touch_i2c_bus = NULL;
     i2c_master_bus_handle_t sensor_i2c_bus = NULL;
     ESP_ERROR_CHECK(hvac_hw_i2c_init(&touch_i2c_bus, &sensor_i2c_bus));
@@ -362,17 +386,18 @@ void app_main(void)
     // LVGL initialization
     ESP_ERROR_CHECK(init_lvgl());
     
-    // Initialize ADS1115 ADC for valve position monitoring (shares I2C_NUM_1)
-    ESP_ERROR_CHECK(ads1115_init(sensor_i2c_bus));
+    // Initialize ADS1115 on Remote IO Node
+    ESP_LOGI(TAG, "Initializing remote ADS1115...");
+    ESP_ERROR_CHECK(ads1115_init(NULL));  // NULL = use remote IO
     
-    // Initialize motor drivers
-    ESP_LOGI(TAG, "Initializing motor drivers...");
+    // Initialize motor drivers (via Remote IO Node)
+    ESP_LOGI(TAG, "Initializing motor drivers (remote)...");
     ESP_ERROR_CHECK(tb6612fng_init());
     ESP_ERROR_CHECK(bts7960_init());
     
-    // Initialize sensors (pass I2C bus for SHT30)
-    ESP_LOGI(TAG, "Initializing sensors...");
-    ESP_ERROR_CHECK(hvac_sensors_init(sensor_i2c_bus));
+    // Initialize sensors (via Remote IO Node)
+    ESP_LOGI(TAG, "Initializing sensors (remote)...");
+    ESP_ERROR_CHECK(hvac_sensors_init(NULL));  // NULL = use remote IO
     
     // Initialize HVAC controller
     ESP_LOGI(TAG, "Initializing HVAC controller...");
@@ -402,6 +427,12 @@ void app_main(void)
     // Enable motor drivers (standby off)
     tb6612fng_enable_all();
     bts7960_enable();
+    
+    // Calibrate all valves at startup - moves them to fully closed position
+    ESP_LOGI(TAG, "Calibrating valves...");
+    for (int i = 0; i < HVAC_VALVE_MAX; i++) {
+        tb6612fng_calibrate_valve(i);
+    }
     
     // Start LVGL task (pinned to core 1 like working example)
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, NULL, 1);

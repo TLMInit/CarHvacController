@@ -1,7 +1,7 @@
 {
     "version":            "1.3",
     "project_name":       "CarHvacController",
-    "project_version":    "18ec58b-dirty",
+    "project_version":    "0e53987-dirty",
     "project_path":       "C:/Users/Admin/Documents/CarHvacController",
     "idf_path":           "C:/Users/Admin/esp/master/esp-idf",
     "build_dir":          "C:/Users/Admin/Documents/CarHvacController/build",
@@ -1765,7 +1765,7 @@
             "managed_reqs": [],
             "managed_priv_reqs": [ "espressif__ds18b20", "espressif__esp_lcd_touch_cst816s", "espressif__onewire_bus", "lvgl__lvgl" ],
             "file": "C:/Users/Admin/Documents/CarHvacController/build/esp-idf/main/libmain.a",
-            "sources": [ "C:/Users/Admin/Documents/CarHvacController/main/main.c", "C:/Users/Admin/Documents/CarHvacController/main/hvac_hw_config.c", "C:/Users/Admin/Documents/CarHvacController/main/tb6612fng_driver.c", "C:/Users/Admin/Documents/CarHvacController/main/bts7960_driver.c", "C:/Users/Admin/Documents/CarHvacController/main/ads1115_driver.c", "C:/Users/Admin/Documents/CarHvacController/main/hvac_sensors.c", "C:/Users/Admin/Documents/CarHvacController/main/hvac_controller.c", "C:/Users/Admin/Documents/CarHvacController/main/hvac_ui.c" ],
+            "sources": [ "C:/Users/Admin/Documents/CarHvacController/main/main.c", "C:/Users/Admin/Documents/CarHvacController/main/hvac_hw_config.c", "C:/Users/Admin/Documents/CarHvacController/main/tb6612fng_driver.c", "C:/Users/Admin/Documents/CarHvacController/main/bts7960_driver.c", "C:/Users/Admin/Documents/CarHvacController/main/ads1115_driver.c", "C:/Users/Admin/Documents/CarHvacController/main/hvac_sensors.c", "C:/Users/Admin/Documents/CarHvacController/main/hvac_controller.c", "C:/Users/Admin/Documents/CarHvacController/main/hvac_ui.c", "C:/Users/Admin/Documents/CarHvacController/main/cobs_protocol.c", "C:/Users/Admin/Documents/CarHvacController/main/remote_io_binary.c" ],
             "include_dirs": [ "." ]
         },
         "mbedtls": {

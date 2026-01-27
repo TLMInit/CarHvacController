@@ -192,6 +192,13 @@ uint32_t hvac_sensors_get_interval_ms(void);
  */
 void hvac_sensors_set_interval_ms(uint32_t interval_ms);
 
+/**
+ * @brief Manually trigger a 1-Wire duct sensor read (debug aid)
+ * @param temperature_c Optional pointer to store the read temperature
+ * @return ESP_OK on success, ESP_ERR_INVALID_STATE if sensor not ready, or error from bus
+ */
+esp_err_t hvac_sensors_debug_read_onewire(float *temperature_c);
+
 #ifdef __cplusplus
 }
 #endif

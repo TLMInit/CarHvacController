@@ -12,18 +12,24 @@
 #include "hvac_hw_config.h"
 #include "ads1115_driver.h"
 #include "tb6612fng_driver.h"
+#include "hvac_ui.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
-#include "driver/i2c_master.h"
 #include <math.h>
 #include <string.h>
 
+#if !USE_REMOTE_IO
+#include "driver/i2c_master.h"
 // DS18B20 library from espressif components
 #include "onewire_bus.h"
 #include "ds18b20.h"
+#else
+// Remote IO for sensor reading via UART
+#include "remote_io.h"
+#endif
 
 static const char *TAG = "HVAC_SENSORS";
 
@@ -34,18 +40,10 @@ static const char *TAG = "HVAC_SENSORS";
 #define SHT30_CMD_SOFT_RESET            0x30A2
 #define SHT30_CMD_READ_STATUS           0xF32D
 
-/*******************************************************************************
- * Private Data
- ******************************************************************************/
-
-// SHT30 using new I2C master API
-static i2c_master_dev_handle_t sht30_dev_handle = NULL;
-static bool sht30_initialized = false;
-
-// DS18B20 sensors
-static onewire_bus_handle_t onewire_bus = NULL;
-static ds18b20_device_handle_t ds18b20_coolant = NULL;
-static ds18b20_device_handle_t ds18b20_duct = NULL;
+#if !USE_REMOTE_IO
+// Store the sensor I2C bus handle
+static i2c_master_bus_handle_t sensor_i2c_bus_handle = NULL;
+#endif
 
 // Sensor data storage
 static sensor_data_t sensor_data[SENSOR_MAX];
@@ -59,9 +57,6 @@ static SemaphoreHandle_t valve_mutex = NULL;
 // Configuration
 static uint32_t sensor_interval_ms = 1000;  // Default 1 second
 
-// Store the sensor I2C bus handle
-static i2c_master_bus_handle_t sensor_i2c_bus_handle = NULL;
-
 /*******************************************************************************
  * Private Functions
  ******************************************************************************/
@@ -70,6 +65,8 @@ static uint32_t get_time_ms(void)
 {
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
+
+#if !USE_REMOTE_IO
 
 // CRC-8 calculation for SHT30
 static uint8_t sht30_crc8(const uint8_t *data, size_t len)
@@ -340,6 +337,209 @@ static void read_ds18b20_duct(void)
     }
 }
 
+#endif // !USE_REMOTE_IO
+
+#if USE_REMOTE_IO
+// Remote sensor reading functions using UART protocol
+
+// --- BME280 calibration helpers (remote I2C) ---
+typedef struct {
+    uint16_t dig_T1;
+    int16_t  dig_T2;
+    int16_t  dig_T3;
+    uint8_t  dig_H1;
+    int16_t  dig_H2;
+    uint8_t  dig_H3;
+    int16_t  dig_H4;
+    int16_t  dig_H5;
+    int8_t   dig_H6;
+    bool     loaded;
+} bme280_calib_t;
+
+static bme280_calib_t bme_calib = {0};
+
+static esp_err_t bme280_load_calibration(uint8_t addr)
+{
+    // Read temp/pressure calibration (0x88..0xA1) and humidity (0xE1..0xE7)
+    uint8_t reg = 0x88;
+    uint8_t buf1[26];
+    esp_err_t ret = remote_i2c_write_read(0, addr, &reg, 1, buf1, sizeof(buf1));
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    reg = 0xE1;
+    uint8_t buf2[7];
+    ret = remote_i2c_write_read(0, addr, &reg, 1, buf2, sizeof(buf2));
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    bme_calib.dig_T1 = (uint16_t)(buf1[1] << 8 | buf1[0]);
+    bme_calib.dig_T2 = (int16_t)(buf1[3] << 8 | buf1[2]);
+    bme_calib.dig_T3 = (int16_t)(buf1[5] << 8 | buf1[4]);
+
+    bme_calib.dig_H1 = buf1[25]; // 0xA1
+    bme_calib.dig_H2 = (int16_t)(buf2[1] << 8 | buf2[0]);
+    bme_calib.dig_H3 = buf2[2];
+    bme_calib.dig_H4 = (int16_t)((buf2[3] << 4) | (buf2[4] & 0x0F));
+    bme_calib.dig_H5 = (int16_t)((buf2[5] << 4) | (buf2[4] >> 4));
+    bme_calib.dig_H6 = (int8_t)buf2[6];
+
+    bme_calib.loaded = true;
+    return ESP_OK;
+}
+
+static float bme280_compensate_temperature(int32_t adc_T, int32_t *t_fine)
+{
+    int32_t var1 = ((((adc_T >> 3) - ((int32_t)bme_calib.dig_T1 << 1))) * ((int32_t)bme_calib.dig_T2)) >> 11;
+    int32_t var2 = (((((adc_T >> 4) - ((int32_t)bme_calib.dig_T1)) * ((adc_T >> 4) - ((int32_t)bme_calib.dig_T1))) >> 12) * ((int32_t)bme_calib.dig_T3)) >> 14;
+    *t_fine = var1 + var2;
+    int32_t T = (*t_fine * 5 + 128) >> 8; // T in 0.01 C
+    return T / 100.0f;
+}
+
+static float bme280_compensate_humidity(int32_t adc_H, int32_t t_fine)
+{
+    int32_t v_x1 = t_fine - ((int32_t)76800);
+    v_x1 = (((((adc_H << 14) - (((int32_t)bme_calib.dig_H4) << 20) - (((int32_t)bme_calib.dig_H5) * v_x1)) + ((int32_t)16384)) >> 15)
+            * (((((((v_x1 * ((int32_t)bme_calib.dig_H6)) >> 10) * (((v_x1 * ((int32_t)bme_calib.dig_H3)) >> 11) + ((int32_t)32768))) >> 10) + ((int32_t)2097152))
+                * ((int32_t)bme_calib.dig_H2) + 8192) >> 14));
+    v_x1 = v_x1 - (((((v_x1 >> 15) * (v_x1 >> 15)) >> 7) * ((int32_t)bme_calib.dig_H1)) >> 4);
+    v_x1 = (v_x1 < 0 ? 0 : v_x1);
+    v_x1 = (v_x1 > 419430400 ? 419430400 : v_x1);
+    float h = (v_x1 >> 12) / 1024.0f; // %RH
+    if (h < 0.0f) h = 0.0f;
+    if (h > 100.0f) h = 100.0f;
+    return h;
+}
+
+static void read_remote_ds18b20_duct(void)
+{
+    float temperature;
+    esp_err_t ret = remote_onewire_read_ds18b20(DS18B20_ONEWIRE_PIN, NULL, &temperature);
+    bool grace = (get_time_ms() < 5000);
+    
+    if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ret == ESP_OK) {
+            sensor_data[SENSOR_DUCT_TEMP].value = temperature;
+            sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_OK;
+            sensor_data[SENSOR_DUCT_TEMP].last_update_ms = get_time_ms();
+            ESP_LOGD(TAG, "Remote duct temp: %.1f°C", temperature);
+        } else {
+            sensor_data[SENSOR_DUCT_TEMP].status = grace ? SENSOR_STATUS_NOT_FOUND : SENSOR_STATUS_ERROR;
+            ESP_LOGW(TAG, "Remote DS18B20 duct read error");
+        }
+        xSemaphoreGive(sensor_mutex);
+    }
+}
+
+// Read BME280 temperature and humidity via remote I2C
+// BME280 requires proper initialization and calibration coefficient reading
+// For now, this is a simplified version that triggers measurement and reads raw data
+static void read_remote_bme280(void)
+{
+    esp_err_t ret;
+    uint8_t addr = 0x76;  // Try 0x76 first, then 0x77
+    bool grace = (get_time_ms() < 5000);
+    
+    // Check if BME280 is present by reading chip ID (0xD0)
+    uint8_t chip_id_reg = 0xD0;
+    uint8_t chip_id;
+    ret = remote_i2c_write_read(0, addr, &chip_id_reg, 1, &chip_id, 1);
+    if (ret != ESP_OK || chip_id != 0x60) {
+        addr = 0x77;  // Try alternate address
+        ret = remote_i2c_write_read(0, addr, &chip_id_reg, 1, &chip_id, 1);
+        if (ret != ESP_OK || chip_id != 0x60) {
+            ESP_LOGW(TAG, "BME280 not found (chip_id=0x%02X)", chip_id);
+            goto mark_error;
+        }
+    }
+
+    // Load calibration once
+    if (!bme_calib.loaded) {
+        ret = bme280_load_calibration(addr);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "BME280 calibration read failed");
+            goto mark_error;
+        }
+    }
+    
+    // BME280: Write ctrl_meas register (0xF4) to trigger forced mode measurement
+    // Forced mode: osrs_t=x1, osrs_p=x1, osrs_h=x1, mode=01
+    // Register 0xF4: [osrs_t(2:0), osrs_p(2:0), mode(1:0)] = 0b001_001_01 = 0x25
+    uint8_t ctrl_cmd[2] = {0xF4, 0x25};
+    ret = remote_i2c_write(0, addr, ctrl_cmd, 2);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "BME280 ctrl_meas write failed");
+        goto mark_error;
+    }
+    
+    // Wait for measurement (typ 7ms for minimal oversampling)
+    vTaskDelay(pdMS_TO_TICKS(10));
+    
+    // Read data registers 0xF7-0xFE (8 bytes: press + temp + hum)
+    uint8_t data_reg = 0xF7;
+    uint8_t data[8];
+    ret = remote_i2c_write_read(0, addr, &data_reg, 1, data, 8);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "BME280 data read failed");
+        goto mark_error;
+    }
+    
+    // Extract raw ADC values (20-bit for temp/press, 16-bit for humidity)
+    int32_t adc_T = ((int32_t)data[3] << 12) | ((int32_t)data[4] << 4) | ((int32_t)data[5] >> 4);
+    int32_t adc_H = ((int32_t)data[6] << 8) | (int32_t)data[7];
+    
+    // Check for invalid data (0x80000 means sensor not ready or in sleep)
+    if (adc_T == 0x80000 || adc_T == 0 || adc_H == 0) {
+        ESP_LOGW(TAG, "BME280 invalid data: T=0x%X, H=0x%X", adc_T, adc_H);
+        goto mark_error;
+    }
+    
+    int32_t t_fine = 0;
+    float temperature = bme280_compensate_temperature(adc_T, &t_fine);
+    float humidity = bme280_compensate_humidity(adc_H, t_fine);
+    
+    if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        sensor_data[SENSOR_CABIN_TEMP].value = temperature;
+        sensor_data[SENSOR_CABIN_TEMP].status = SENSOR_STATUS_OK;
+        sensor_data[SENSOR_CABIN_TEMP].last_update_ms = get_time_ms();
+        
+        sensor_data[SENSOR_CABIN_HUMIDITY].value = humidity;
+        sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_OK;
+        sensor_data[SENSOR_CABIN_HUMIDITY].last_update_ms = get_time_ms();
+        
+        ESP_LOGI(TAG, "BME280: %.1fC, %.1f%%RH (raw: T=%d, H=%d)", 
+                 temperature, humidity, adc_T, adc_H);
+        xSemaphoreGive(sensor_mutex);
+    }
+    return;
+    
+mark_error:
+    if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        sensor_data[SENSOR_CABIN_TEMP].status = grace ? SENSOR_STATUS_NOT_FOUND : SENSOR_STATUS_ERROR;
+        sensor_data[SENSOR_CABIN_HUMIDITY].status = grace ? SENSOR_STATUS_NOT_FOUND : SENSOR_STATUS_ERROR;
+        xSemaphoreGive(sensor_mutex);
+    }
+}
+
+static void read_remote_temperature_sensors(void)
+{
+    // Read duct temperature via DS18B20 (1-Wire)
+    read_remote_ds18b20_duct();
+    
+    // Read ambient (cabin) temp/humidity via BME280 I2C
+    read_remote_bme280();
+    
+    // No coolant temp sensor in this system
+    if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        sensor_data[SENSOR_COOLANT_TEMP].status = SENSOR_STATUS_NOT_FOUND;
+        xSemaphoreGive(sensor_mutex);
+    }
+}
+#endif
+
 static void read_valve_positions(void)
 {
     // Read all valve positions from ADS1115 modules
@@ -391,8 +591,10 @@ esp_err_t hvac_sensors_init(i2c_master_bus_handle_t i2c_bus)
 {
     ESP_LOGI(TAG, "Initializing HVAC sensors");
     
+#if !USE_REMOTE_IO
     // Store the I2C bus handle for SHT30
     sensor_i2c_bus_handle = i2c_bus;
+#endif
     
     // Create mutexes
     sensor_mutex = xSemaphoreCreateMutex();
@@ -414,11 +616,15 @@ esp_err_t hvac_sensors_init(i2c_master_bus_handle_t i2c_bus)
         sensor_data[i].last_update_ms = 0;
     }
     
+#if !USE_REMOTE_IO
     // Initialize SHT30-D using new I2C master API
     init_sht30();
     
     // Initialize DS18B20 sensors
     init_ds18b20_sensors();
+#else
+    ESP_LOGI(TAG, "Remote IO mode - skipping local sensor initialization");
+#endif
     
     ESP_LOGI(TAG, "HVAC sensors initialization complete");
     return ESP_OK;
@@ -426,6 +632,7 @@ esp_err_t hvac_sensors_init(i2c_master_bus_handle_t i2c_bus)
 
 void hvac_sensors_deinit(void)
 {
+#if !USE_REMOTE_IO
     if (ds18b20_coolant) {
         ds18b20_del_device(ds18b20_coolant);
         ds18b20_coolant = NULL;
@@ -443,6 +650,7 @@ void hvac_sensors_deinit(void)
         sht30_dev_handle = NULL;
         sht30_initialized = false;
     }
+#endif
     if (sensor_mutex) {
         vSemaphoreDelete(sensor_mutex);
         sensor_mutex = NULL;
@@ -455,9 +663,13 @@ void hvac_sensors_deinit(void)
 
 esp_err_t hvac_sensors_read_all(void)
 {
+#if !USE_REMOTE_IO
     read_sht30();
     read_ds18b20_coolant();
     read_ds18b20_duct();
+#else
+    read_remote_temperature_sensors();
+#endif
     read_valve_positions();
     
     // Return OK if at least one sensor is working
@@ -643,4 +855,35 @@ void hvac_sensors_set_interval_ms(uint32_t interval_ms)
         interval_ms = 100;
     }
     sensor_interval_ms = interval_ms;
+}
+
+esp_err_t hvac_sensors_debug_read_onewire(float *temperature_c)
+{
+    float temp = NAN;
+    esp_err_t ret = ESP_ERR_INVALID_STATE;
+
+#if USE_REMOTE_IO
+    ret = remote_onewire_read_ds18b20(DS18B20_ONEWIRE_PIN, NULL, &temp);
+#else
+    if (ds18b20_duct == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    ret = ds18b20_trigger_temperature_conversion(ds18b20_duct);
+    if (ret == ESP_OK) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        ret = ds18b20_get_temperature(ds18b20_duct, &temp);
+    }
+#endif
+
+    if (ret == ESP_OK && xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        sensor_data[SENSOR_DUCT_TEMP].value = temp;
+        sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_OK;
+        sensor_data[SENSOR_DUCT_TEMP].last_update_ms = get_time_ms();
+        xSemaphoreGive(sensor_mutex);
+    }
+
+    if (temperature_c) {
+        *temperature_c = temp;
+    }
+    return ret;
 }
