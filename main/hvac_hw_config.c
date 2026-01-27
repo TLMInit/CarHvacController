@@ -16,13 +16,17 @@ esp_err_t hvac_hw_gpio_init(void)
 {
     ESP_LOGI(TAG, "Initializing GPIO pins");
     
+    
+#if USE_REMOTE_IO
+    ESP_LOGI(TAG, "Remote IO enabled - skipping local TB6612 GPIO config");
+#else
     gpio_config_t io_conf = {
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
-    
+
     // TB6612FNG #1 GPIO configuration (STBY hardwired to 3V3)
     io_conf.pin_bit_mask = (1ULL << TB6612_1_AIN1) |
                            (1ULL << TB6612_1_AIN2) |
@@ -43,6 +47,7 @@ esp_err_t hvac_hw_gpio_init(void)
                            (1ULL << TB6612_3_AIN2);
     ESP_ERROR_CHECK(gpio_config(&io_conf));
     // Note: TB6612_3_BIN1, BIN2 (spare motor) not configured - NC for now
+#endif
     
     // BTS7960: R_EN hardwired to 3V3, L_EN hardwired to GND
     // No GPIO control needed for enable pins

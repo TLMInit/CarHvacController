@@ -55,7 +55,8 @@ typedef struct {
     float duct_temp_c;              // Duct outlet temperature
     
     // Valve positions (0-100%)
-    uint8_t center_valve_pos;       // Center vent position
+    uint8_t center_valve_pos;       // Center vent 1 position
+    uint8_t center2_valve_pos;      // Center vent 2 position
     uint8_t foot_valve_pos;         // Foot vent position
     uint8_t windscreen_valve_pos;   // Windscreen vent position
     uint8_t coolant_valve_pos;      // Coolant valve position

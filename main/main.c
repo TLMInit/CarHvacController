@@ -428,11 +428,9 @@ void app_main(void)
     tb6612fng_enable_all();
     bts7960_enable();
     
-    // Calibrate all valves at startup - moves them to fully closed position
-    ESP_LOGI(TAG, "Calibrating valves...");
-    for (int i = 0; i < HVAC_VALVE_MAX; i++) {
-        tb6612fng_calibrate_valve(i);
-    }
+    // Kick off non-blocking auto-calibration for all valves
+    ESP_LOGI(TAG, "Starting valve auto-calibration...");
+    ESP_ERROR_CHECK(tb6612fng_auto_calibrate_all());
     
     // Start LVGL task (pinned to core 1 like working example)
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, NULL, 1);

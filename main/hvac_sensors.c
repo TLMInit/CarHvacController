@@ -43,6 +43,11 @@ static const char *TAG = "HVAC_SENSORS";
 #if !USE_REMOTE_IO
 // Store the sensor I2C bus handle
 static i2c_master_bus_handle_t sensor_i2c_bus_handle = NULL;
+static i2c_master_dev_handle_t sht30_dev_handle = NULL;
+static bool sht30_initialized = false;
+static onewire_bus_handle_t onewire_bus = NULL;
+static ds18b20_device_handle_t ds18b20_coolant = NULL;
+static ds18b20_device_handle_t ds18b20_duct = NULL;
 #endif
 
 // Sensor data storage
@@ -50,12 +55,14 @@ static sensor_data_t sensor_data[SENSOR_MAX];
 static SemaphoreHandle_t sensor_mutex = NULL;
 static TaskHandle_t sensor_task_handle = NULL;
 
-// Valve position storage
-static uint8_t valve_positions[4] = {0, 0, 0, 0};  // center, foot, windscreen, coolant
+// Valve position storage (5 valves: center1, center2, foot, windscreen, coolant)
+static uint8_t valve_positions[5] = {0, 0, 0, 0, 0};
 static SemaphoreHandle_t valve_mutex = NULL;
 
 // Configuration
-static uint32_t sensor_interval_ms = 1000;  // Default 1 second
+static uint32_t sensor_interval_ms = 100;   // Default 100ms for responsive valve control
+static bool calibration_mode = false;       // Fast valve reading during calibration
+#define CALIB_SENSOR_INTERVAL_MS 25         // 25ms during calibration
 
 /*******************************************************************************
  * Private Functions
@@ -542,45 +549,51 @@ static void read_remote_temperature_sensors(void)
 
 static void read_valve_positions(void)
 {
-    // Read all valve positions from ADS1115 modules
-    uint8_t positions[4];
+    // Read all valve positions from ADS1115 modules (5 valves total)
+    uint8_t positions[5];
     
-    // Read center valve position (ADS1115 #1, channel 0)
+    // Read center valve 1 position (ADS1115 #1, channel 0)
     if (ads1115_read_valve_position(ADS1115_CH_CENTER_VALVE_1_POS, &positions[0]) != ESP_OK) {
         positions[0] = 0;
     }
     
-    // Read foot valve position (ADS1115 #1, channel 2)
-    if (ads1115_read_valve_position(ADS1115_CH_FOOT_VALVE_POS, &positions[1]) != ESP_OK) {
+    // Read center valve 2 position (ADS1115 #1, channel 1)
+    if (ads1115_read_valve_position(ADS1115_CH_CENTER_VALVE_2_POS, &positions[1]) != ESP_OK) {
         positions[1] = 0;
     }
     
-    // Read windscreen valve position (ADS1115 #1, channel 3)
-    if (ads1115_read_valve_position(ADS1115_CH_WINDSCREEN_VALVE_POS, &positions[2]) != ESP_OK) {
+    // Read foot valve position (ADS1115 #1, channel 2)
+    if (ads1115_read_valve_position(ADS1115_CH_FOOT_VALVE_POS, &positions[2]) != ESP_OK) {
         positions[2] = 0;
     }
     
-    // Read coolant valve position (ADS1115 #2, channel 0)
-    if (ads1115_read_valve_position(ADS1115_CH_COOLANT_VALVE_POS, &positions[3]) != ESP_OK) {
+    // Read windscreen valve position (ADS1115 #1, channel 3)
+    if (ads1115_read_valve_position(ADS1115_CH_WINDSCREEN_VALVE_POS, &positions[3]) != ESP_OK) {
         positions[3] = 0;
+    }
+    
+    // Read coolant valve position (ADS1115 #2, channel 0)
+    if (ads1115_read_valve_position(ADS1115_CH_COOLANT_VALVE_POS, &positions[4]) != ESP_OK) {
+        positions[4] = 0;
     }
     
     // Store valve positions with mutex protection
     if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 5; i++) {
             valve_positions[i] = positions[i];
         }
         xSemaphoreGive(valve_mutex);
     }
 
+    // Update TB6612 driver feedback for each valve
     tb6612fng_update_feedback(HVAC_VALVE_CENTER_1, positions[0]);
-    tb6612fng_update_feedback(HVAC_VALVE_CENTER_2, positions[0]);
-    tb6612fng_update_feedback(HVAC_VALVE_FOOT, positions[1]);
-    tb6612fng_update_feedback(HVAC_VALVE_WINDSCREEN, positions[2]);
-    tb6612fng_update_feedback(HVAC_VALVE_COOLANT, positions[3]);
+    tb6612fng_update_feedback(HVAC_VALVE_CENTER_2, positions[1]);
+    tb6612fng_update_feedback(HVAC_VALVE_FOOT, positions[2]);
+    tb6612fng_update_feedback(HVAC_VALVE_WINDSCREEN, positions[3]);
+    tb6612fng_update_feedback(HVAC_VALVE_COOLANT, positions[4]);
     
-    ESP_LOGD(TAG, "Valve positions - Center: %d%%, Foot: %d%%, Windscreen: %d%%, Coolant: %d%%",
-             positions[0], positions[1], positions[2], positions[3]);
+    ESP_LOGD(TAG, "Valve positions - C1: %d%%, C2: %d%%, Foot: %d%%, WS: %d%%, Cool: %d%%",
+             positions[0], positions[1], positions[2], positions[3], positions[4]);
 }
 
 /*******************************************************************************
@@ -731,11 +744,13 @@ void hvac_sensors_get_all(hvac_sensor_readings_t *readings)
     }
     
     // Get valve positions separately with valve_mutex
+    // Note: indices are 0=center1, 1=center2, 2=foot, 3=windscreen, 4=coolant
     if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        readings->center_valve_pos = valve_positions[0];
-        readings->foot_valve_pos = valve_positions[1];
-        readings->windscreen_valve_pos = valve_positions[2];
-        readings->coolant_valve_pos = valve_positions[3];
+        readings->center_valve_pos = valve_positions[0];   // Center 1
+        readings->center2_valve_pos = valve_positions[1];  // Center 2
+        readings->foot_valve_pos = valve_positions[2];
+        readings->windscreen_valve_pos = valve_positions[3];
+        readings->coolant_valve_pos = valve_positions[4];
         xSemaphoreGive(valve_mutex);
     }
 }
@@ -764,7 +779,17 @@ uint8_t hvac_sensors_get_center_valve_pos(void)
 {
     uint8_t pos = 0;
     if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        pos = valve_positions[0];
+        pos = valve_positions[0];  // Center 1
+        xSemaphoreGive(valve_mutex);
+    }
+    return pos;
+}
+
+uint8_t hvac_sensors_get_center2_valve_pos(void)
+{
+    uint8_t pos = 0;
+    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        pos = valve_positions[1];  // Center 2
         xSemaphoreGive(valve_mutex);
     }
     return pos;
@@ -774,7 +799,7 @@ uint8_t hvac_sensors_get_foot_valve_pos(void)
 {
     uint8_t pos = 0;
     if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        pos = valve_positions[1];
+        pos = valve_positions[2];  // Foot
         xSemaphoreGive(valve_mutex);
     }
     return pos;
@@ -784,7 +809,7 @@ uint8_t hvac_sensors_get_windscreen_valve_pos(void)
 {
     uint8_t pos = 0;
     if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        pos = valve_positions[2];
+        pos = valve_positions[3];  // Windscreen
         xSemaphoreGive(valve_mutex);
     }
     return pos;
@@ -794,7 +819,7 @@ uint8_t hvac_sensors_get_coolant_valve_pos(void)
 {
     uint8_t pos = 0;
     if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        pos = valve_positions[3];
+        pos = valve_positions[4];  // Coolant
         xSemaphoreGive(valve_mutex);
     }
     return pos;
@@ -820,8 +845,14 @@ void hvac_sensors_task(void *pvParameters)
     ESP_LOGI(TAG, "Sensor reading task started");
     
     while (1) {
-        hvac_sensors_read_all();
-        vTaskDelay(pdMS_TO_TICKS(sensor_interval_ms));
+        if (calibration_mode) {
+            // During calibration, only read valve positions at high frequency
+            read_valve_positions();
+            vTaskDelay(pdMS_TO_TICKS(CALIB_SENSOR_INTERVAL_MS));
+        } else {
+            hvac_sensors_read_all();
+            vTaskDelay(pdMS_TO_TICKS(sensor_interval_ms));
+        }
     }
 }
 
@@ -855,6 +886,16 @@ void hvac_sensors_set_interval_ms(uint32_t interval_ms)
         interval_ms = 100;
     }
     sensor_interval_ms = interval_ms;
+}
+
+void hvac_sensors_set_calibration_mode(bool enabled)
+{
+    calibration_mode = enabled;
+    if (enabled) {
+        ESP_LOGI(TAG, "Calibration mode enabled - fast valve position reads");
+    } else {
+        ESP_LOGI(TAG, "Calibration mode disabled - normal sensor interval");
+    }
 }
 
 esp_err_t hvac_sensors_debug_read_onewire(float *temperature_c)

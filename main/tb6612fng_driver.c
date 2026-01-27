@@ -5,6 +5,7 @@
 
 #include "tb6612fng_driver.h"
 #include "hvac_hw_config.h"
+#include "hvac_sensors.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -12,74 +13,23 @@
 #include <string.h>
 #include <stdlib.h>
 
-#if USE_REMOTE_IO
-#include "remote_io.h"
-#else
 #include "driver/gpio.h"
 #include "driver/ledc.h"
+#if USE_REMOTE_IO
+#include "remote_io.h"
 #endif
 
 static const char *TAG = "TB6612FNG";
 
 /*******************************************************************************
  * Motor Channel Configuration
+ * Uses standard TB6612_* pin defines - routed via remote IO when USE_REMOTE_IO=1
  ******************************************************************************/
-#if USE_REMOTE_IO && REMOTE_MOTORS_ENABLED
 typedef struct {
-    int in1;            // Remote GPIO pin numbers
-    int in2;
-    int pwm_pin;
-} motor_config_t;
-
-static const motor_config_t motor_configs[HVAC_VALVE_MAX] = {
-    // Center valve 1 (TB6612 #1, Motor A)
-    {
-        .in1 = REMOTE_TB6612_1_AIN1,
-        .in2 = REMOTE_TB6612_1_AIN2,
-        .pwm_pin = REMOTE_TB6612_1_PWMA,
-    },
-    // Center valve 2 (TB6612 #1, Motor B)
-    {
-        .in1 = REMOTE_TB6612_1_BIN1,
-        .in2 = REMOTE_TB6612_1_BIN2,
-        .pwm_pin = REMOTE_TB6612_1_PWMB,
-    },
-    // Foot valve (TB6612 #2, Motor A)
-    {
-        .in1 = REMOTE_TB6612_2_AIN1,
-        .in2 = REMOTE_TB6612_2_AIN2,
-        .pwm_pin = REMOTE_TB6612_2_PWMA,
-    },
-    // Windscreen valve (TB6612 #2, Motor B)
-    {
-        .in1 = REMOTE_TB6612_2_BIN1,
-        .in2 = REMOTE_TB6612_2_BIN2,
-        .pwm_pin = REMOTE_TB6612_2_PWMB,
-    },
-    // Coolant valve (TB6612 #3, Motor A)
-    {
-        .in1 = REMOTE_TB6612_3_AIN1,
-        .in2 = REMOTE_TB6612_3_AIN2,
-        .pwm_pin = REMOTE_TB6612_3_PWMA,
-    },
-};
-#elif USE_REMOTE_IO && !REMOTE_MOTORS_ENABLED
-// Motors disabled - use dummy config
-typedef struct {
-    int in1;
-    int in2;
-    int pwm_pin;
-} motor_config_t;
-
-static const motor_config_t motor_configs[HVAC_VALVE_MAX] = {
-    {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}
-};
-#else
-// Local GPIO motor config
-typedef struct {
-    gpio_num_t in1;
-    gpio_num_t in2;
-    ledc_channel_t pwm_channel;
+    int in1;                    // GPIO pin number for IN1
+    int in2;                    // GPIO pin number for IN2
+    int pwm_pin;                // GPIO pin number for PWM
+    ledc_channel_t pwm_channel; // LEDC channel (used when local IO)
 } motor_config_t;
 
 static const motor_config_t motor_configs[HVAC_VALVE_MAX] = {
@@ -87,34 +37,38 @@ static const motor_config_t motor_configs[HVAC_VALVE_MAX] = {
     {
         .in1 = TB6612_1_AIN1,
         .in2 = TB6612_1_AIN2,
+        .pwm_pin = TB6612_1_PWMA,
         .pwm_channel = TB6612_1_PWMA_CHANNEL,
     },
     // Center valve 2 (TB6612 #1, Motor B)
     {
         .in1 = TB6612_1_BIN1,
         .in2 = TB6612_1_BIN2,
+        .pwm_pin = TB6612_1_PWMB,
         .pwm_channel = TB6612_1_PWMB_CHANNEL,
     },
     // Foot valve (TB6612 #2, Motor A)
     {
         .in1 = TB6612_2_AIN1,
         .in2 = TB6612_2_AIN2,
+        .pwm_pin = TB6612_2_PWMA,
         .pwm_channel = TB6612_2_PWMA_CHANNEL,
     },
     // Windscreen valve (TB6612 #2, Motor B)
     {
         .in1 = TB6612_2_BIN1,
         .in2 = TB6612_2_BIN2,
+        .pwm_pin = TB6612_2_PWMB,
         .pwm_channel = TB6612_2_PWMB_CHANNEL,
     },
     // Coolant valve (TB6612 #3, Motor A)
     {
         .in1 = TB6612_3_AIN1,
         .in2 = TB6612_3_AIN2,
+        .pwm_pin = TB6612_3_PWMA,
         .pwm_channel = TB6612_3_PWMA_CHANNEL,
     },
 };
-#endif
 
 /*******************************************************************************
  * Private Data
@@ -126,9 +80,9 @@ static TaskHandle_t valve_task_handle = NULL;
 // Time constants for valve control (in ms)
 #define VALVE_FULL_TRAVEL_TIME_MS   10000    // Time for 0-100% travel
 #define VALVE_TASK_PERIOD_MS        25      // Task update period (faster for better response)
-#define VALVE_MOTOR_SPEED           200     // Maximum motor speed (0-255)
-#define VALVE_POSITION_TOLERANCE    2       // Acceptable error window (%) - tighter tolerance
-#define VALVE_HYSTERESIS            2       // Extra margin before restarting (%) - prevents hunting
+#define VALVE_MOTOR_SPEED           100     // Maximum motor speed (0-255)
+#define VALVE_POSITION_TOLERANCE    5       // Acceptable error window (%) - tighter tolerance
+#define VALVE_HYSTERESIS            5       // Extra margin before restarting (%) - prevents hunting
 #define VALVE_STALL_TIMEOUT_MS      6000     // No movement timeout
 #define VALVE_MOVEMENT_THRESHOLD    2       // Minimum change considered movement
 #define VALVE_MIN_SPEED             20      // Minimum PWM to overcome stiction
@@ -137,7 +91,7 @@ static TaskHandle_t valve_task_handle = NULL;
 #define VALVE_PLATEAU_ZONE          5      // Dead zone at 0% and 100% where readings are unreliable
 #define VALVE_EMA_ALPHA             128      // EMA filter: 128/256 = 50% = moderate filtering (faster response)
 // Butterfly valve mapping: center position (48%) = fully open, both extremes (0%, 100%) = closed
-#define VALVE_BUTTERFLY_CENTER_PCT  45      // Default raw ADC % when valve is fully OPEN
+#define VALVE_BUTTERFLY_CENTER_PCT  50      // Default raw ADC % when valve is fully OPEN
 #define VALVE_OUTLIER_THRESHOLD     15      // Max allowed jump from filtered value before rejecting
 #define VALVE_DEADZONE_ADC          5       // ADC dead zone at extreme positions (0-5% and 95-100%)
 #define VALVE_DEADZONE_LOW_PCT      2       // Minimum target clamp (%)
@@ -158,6 +112,8 @@ typedef struct {
 } valve_calibration_t;
 
 // Per-valve calibration data (default to uncalibrated)
+// For butterfly valves: V-shaped mapping where center = fully open
+// Based on observed ADC readings, valves swing ~35-65% ADC range
 static valve_calibration_t valve_calibration[HVAC_VALVE_MAX] = {
     {0, 100, VALVE_BUTTERFLY_CENTER_PCT, 5, 95, false, false},  // CENTER_1
     {0, 100, VALVE_BUTTERFLY_CENTER_PCT, 5, 95, false, false},  // CENTER_2
@@ -207,16 +163,21 @@ typedef struct {
 
 static valve_calib_progress_t valve_calib_progress[HVAC_VALVE_MAX] = {0};
 
+// Forward declarations
+static bool any_valve_calibrating(void);
+static bool is_valve_enabled(hvac_valve_id_t valve_id);
+
 /*******************************************************************************
  * Private Functions
  ******************************************************************************/
 
 static void set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *config, tb6612_direction_t direction, int position)
 {
-#if USE_REMOTE_IO && REMOTE_MOTORS_ENABLED
-    esp_err_t ret1, ret2;
-    const char *dir_str = "?";
     bool dir_changed = (valve_id < HVAC_VALVE_MAX && last_motor_dir[valve_id] != direction);
+    const char *dir_str = "?";
+    
+#if USE_REMOTE_IO
+    esp_err_t ret1 = ESP_OK, ret2 = ESP_OK;
     
     switch (direction) {
         case TB6612_DIR_STOP:
@@ -240,10 +201,38 @@ static void set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *
             dir_str = "BRAKE";
             break;
         default:
-            ret1 = ret2 = ESP_OK;
             break;
     }
     
+    if (ret1 != ESP_OK || ret2 != ESP_OK) {
+        ESP_LOGE(TAG, "GPIO set failed: in1=%s, in2=%s", 
+                 esp_err_to_name(ret1), esp_err_to_name(ret2));
+    }
+#else
+    switch (direction) {
+        case TB6612_DIR_STOP:
+            gpio_set_level(config->in1, 0);
+            gpio_set_level(config->in2, 0);
+            dir_str = "STOP";
+            break;
+        case TB6612_DIR_FORWARD:
+            gpio_set_level(config->in1, 1);
+            gpio_set_level(config->in2, 0);
+            dir_str = "FWD";
+            break;
+        case TB6612_DIR_REVERSE:
+            gpio_set_level(config->in1, 0);
+            gpio_set_level(config->in2, 1);
+            dir_str = "REV";
+            break;
+        case TB6612_DIR_BRAKE:
+            gpio_set_level(config->in1, 1);
+            gpio_set_level(config->in2, 1);
+            dir_str = "BRAKE";
+            break;
+    }
+#endif
+
     if (valve_id < HVAC_VALVE_MAX) {
         last_motor_dir[valve_id] = direction;
     }
@@ -251,49 +240,17 @@ static void set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *
     if (dir_changed) {
         ESP_LOGI(TAG, "Motor dir=%s pos=%d%% (IN1=%d IN2=%d)", dir_str, position, config->in1, config->in2);
     }
-    if (ret1 != ESP_OK || ret2 != ESP_OK) {
-        ESP_LOGE(TAG, "GPIO set failed: in1=%s, in2=%s", 
-                 esp_err_to_name(ret1), esp_err_to_name(ret2));
-    }
-#elif USE_REMOTE_IO && !REMOTE_MOTORS_ENABLED
-    // Motors disabled - do nothing
-    (void)config;
-    (void)direction;
-#else
-    switch (direction) {
-        case TB6612_DIR_STOP:
-            gpio_set_level(config->in1, 0);
-            gpio_set_level(config->in2, 0);
-            break;
-        case TB6612_DIR_FORWARD:
-            gpio_set_level(config->in1, 1);
-            gpio_set_level(config->in2, 0);
-            break;
-        case TB6612_DIR_REVERSE:
-            gpio_set_level(config->in1, 0);
-            gpio_set_level(config->in2, 1);
-            break;
-        case TB6612_DIR_BRAKE:
-            gpio_set_level(config->in1, 1);
-            gpio_set_level(config->in2, 1);
-            break;
-    }
-#endif
 }
 
 static void set_motor_speed(const motor_config_t *config, uint8_t speed)
 {
-#if USE_REMOTE_IO && REMOTE_MOTORS_ENABLED
+#if USE_REMOTE_IO
     esp_err_t ret = remote_pwm_set_duty(config->pwm_pin, speed);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "PWM set failed for pin %d: %s", config->pwm_pin, esp_err_to_name(ret));
     } else if (speed > 0) {
         ESP_LOGI(TAG, "PWM pin=%d duty=%d", config->pwm_pin, speed);
     }
-#elif USE_REMOTE_IO && !REMOTE_MOTORS_ENABLED
-    // Motors disabled - do nothing
-    (void)config;
-    (void)speed;
 #else
     ledc_set_duty(TB6612_LEDC_MODE, config->pwm_channel, speed);
     ledc_update_duty(TB6612_LEDC_MODE, config->pwm_channel);
@@ -482,6 +439,11 @@ void tb6612fng_valve_task(void *pvParameters)
         if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
             for (int i = 0; i < HVAC_VALVE_MAX; i++) {
+                // Skip disabled valves
+                if (!is_valve_enabled((hvac_valve_id_t)i)) {
+                    continue;
+                }
+                
                 // Skip this valve if it's currently calibrating
                 if (valve_calibrating[i]) {
                     continue;
@@ -490,35 +452,50 @@ void tb6612fng_valve_task(void *pvParameters)
                 valve_state_t *state = &valve_states[i];
                 const motor_config_t *config = &motor_configs[i];
                 
-                // Calculate error - use wraparound only if both positions are in the reliable mid-range
-                // (avoid wraparound when near 0% or 100% plateaus where readings are noisy)
-                int16_t linear_error = (int16_t)state->target_position - (int16_t)state->position;
-                int16_t error = linear_error;  // Default to linear path
+                // Get current ADC reading
+                uint8_t adc_pos = valve_adc_pos[i];
                 
-                // Only consider wraparound if BOTH positions are away from the noisy plateaus
-                bool pos_in_plateau = (state->position <= VALVE_PLATEAU_ZONE) || 
-                                      (state->position >= (100 - VALVE_PLATEAU_ZONE));
-                bool target_in_plateau = (state->target_position <= VALVE_PLATEAU_ZONE) || 
-                                         (state->target_position >= (100 - VALVE_PLATEAU_ZONE));
+                // Calculate error based on valve type
+                int16_t error;
+                int16_t abs_error;
                 
-                if (!pos_in_plateau && !target_in_plateau) {
-                    // Safe to consider wraparound - both positions in reliable range
-                    int16_t wrap_error;
-                    if (linear_error > 0) {
-                        wrap_error = linear_error - 100;  // negative = reverse through 0
+                if (i == HVAC_VALVE_COOLANT) {
+                    // Coolant valve: LINEAR mapping - target is position target
+                    // position = ADC%, so error = target_position - position
+                    error = (int16_t)state->target_position - (int16_t)state->position;
+                } else {
+                    // Butterfly valves: target_position is a POSITION target (100%=open, 0%=closed)
+                    // Need to convert position target to ADC target
+                    // V-shape: pos = 100 - |adc - center| * 100 / half_range
+                    // Inverse: |adc - center| = (100 - pos) * half_range / 100
+                    valve_calibration_t *cal = &valve_calibration[i];
+                    uint8_t center = cal->calibrated ? cal->adc_center : 50;
+                    uint8_t half_range = cal->calibrated ? 
+                        (cal->adc_max - cal->adc_min) / 2 : 50;
+                    
+                    // Calculate how far from center the target ADC should be
+                    uint8_t target_offset = (100 - state->target_position) * half_range / 100;
+                    
+                    // Choose direction: go toward current ADC position (shortest path)
+                    int16_t target_adc;
+                    if (adc_pos >= center) {
+                        // Currently above center, target above center
+                        target_adc = center + target_offset;
                     } else {
-                        wrap_error = linear_error + 100;  // positive = forward through 100
+                        // Currently below center, target below center
+                        target_adc = center - target_offset;
                     }
-                    // Pick shortest path
-                    if (abs(wrap_error) < abs(linear_error)) {
-                        error = wrap_error;
-                    }
+                    
+                    // Clamp target_adc to valid range
+                    if (target_adc < 0) target_adc = 0;
+                    if (target_adc > 100) target_adc = 100;
+                    
+                    error = target_adc - (int16_t)adc_pos;
                 }
-                int16_t abs_error = abs(error);
+                abs_error = abs(error);
 
                 // Get raw position for predictive stop
                 uint8_t raw_pos = valve_raw_pos[i];
-                uint8_t adc_pos = valve_adc_pos[i];
                 
                 // Calculate difference between raw and filtered position
                 int16_t raw_filtered_diff = (int16_t)raw_pos - (int16_t)state->position;
@@ -601,61 +578,30 @@ void tb6612fng_valve_task(void *pvParameters)
                 tb6612_direction_t desired_dir;
                 bool direction_blocked = false;  // Will be set if we're at a boundary
                 
-                // Coolant valve (V4) is linear 0-100%, others are butterfly valves
-                if (i == HVAC_VALVE_COOLANT) {
-                    // Linear valve: FWD = more open (increase ADC), REV = less open (decrease ADC)
-                    desired_dir = (error > 0) ? TB6612_DIR_FORWARD : TB6612_DIR_REVERSE;
-                } else {
-                    // Butterfly valve: direction depends on which side of center we're on
-                    // We need to move ADC toward VALVE_BUTTERFLY_CENTER_PCT (48%) to open
-                    // and away from it to close.
-                    // 
-                    // Base assumption: FORWARD = increases raw ADC%, REVERSE = decreases raw ADC%
-                    // (Some valves have inverted wiring - handled by calibration or valve_dir_inverted[])
-                    //
-                    // To OPEN MORE (positive error): move ADC toward center
-                    //   - If ADC > center: need REVERSE (decrease ADC)
-                    //   - If ADC < center: need FORWARD (increase ADC)
-                    // To CLOSE MORE (negative error): move ADC away from center
-                    //   - If ADC > center: need FORWARD (increase ADC toward max)
-                    //   - If ADC < center: need REVERSE (decrease ADC toward min)
+                // Direction logic for all valves since error is ADC-based:
+                // error > 0 means target_adc > current_adc → need to INCREASE ADC
+                // error < 0 means target_adc < current_adc → need to DECREASE ADC
+                // During calibration, FORWARD decreased ADC (62%→0%), so:
+                //   FORWARD = decreases ADC, REVERSE = increases ADC
+                // Therefore: error < 0 (decrease ADC) → FORWARD, error > 0 (increase ADC) → REVERSE
+                desired_dir = (error > 0) ? TB6612_DIR_REVERSE : TB6612_DIR_FORWARD;
+                
+                // Boundary protection for calibrated butterfly valves
+                if (i != HVAC_VALVE_COOLANT && valve_calibration[i].calibrated) {
+                    uint8_t adc_min = valve_calibration[i].adc_min;
+                    uint8_t adc_max = valve_calibration[i].adc_max;
+                    uint8_t boundary_margin = 3;
                     
-                    uint8_t adc_pos = valve_adc_pos[i];
-                    
-                    // Use calibrated values if available, else use defaults
-                    uint8_t center = valve_calibration[i].calibrated ? 
-                                     valve_calibration[i].adc_center : 
-                                     VALVE_BUTTERFLY_CENTER_PCT;
-                    uint8_t adc_min = valve_calibration[i].calibrated ? 
-                                      valve_calibration[i].adc_min : 0;
-                    uint8_t adc_max = valve_calibration[i].calibrated ? 
-                                      valve_calibration[i].adc_max : 100;
-                    
-                    bool above_center = (adc_pos >= center);
-                    
-                    if (error > 0) {
-                        // Want MORE open - move toward center
-                        desired_dir = above_center ? TB6612_DIR_REVERSE : TB6612_DIR_FORWARD;
-                    } else {
-                        // Want LESS open - move away from center
-                        desired_dir = above_center ? TB6612_DIR_FORWARD : TB6612_DIR_REVERSE;
-                        
-                        // BOUNDARY PROTECTION: Block movement if we're at the calibrated boundary
-                        // This prevents going into the noisy multi-rotation region
-                        if (valve_calibration[i].calibrated) {
-                            uint8_t boundary_margin = 3;
-                            if (above_center && adc_pos >= adc_max - boundary_margin) {
-                                // At upper boundary, can't go further up
-                                direction_blocked = true;
-                                ESP_LOGD(TAG, "V%d: Blocked at upper boundary (adc=%d%%, max=%d%%)", 
-                                         i, adc_pos, adc_max);
-                            } else if (!above_center && adc_pos <= adc_min + boundary_margin) {
-                                // At lower boundary, can't go further down
-                                direction_blocked = true;
-                                ESP_LOGD(TAG, "V%d: Blocked at lower boundary (adc=%d%%, min=%d%%)", 
-                                         i, adc_pos, adc_min);
-                            }
-                        }
+                    if (error > 0 && adc_pos >= adc_max - boundary_margin) {
+                        // Want to increase ADC but at upper boundary
+                        direction_blocked = true;
+                        ESP_LOGD(TAG, "V%d: Blocked at upper boundary (adc=%d%%, max=%d%%)", 
+                                 i, adc_pos, adc_max);
+                    } else if (error < 0 && adc_pos <= adc_min + boundary_margin) {
+                        // Want to decrease ADC but at lower boundary
+                        direction_blocked = true;
+                        ESP_LOGD(TAG, "V%d: Blocked at lower boundary (adc=%d%%, min=%d%%)", 
+                                 i, adc_pos, adc_min);
                     }
                 }
                 
@@ -761,9 +707,10 @@ void tb6612fng_valve_task(void *pvParameters)
 #define CALIB_SETTLE_TIME_MS      500    // Wait for motor to settle after direction change
 #define CALIB_MARKER_ADC          60     // ADC% to use as rotation marker
 #define CALIB_MARKER_TOLERANCE    2      // +/- tolerance for marker detection
-#define CALIB_MAX_ROTATION_TIME   70000  // Max time for one rotation (70 seconds at slower speed)
-#define CALIB_MIN_SAMPLES         50     // Minimum samples before looking for marker again
-#define CALIB_MOTOR_SPEED         100    // Slower speed during calibration for better ADC capture
+#define CALIB_MAX_ROTATION_TIME   120000 // Max time for one rotation (120 seconds at slower speed)
+#define CALIB_MIN_SAMPLES         200    // Minimum samples before looking for marker again (ensure full rotation)
+#define CALIB_MOTOR_SPEED         50     // Slow speed during calibration for better ADC capture
+#define CALIB_MIN_RANGE           20     // Minimum ADC range required for valid calibration
 
 // Process calibration state machine for one valve (called from valve task)
 static void calibrate_valve_tick(hvac_valve_id_t valve_id)
@@ -874,6 +821,15 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
             set_motor_direction(valve_id, config, TB6612_DIR_BRAKE, current_adc);
             set_motor_speed(config, 0);
             
+            // Validate calibration range - reject if too narrow
+            uint8_t adc_range = prog->global_max - prog->global_min;
+            if (adc_range < CALIB_MIN_RANGE) {
+                ESP_LOGW(TAG, "V%d: Calibration REJECTED - range too narrow (%d%%, need %d%%), min=%d%% max=%d%%",
+                         valve_id, adc_range, CALIB_MIN_RANGE, prog->global_min, prog->global_max);
+                prog->state = CALIB_STATE_FAILED;
+                break;
+            }
+            
             // Store calibration results
             uint8_t adc_center = (prog->global_min + prog->global_max) / 2;
             uint8_t deadzone_margin = 3;
@@ -914,6 +870,11 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
             // Valve will now seek to its target_position
             valve_calibrating[valve_id] = false;
             prog->state = CALIB_STATE_IDLE;
+            
+            // Check if all calibrations are done
+            if (!any_valve_calibrating()) {
+                hvac_sensors_set_calibration_mode(false);
+            }
             break;
         }
         
@@ -925,6 +886,11 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
             ESP_LOGW(TAG, "V%d: Calibration FAILED - using defaults", valve_id);
             valve_calibrating[valve_id] = false;
             prog->state = CALIB_STATE_IDLE;
+            
+            // Check if all calibrations are done
+            if (!any_valve_calibrating()) {
+                hvac_sensors_set_calibration_mode(false);
+            }
             break;
         }
         
@@ -962,6 +928,9 @@ esp_err_t tb6612fng_start_calibration(hvac_valve_id_t valve_id)
         return ESP_ERR_INVALID_STATE;
     }
     
+    // Enable fast valve position reads during calibration
+    hvac_sensors_set_calibration_mode(true);
+    
     // Initialize calibration progress
     valve_calib_progress_t *prog = &valve_calib_progress[valve_id];
     prog->state = CALIB_STATE_SEEKING_MARKER;
@@ -994,26 +963,54 @@ esp_err_t tb6612fng_start_calibration(hvac_valve_id_t valve_id)
     return ESP_OK;
 }
 
+// Check if a valve is enabled in hardware config
+static bool is_valve_enabled(hvac_valve_id_t valve_id)
+{
+    switch (valve_id) {
+        case HVAC_VALVE_CENTER_1:   return VALVE_CENTER_1_ENABLED;
+        case HVAC_VALVE_CENTER_2:   return VALVE_CENTER_2_ENABLED;
+        case HVAC_VALVE_FOOT:       return VALVE_FOOT_ENABLED;
+        case HVAC_VALVE_WINDSCREEN: return VALVE_WINDSCREEN_ENABLED;
+        case HVAC_VALVE_COOLANT:    return VALVE_COOLANT_ENABLED;
+        default:                    return false;
+    }
+}
+
 // Start background calibration for all butterfly valves (non-blocking)
 esp_err_t tb6612fng_start_calibration_all(void)
 {
-    ESP_LOGI(TAG, "====== STARTING INDEPENDENT CALIBRATION FOR ALL VALVES ======");
+    ESP_LOGI(TAG, "====== STARTING INDEPENDENT CALIBRATION FOR ENABLED VALVES ======");
     
+    // Enable fast valve position reads during calibration
+    hvac_sensors_set_calibration_mode(true);
+    
+    bool any_started = false;
     esp_err_t result = ESP_OK;
     for (int i = 0; i < HVAC_VALVE_MAX; i++) {
         if (i == HVAC_VALVE_COOLANT) continue;  // Skip coolant (linear)
+        if (!is_valve_enabled((hvac_valve_id_t)i)) {
+            ESP_LOGI(TAG, "V%d: Skipping calibration (disabled in config)", i);
+            continue;
+        }
         
         esp_err_t ret = tb6612fng_start_calibration((hvac_valve_id_t)i);
-        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        if (ret == ESP_OK) {
+            any_started = true;
+        } else if (ret != ESP_ERR_INVALID_STATE) {
             result = ret;
         }
+    }
+    
+    // If no valves to calibrate, disable calibration mode immediately
+    if (!any_started) {
+        hvac_sensors_set_calibration_mode(false);
     }
     
     return result;
 }
 
-// Check if any valve is still calibrating
-bool tb6612fng_is_calibrating(void)
+// Helper to check if any valve is calibrating (internal, no side effects)
+static bool any_valve_calibrating(void)
 {
     for (int i = 0; i < HVAC_VALVE_MAX; i++) {
         if (valve_calibrating[i]) {
@@ -1021,6 +1018,17 @@ bool tb6612fng_is_calibrating(void)
         }
     }
     return false;
+}
+
+// Check if any valve is still calibrating
+bool tb6612fng_is_calibrating(void)
+{
+    bool calibrating = any_valve_calibrating();
+    if (!calibrating) {
+        // If no valves calibrating, disable calibration mode
+        hvac_sensors_set_calibration_mode(false);
+    }
+    return calibrating;
 }
 
 // Check if a specific valve is calibrating

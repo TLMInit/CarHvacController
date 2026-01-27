@@ -22,6 +22,8 @@ extern "C" {
 /*******************************************************************************
  * Remote IO Configuration
  * Set to 1 to use IO Node over UART, 0 for local IO (no UART)
+ * When enabled, TB6612 and BTS7960 commands are sent via UART to the IO Node
+ * using the same pin numbers defined below.
  ******************************************************************************/
 #define USE_REMOTE_IO           1
 
@@ -209,6 +211,13 @@ typedef enum {
     HVAC_VALVE_COOLANT,         // Coolant (heater core) valve
     HVAC_VALVE_MAX
 } hvac_valve_id_t;
+
+// Valve enable flags - set to 0 to disable unconnected valves during testing
+#define VALVE_CENTER_1_ENABLED      1   // Center vent valve 1
+#define VALVE_CENTER_2_ENABLED      0   // Center vent valve 2 (disabled for testing)
+#define VALVE_FOOT_ENABLED          0   // Foot vent valve (disabled for testing)
+#define VALVE_WINDSCREEN_ENABLED    0   // Windscreen valve (disabled for testing)
+#define VALVE_COOLANT_ENABLED       0   // Coolant valve (disabled for testing)
 
 /*******************************************************************************
  * HVAC Operating Modes

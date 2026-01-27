@@ -76,6 +76,7 @@ static lv_obj_t *lbl_duct_temp = NULL;
 
 // Valve position indicators
 static lv_obj_t *lbl_center_valve_pos = NULL;
+static lv_obj_t *lbl_center2_valve_pos = NULL;
 static lv_obj_t *lbl_foot_valve_pos = NULL;
 static lv_obj_t *lbl_windscreen_valve_pos = NULL;
 static lv_obj_t *lbl_coolant_valve_pos = NULL;
@@ -528,44 +529,54 @@ static void create_debug_screen(lv_obj_t *parent)
     lv_obj_set_style_text_color(lbl_valves_title, UI_COLOR_HIGHLIGHT, 0);
     lv_obj_set_style_text_font(lbl_valves_title, &lv_font_montserrat_14, 0);
     
-    // Valve labels with positions
+    // Valve labels with positions (5 valves, 18px spacing)
     lv_obj_t *lbl_v1 = lv_label_create(panel_valves);
-    lv_obj_align(lbl_v1, LV_ALIGN_TOP_LEFT, 0, 20);
-    lv_label_set_text(lbl_v1, "Center:");
+    lv_obj_align(lbl_v1, LV_ALIGN_TOP_LEFT, 0, 18);
+    lv_label_set_text(lbl_v1, "C1:");
     lv_obj_set_style_text_color(lbl_v1, UI_COLOR_TEXT_DIM, 0);
     
     lbl_center_valve_pos = lv_label_create(panel_valves);
-    lv_obj_align(lbl_center_valve_pos, LV_ALIGN_TOP_RIGHT, 0, 20);
+    lv_obj_align(lbl_center_valve_pos, LV_ALIGN_TOP_RIGHT, 0, 18);
     lv_label_set_text(lbl_center_valve_pos, "--%");
     lv_obj_set_style_text_color(lbl_center_valve_pos, UI_COLOR_TEXT, 0);
     
+    lv_obj_t *lbl_v1b = lv_label_create(panel_valves);
+    lv_obj_align(lbl_v1b, LV_ALIGN_TOP_LEFT, 0, 36);
+    lv_label_set_text(lbl_v1b, "C2:");
+    lv_obj_set_style_text_color(lbl_v1b, UI_COLOR_TEXT_DIM, 0);
+    
+    lbl_center2_valve_pos = lv_label_create(panel_valves);
+    lv_obj_align(lbl_center2_valve_pos, LV_ALIGN_TOP_RIGHT, 0, 36);
+    lv_label_set_text(lbl_center2_valve_pos, "--%");
+    lv_obj_set_style_text_color(lbl_center2_valve_pos, UI_COLOR_TEXT, 0);
+    
     lv_obj_t *lbl_v2 = lv_label_create(panel_valves);
-    lv_obj_align(lbl_v2, LV_ALIGN_TOP_LEFT, 0, 40);
+    lv_obj_align(lbl_v2, LV_ALIGN_TOP_LEFT, 0, 54);
     lv_label_set_text(lbl_v2, "Foot:");
     lv_obj_set_style_text_color(lbl_v2, UI_COLOR_TEXT_DIM, 0);
     
     lbl_foot_valve_pos = lv_label_create(panel_valves);
-    lv_obj_align(lbl_foot_valve_pos, LV_ALIGN_TOP_RIGHT, 0, 40);
+    lv_obj_align(lbl_foot_valve_pos, LV_ALIGN_TOP_RIGHT, 0, 54);
     lv_label_set_text(lbl_foot_valve_pos, "--%");
     lv_obj_set_style_text_color(lbl_foot_valve_pos, UI_COLOR_TEXT, 0);
     
     lv_obj_t *lbl_v3 = lv_label_create(panel_valves);
-    lv_obj_align(lbl_v3, LV_ALIGN_TOP_LEFT, 0, 60);
-    lv_label_set_text(lbl_v3, "Defrost:");
+    lv_obj_align(lbl_v3, LV_ALIGN_TOP_LEFT, 0, 72);
+    lv_label_set_text(lbl_v3, "WS:");
     lv_obj_set_style_text_color(lbl_v3, UI_COLOR_TEXT_DIM, 0);
     
     lbl_windscreen_valve_pos = lv_label_create(panel_valves);
-    lv_obj_align(lbl_windscreen_valve_pos, LV_ALIGN_TOP_RIGHT, 0, 60);
+    lv_obj_align(lbl_windscreen_valve_pos, LV_ALIGN_TOP_RIGHT, 0, 72);
     lv_label_set_text(lbl_windscreen_valve_pos, "--%");
     lv_obj_set_style_text_color(lbl_windscreen_valve_pos, UI_COLOR_TEXT, 0);
     
     lv_obj_t *lbl_v4 = lv_label_create(panel_valves);
-    lv_obj_align(lbl_v4, LV_ALIGN_TOP_LEFT, 0, 80);
-    lv_label_set_text(lbl_v4, "Coolant:");
+    lv_obj_align(lbl_v4, LV_ALIGN_TOP_LEFT, 0, 90);
+    lv_label_set_text(lbl_v4, "Cool:");
     lv_obj_set_style_text_color(lbl_v4, UI_COLOR_TEXT_DIM, 0);
     
     lbl_coolant_valve_pos = lv_label_create(panel_valves);
-    lv_obj_align(lbl_coolant_valve_pos, LV_ALIGN_TOP_RIGHT, 0, 80);
+    lv_obj_align(lbl_coolant_valve_pos, LV_ALIGN_TOP_RIGHT, 0, 90);
     lv_label_set_text(lbl_coolant_valve_pos, "--%");
     lv_obj_set_style_text_color(lbl_coolant_valve_pos, UI_COLOR_TEXT, 0);
     
@@ -759,6 +770,9 @@ void hvac_ui_update(void)
     // Update valve positions
     snprintf(buf, sizeof(buf), "%d%%", state.center_valve_pos);
     lv_label_set_text(lbl_center_valve_pos, buf);
+    
+    snprintf(buf, sizeof(buf), "%d%%", state.center2_valve_pos);
+    lv_label_set_text(lbl_center2_valve_pos, buf);
     
     snprintf(buf, sizeof(buf), "%d%%", state.foot_valve_pos);
     lv_label_set_text(lbl_foot_valve_pos, buf);

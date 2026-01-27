@@ -141,11 +141,11 @@ static esp_err_t ads1115_read_channel(i2c_master_dev_handle_t device,
     }
     
     // Configure for single-shot conversion
-    // Gain = 2.048V (allows full 0-3.3V range with some headroom)
+    // Gain = 4.096V (allows full 0-3.3V range without clipping)
     // Data rate = 128 SPS (balanced speed/accuracy)
     uint16_t config = 0x8000;  // OS bit set
     config |= ADS1115_CONFIG_MUX(physical_channel);
-    config |= ADS1115_CONFIG_GAIN(ADS1115_GAIN_2p048V);
+    config |= ADS1115_CONFIG_GAIN(ADS1115_GAIN_4p096V);
     config |= ADS1115_CONFIG_MODE;
     config |= ADS1115_CONFIG_DATARATE(ADS1115_DATARATE_128SPS);
     
@@ -268,19 +268,18 @@ esp_err_t ads1115_read_mv(ads1115_channel_t channel, ads1115_mv_t *voltage)
     }
     
     // Convert to voltage in mV
-    // ADS1115 with 2.048V gain gives ±2.048V range
-    // Single-ended input (0V-3.3V) appears as 0-32767 raw
-    // Conversion: (raw / 32767) * 2048 mV for positive readings
+    // ADS1115 with 4.096V gain gives ±4.096V full scale range
+    // Single-ended input (0V-3.3V) appears as 0 to ~26214 raw (3.3/4.096 * 32767)
+    // Conversion: (raw / 32767) * 4096 mV for positive readings
     
     int32_t mv;
     if (raw < 0) {
         // Negative readings shouldn't happen with single-ended, treat as 0
         mv = 0;
     } else {
-        // Positive: scale to 0-2048mV range, then scale to 0-3300mV
-        mv = ((int32_t)raw * 2048) / 32767;
-        // Scale from 2048mV range to actual 3300mV range
-        mv = (mv * 3300) / 2048;
+        // Positive: scale raw value to mV using 4.096V full scale
+        // raw 32767 = 4096mV, so: mv = raw * 4096 / 32767
+        mv = ((int32_t)raw * 4096) / 32767;
     }
     
     if (mv < 0) mv = 0;

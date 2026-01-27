@@ -148,11 +148,36 @@ void tb6612fng_valve_task(void *pvParameters);
 esp_err_t tb6612fng_start_task(void);
 
 /**
- * @brief Calibrate a valve (move to full open, then full closed)
- * @param valve_id Valve identifier
- * @return ESP_OK on success
+ * @brief Calibrate a valve (blocking, full open then full close)
  */
 esp_err_t tb6612fng_calibrate_valve(hvac_valve_id_t valve_id);
+
+/**
+ * @brief Start non-blocking auto-calibration for a single valve
+ */
+esp_err_t tb6612fng_auto_calibrate_valve(hvac_valve_id_t valve_id);
+
+/**
+ * @brief Start non-blocking auto-calibration for all butterfly valves
+ */
+esp_err_t tb6612fng_auto_calibrate_all(void);
+
+/**
+ * @brief Check if any valve is currently calibrating
+ */
+bool tb6612fng_is_calibrating(void);
+
+/**
+ * @brief Check if a valve has completed calibration
+ */
+bool tb6612fng_valve_is_calibrated(hvac_valve_id_t valve_id);
+
+/**
+ * @brief Get calibration values for a valve
+ * @return ESP_OK if calibrated, ESP_ERR_NOT_FOUND if not calibrated
+ */
+esp_err_t tb6612fng_get_calibration(hvac_valve_id_t valve_id, 
+                                     uint8_t *adc_min, uint8_t *adc_max, uint8_t *adc_center);
 
 /**
  * @brief Get all valve states

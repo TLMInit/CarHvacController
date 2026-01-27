@@ -292,6 +292,7 @@ static void run_temperature_control(void)
     
     // Get valve position feedback
     hvac_state.center_valve_pos = readings.center_valve_pos;
+    hvac_state.center2_valve_pos = readings.center2_valve_pos;
     hvac_state.foot_valve_pos = readings.foot_valve_pos;
     hvac_state.windscreen_valve_pos = readings.windscreen_valve_pos;
     hvac_state.coolant_valve_pos = readings.coolant_valve_pos;

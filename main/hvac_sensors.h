@@ -63,7 +63,8 @@ typedef struct {
     float cabin_humidity;       // Cabin humidity in %RH
     float coolant_temp_c;       // Coolant temperature in °C
     float duct_temp_c;          // Duct air temperature in °C
-    uint8_t center_valve_pos;   // Center valve position (0-100%)
+    uint8_t center_valve_pos;   // Center valve 1 position (0-100%)
+    uint8_t center2_valve_pos;  // Center valve 2 position (0-100%)
     uint8_t foot_valve_pos;     // Foot valve position (0-100%)
     uint8_t windscreen_valve_pos;  // Windscreen valve position (0-100%)
     uint8_t coolant_valve_pos;  // Coolant control valve position (0-100%)
@@ -139,10 +140,16 @@ float hvac_sensors_get_coolant_temp(void);
 float hvac_sensors_get_duct_temp(void);
 
 /**
- * @brief Get center valve position feedback
+ * @brief Get center valve 1 position feedback
  * @return Position in percent (0-100)
  */
 uint8_t hvac_sensors_get_center_valve_pos(void);
+
+/**
+ * @brief Get center valve 2 position feedback
+ * @return Position in percent (0-100)
+ */
+uint8_t hvac_sensors_get_center2_valve_pos(void);
 
 /**
  * @brief Get foot valve position feedback
@@ -167,6 +174,12 @@ uint8_t hvac_sensors_get_coolant_valve_pos(void);
  * @return true if all sensors are working
  */
 bool hvac_sensors_all_healthy(void);
+
+/**
+ * @brief Enable/disable calibration mode for fast valve position reads
+ * @param enabled true for fast reads (50ms), false for normal interval
+ */
+void hvac_sensors_set_calibration_mode(bool enabled);
 
 /**
  * @brief Sensor reading task
