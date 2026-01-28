@@ -781,12 +781,32 @@ void hvac_sensors_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Sensor reading task started");
     
+    // Counter for temperature reads during calibration
+    // Read temperatures every ~500ms (20 x 25ms intervals)
+    uint8_t calib_temp_counter = 0;
+    const uint8_t CALIB_TEMP_READ_INTERVAL = 20;
+    
     while (1) {
         if (calibration_mode) {
-            // During calibration, only read valve positions at high frequency
+            // During calibration, read valve positions at high frequency
             read_valve_positions();
+            
+            // But also read temperatures periodically so UI updates
+            calib_temp_counter++;
+            if (calib_temp_counter >= CALIB_TEMP_READ_INTERVAL) {
+                calib_temp_counter = 0;
+#if USE_REMOTE_IO
+                read_remote_temperature_sensors();
+#else
+                read_sht30();
+                read_ds18b20_coolant();
+                read_ds18b20_duct();
+#endif
+            }
+            
             vTaskDelay(pdMS_TO_TICKS(CALIB_SENSOR_INTERVAL_MS));
         } else {
+            calib_temp_counter = 0;  // Reset counter when not calibrating
             hvac_sensors_read_all();
             vTaskDelay(pdMS_TO_TICKS(sensor_interval_ms));
         }
