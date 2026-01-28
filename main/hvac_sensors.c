@@ -472,9 +472,19 @@ static void read_remote_bme280(void)
         }
     }
     
+    // BME280: Write ctrl_hum register (0xF2) FIRST - must be written before ctrl_meas
+    // osrs_h=x1 (001) for humidity oversampling
+    uint8_t ctrl_hum_cmd[2] = {0xF2, 0x01};
+    ret = remote_i2c_write(0, addr, ctrl_hum_cmd, 2);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "BME280 ctrl_hum write failed");
+        goto mark_error;
+    }
+    
     // BME280: Write ctrl_meas register (0xF4) to trigger forced mode measurement
-    // Forced mode: osrs_t=x1, osrs_p=x1, osrs_h=x1, mode=01
+    // Forced mode: osrs_t=x1, osrs_p=x1, mode=01
     // Register 0xF4: [osrs_t(2:0), osrs_p(2:0), mode(1:0)] = 0b001_001_01 = 0x25
+    // Note: ctrl_hum changes only take effect after writing ctrl_meas
     uint8_t ctrl_cmd[2] = {0xF4, 0x25};
     ret = remote_i2c_write(0, addr, ctrl_cmd, 2);
     if (ret != ESP_OK) {

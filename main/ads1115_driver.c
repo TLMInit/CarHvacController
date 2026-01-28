@@ -241,7 +241,14 @@ esp_err_t ads1115_read_raw(ads1115_channel_t channel, ads1115_raw_t *value)
     uint8_t i2c_addr = (channel < 4) ? ADS1115_ADDR_1 : ADS1115_ADDR_2;
     uint8_t physical_ch = channel & 0x03;
     
-    esp_err_t ret = remote_ads1115_read(0, i2c_addr, physical_ch, value);
+    // Retry up to 3 times on transient communication errors
+    esp_err_t ret = ESP_FAIL;
+    for (int retry = 0; retry < 3 && ret != ESP_OK; retry++) {
+        ret = remote_ads1115_read(0, i2c_addr, physical_ch, value);
+        if (ret != ESP_OK && retry < 2) {
+            vTaskDelay(pdMS_TO_TICKS(5));  // Brief delay before retry
+        }
+    }
 #else
     i2c_master_dev_handle_t device = ads1115_get_device(channel);
     uint8_t physical_ch = ads1115_get_physical_channel(channel);
@@ -252,7 +259,7 @@ esp_err_t ads1115_read_raw(ads1115_channel_t channel, ads1115_raw_t *value)
     xSemaphoreGive(driver.mutex);
     
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to read channel %d: %s", channel, esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to read channel %d: %s (after retries)", channel, esp_err_to_name(ret));
     }
     
     return ret;
