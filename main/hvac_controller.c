@@ -47,6 +47,14 @@ static const char *TAG = "HVAC_CTRL";
 #define AC_HUMIDITY_THRESHOLD   65.0f       // Auto A/C when humidity > this (%)
 #define AC_DEFOG_HUMIDITY       55.0f       // Target humidity when defogging
 
+// Cold-start warmup constants (AUTO mode initial defrost phase)
+#define WARMUP_COLD_CABIN_THRESHOLD  15.0f  // Below this temp = cold start (°C)
+#define WARMUP_MIN_DURATION_MS       60000  // Minimum warmup time (60 seconds)
+#define WARMUP_MAX_DURATION_MS       300000 // Maximum warmup time (5 minutes)
+#define WARMUP_EXIT_CABIN_TEMP       18.0f  // Exit warmup when cabin reaches this (°C)
+#define WARMUP_EXIT_HUMIDITY         60.0f  // Exit warmup when humidity drops below this (%)
+#define WARMUP_DUCT_TEMP_READY       40.0f  // Heater core warm when duct > this (°C)
+
 /*******************************************************************************
  * Private Data
  ******************************************************************************/
@@ -55,6 +63,21 @@ static SemaphoreHandle_t state_mutex = NULL;
 static TaskHandle_t controller_task_handle = NULL;
 static hvac_state_callback_t state_callback = NULL;
 static void *callback_user_data = NULL;
+
+// Cold-start warmup state (for AUTO mode)
+typedef struct {
+    bool active;                 // Warmup phase is active
+    uint32_t start_time_ms;      // When warmup started
+    float initial_cabin_temp;    // Cabin temp when warmup started
+    float initial_humidity;      // Humidity when warmup started
+} warmup_state_t;
+
+static warmup_state_t warmup_state = {
+    .active = false,
+    .start_time_ms = 0,
+    .initial_cabin_temp = NAN,
+    .initial_humidity = NAN
+};
 
 // Thermal adaptation state
 typedef struct {
@@ -445,22 +468,108 @@ static void run_temperature_control(void)
     
     // Auto mode adjustments
     if (hvac_state.mode == HVAC_MODE_AUTO) {
-        // Adjust air distribution based on conditions
-        if (hvac_state.is_heating && hvac_state.cabin_temp_c < 18.0f) {
-            // Cold cabin - more to feet
-            tb6612fng_set_valve_position(HVAC_VALVE_CENTER_1, 30);
-            tb6612fng_set_valve_position(HVAC_VALVE_CENTER_2, 30);
-            tb6612fng_set_valve_position(HVAC_VALVE_FOOT, 100);
-        } else if (hvac_state.is_cooling) {
-            // Cooling - more to face
-            tb6612fng_set_valve_position(HVAC_VALVE_CENTER_1, 100);
-            tb6612fng_set_valve_position(HVAC_VALVE_CENTER_2, 100);
-            tb6612fng_set_valve_position(HVAC_VALVE_FOOT, 30);
+        uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        
+        // =====================================================================
+        // COLD-START WARMUP PHASE
+        // When entering AUTO mode with a cold cabin, start with aggressive 
+        // defrost to prevent/clear windscreen fogging, then transition to 
+        // normal comfort operation.
+        // =====================================================================
+        
+        // Check if we should START warmup phase
+        if (!warmup_state.active && hvac_state.cabin_temp_c < WARMUP_COLD_CABIN_THRESHOLD) {
+            // Cold cabin detected - start warmup phase
+            warmup_state.active = true;
+            warmup_state.start_time_ms = now_ms;
+            warmup_state.initial_cabin_temp = hvac_state.cabin_temp_c;
+            warmup_state.initial_humidity = hvac_state.cabin_humidity;
+            ESP_LOGI(TAG, "AUTO: Cold start detected (cabin=%.1f°C, humidity=%.1f%%), starting warmup phase",
+                     hvac_state.cabin_temp_c, hvac_state.cabin_humidity);
         }
         
-        // Auto defrost if high humidity
-        if (hvac_state.cabin_humidity > 70.0f) {
-            tb6612fng_set_valve_position(HVAC_VALVE_WINDSCREEN, 50);
+        // Check if we should EXIT warmup phase
+        if (warmup_state.active) {
+            uint32_t elapsed_ms = now_ms - warmup_state.start_time_ms;
+            bool min_time_passed = (elapsed_ms >= WARMUP_MIN_DURATION_MS);
+            bool max_time_reached = (elapsed_ms >= WARMUP_MAX_DURATION_MS);
+            bool cabin_warm = (hvac_state.cabin_temp_c >= WARMUP_EXIT_CABIN_TEMP);
+            bool humidity_ok = (!isnan(hvac_state.cabin_humidity) && 
+                               hvac_state.cabin_humidity < WARMUP_EXIT_HUMIDITY);
+            bool duct_warm = (!isnan(hvac_state.duct_temp_c) && 
+                             hvac_state.duct_temp_c >= WARMUP_DUCT_TEMP_READY);
+            
+            // Exit conditions (after minimum time):
+            // 1. Max time reached (force exit)
+            // 2. Cabin warm enough AND humidity acceptable
+            // 3. Cabin warm enough AND duct is hot (heater ready)
+            bool should_exit = max_time_reached || 
+                              (min_time_passed && cabin_warm && humidity_ok) ||
+                              (min_time_passed && cabin_warm && duct_warm);
+            
+            if (should_exit) {
+                warmup_state.active = false;
+                ESP_LOGI(TAG, "AUTO: Warmup complete after %lus (cabin=%.1f°C, humidity=%.1f%%, duct=%.1f°C)",
+                         elapsed_ms / 1000, hvac_state.cabin_temp_c, 
+                         hvac_state.cabin_humidity, hvac_state.duct_temp_c);
+            }
+        }
+        
+        // Apply warmup or normal AUTO behavior
+        if (warmup_state.active) {
+            // *** WARMUP PHASE: Aggressive defrost mode ***
+            // Full heat + windscreen focus + A/C for dehumidification
+            
+            // Full heat output
+            tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, 100);
+            
+            // Air distribution: prioritize windscreen, some to feet for comfort
+            tb6612fng_set_valve_position(HVAC_VALVE_WINDSCREEN, 100);
+            tb6612fng_set_valve_position(HVAC_VALVE_FOOT, 70);
+            tb6612fng_set_valve_position(HVAC_VALVE_CENTER_1, 30);
+            tb6612fng_set_valve_position(HVAC_VALVE_CENTER_2, 30);
+            
+            // Override fan to high speed during warmup (if in AUTO fan mode)
+            if (hvac_state.fan_level == HVAC_FAN_AUTO) {
+                bts7960_set_speed(BTS7960_FAN_PERCENT_HIGH);
+                hvac_state.blower_speed = BTS7960_FAN_PERCENT_HIGH;
+            }
+            
+            // Log warmup progress periodically
+            static uint32_t last_warmup_log = 0;
+            if (now_ms - last_warmup_log >= 10000) {  // Every 10 seconds
+                last_warmup_log = now_ms;
+                uint32_t elapsed = (now_ms - warmup_state.start_time_ms) / 1000;
+                ESP_LOGI(TAG, "AUTO warmup: %lus elapsed, cabin=%.1f°C, humidity=%.1f%%, duct=%.1f°C",
+                         elapsed, hvac_state.cabin_temp_c, hvac_state.cabin_humidity, hvac_state.duct_temp_c);
+            }
+        } else {
+            // *** NORMAL AUTO OPERATION ***
+            // Adjust air distribution based on conditions
+            if (hvac_state.is_heating && hvac_state.cabin_temp_c < 18.0f) {
+                // Cold cabin - more to feet
+                tb6612fng_set_valve_position(HVAC_VALVE_CENTER_1, 30);
+                tb6612fng_set_valve_position(HVAC_VALVE_CENTER_2, 30);
+                tb6612fng_set_valve_position(HVAC_VALVE_FOOT, 100);
+                tb6612fng_set_valve_position(HVAC_VALVE_WINDSCREEN, 30);
+            } else if (hvac_state.is_cooling) {
+                // Cooling - more to face
+                tb6612fng_set_valve_position(HVAC_VALVE_CENTER_1, 100);
+                tb6612fng_set_valve_position(HVAC_VALVE_CENTER_2, 100);
+                tb6612fng_set_valve_position(HVAC_VALVE_FOOT, 30);
+                tb6612fng_set_valve_position(HVAC_VALVE_WINDSCREEN, 0);
+            } else {
+                // Temperature reached - balanced distribution
+                tb6612fng_set_valve_position(HVAC_VALVE_CENTER_1, 50);
+                tb6612fng_set_valve_position(HVAC_VALVE_CENTER_2, 50);
+                tb6612fng_set_valve_position(HVAC_VALVE_FOOT, 50);
+                tb6612fng_set_valve_position(HVAC_VALVE_WINDSCREEN, 0);
+            }
+            
+            // Auto defrost if high humidity (even after warmup)
+            if (hvac_state.cabin_humidity > 70.0f) {
+                tb6612fng_set_valve_position(HVAC_VALVE_WINDSCREEN, 50);
+            }
         }
     }
     
@@ -472,21 +581,30 @@ static void run_temperature_control(void)
     // 1. User has enabled A/C (ac_enabled) and system is not in OFF mode
     // 2. In DEFROST or DEFROST_FOOT mode (always run A/C to defog)
     // 3. AUTO mode with high humidity (above threshold)
+    // 4. AUTO mode warmup phase (always run A/C to prevent initial fogging)
     // 
     // For Danish truck with limited fresh air: A/C dehumidifies recirculated air,
     // which combined with heat creates warm, dry air for effective defrost.
     // =========================================================================
     
     bool should_run_ac = false;
+    const char *ac_reason = "OFF";
     
     // Check if mode requires A/C
     bool is_defrost_mode = (hvac_state.mode == HVAC_MODE_DEFROST || 
                             hvac_state.mode == HVAC_MODE_DEFROST_FOOT);
     
+    // AUTO mode warmup phase: Always run A/C for dehumidification
+    if (hvac_state.mode == HVAC_MODE_AUTO && warmup_state.active) {
+        should_run_ac = true;
+        ac_reason = "AUTO warmup";
+    }
+    
     // Defrost modes: Always run A/C for defogging, regardless of ac_enabled setting
     // Heat + A/C is the most effective defogging combination
     if (is_defrost_mode) {
         should_run_ac = true;
+        ac_reason = "DEFROST mode";
         // Also ensure coolant valve is fully open for maximum heat during defrost
         tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, 100);
     }
@@ -496,18 +614,31 @@ static void run_temperature_control(void)
         !isnan(hvac_state.cabin_humidity) && 
         hvac_state.cabin_humidity > AC_HUMIDITY_THRESHOLD) {
         should_run_ac = true;
-        ESP_LOGD(TAG, "AUTO: High humidity (%.1f%%), A/C for dehumidification", 
-                 hvac_state.cabin_humidity);
+        ac_reason = "High humidity";
     }
     
     // User-enabled A/C: Run if user toggled A/C on (for cooling or manual dehumidification)
     if (hvac_state.ac_enabled && hvac_state.mode != HVAC_MODE_OFF) {
         should_run_ac = true;
+        ac_reason = "User request";
     }
     
     // Don't run A/C if system is OFF
     if (hvac_state.mode == HVAC_MODE_OFF) {
         should_run_ac = false;
+        ac_reason = "System OFF";
+    }
+    
+    // Log A/C request change with reason
+    static bool last_ac_request = false;
+    if (should_run_ac != last_ac_request) {
+        if (should_run_ac) {
+            ESP_LOGI(TAG, "A/C REQUEST: ON - Reason: %s (humidity=%.1f%%)", 
+                     ac_reason, hvac_state.cabin_humidity);
+        } else {
+            ESP_LOGI(TAG, "A/C REQUEST: OFF - Reason: %s", ac_reason);
+        }
+        last_ac_request = should_run_ac;
     }
     
     // Apply A/C compressor state
@@ -589,13 +720,30 @@ esp_err_t hvac_controller_set_mode(hvac_mode_t mode)
     }
     
     if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        hvac_mode_t old_mode = hvac_state.mode;
         hvac_state.mode = mode;
+        
+        // Reset warmup state when leaving AUTO mode or entering AUTO fresh
+        if (old_mode == HVAC_MODE_AUTO && mode != HVAC_MODE_AUTO) {
+            // Leaving AUTO - reset warmup
+            warmup_state.active = false;
+            ESP_LOGI(TAG, "Left AUTO mode, warmup reset");
+        } else if (mode == HVAC_MODE_AUTO && old_mode != HVAC_MODE_AUTO) {
+            // Entering AUTO - reset warmup so it can detect cold start
+            warmup_state.active = false;
+            warmup_state.start_time_ms = 0;
+            warmup_state.initial_cabin_temp = NAN;
+            warmup_state.initial_humidity = NAN;
+            ESP_LOGI(TAG, "Entered AUTO mode, warmup state reset");
+        }
         
         if (mode == HVAC_MODE_OFF) {
             // Turn off everything
             bts7960_stop();
             tb6612fng_stop_all_valves();
+            set_ac_compressor(false);  // Turn off A/C when system is OFF
             hvac_state.blower_speed = 0;
+            warmup_state.active = false;  // Also reset warmup
         } else {
             // Enable motor drivers
             tb6612fng_enable_all();

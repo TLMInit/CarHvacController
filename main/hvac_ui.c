@@ -734,8 +734,9 @@ void hvac_ui_update(void)
         update_fan_slider(state.fan_level);
     }
     
-    // Update A/C button
-    if (state.ac_enabled) {
+    // Update A/C button - show CHECKED (blue) when compressor is actually running
+    // This reflects automatic A/C (defrost, warmup, high humidity) not just user toggle
+    if (state.ac_compressor_on) {
         lv_obj_add_state(btn_ac, LV_STATE_CHECKED);
     } else {
         lv_obj_clear_state(btn_ac, LV_STATE_CHECKED);

@@ -81,8 +81,8 @@ static TaskHandle_t valve_task_handle = NULL;
 #define VALVE_FULL_TRAVEL_TIME_MS   10000    // Time for 0-100% travel
 #define VALVE_TASK_PERIOD_MS        25      // Task update period (faster for better response)
 #define VALVE_MOTOR_SPEED           100     // Maximum motor speed (0-255)
-#define VALVE_POSITION_TOLERANCE    5       // Acceptable error window (%) - tighter tolerance
-#define VALVE_HYSTERESIS            5       // Extra margin before restarting (%) - prevents hunting
+#define VALVE_POSITION_TOLERANCE    2       // Acceptable error window (%) - tighter tolerance
+#define VALVE_HYSTERESIS            2       // Extra margin before restarting (%) - prevents hunting
 #define VALVE_STALL_TIMEOUT_MS      6000     // No movement timeout
 #define VALVE_MOVEMENT_THRESHOLD    2       // Minimum change considered movement
 #define VALVE_MIN_SPEED             20      // Minimum PWM to overcome stiction
