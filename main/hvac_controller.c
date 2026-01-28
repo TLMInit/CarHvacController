@@ -762,6 +762,9 @@ esp_err_t hvac_controller_set_mode(hvac_mode_t mode)
         ESP_LOGI(TAG, "Mode set to: %s", mode_names[mode]);
         notify_state_change();
         xSemaphoreGive(state_mutex);
+        
+        // Save settings to NVS
+        hvac_controller_save_settings();
     } else {
         return ESP_ERR_TIMEOUT;
     }
@@ -824,6 +827,9 @@ esp_err_t hvac_controller_set_target_temp(float temp_c)
         ESP_LOGI(TAG, "Target temperature set to: %.1f°C", temp_c);
         notify_state_change();
         xSemaphoreGive(state_mutex);
+        
+        // Save settings to NVS
+        hvac_controller_save_settings();
     } else {
         return ESP_ERR_TIMEOUT;
     }
@@ -1097,10 +1103,14 @@ esp_err_t hvac_controller_load_settings(void)
         if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             hvac_state.target_temp_c = settings.target_temp_c;
             hvac_state.temp_unit = settings.temp_unit;
-            // Don't restore mode and fan - start in OFF state
+            hvac_state.mode = settings.mode;
+            hvac_state.fan_level = settings.fan_level;
+            hvac_state.ac_enabled = settings.ac_enabled;
+            hvac_state.recirculate = settings.recirculate;
             xSemaphoreGive(state_mutex);
         }
-        ESP_LOGI(TAG, "Settings loaded from NVS");
+        ESP_LOGI(TAG, "Settings loaded: mode=%s, fan=%s, target=%.1f°C",
+                 mode_names[settings.mode], fan_level_names[settings.fan_level], settings.target_temp_c);
     }
     
     return ret;

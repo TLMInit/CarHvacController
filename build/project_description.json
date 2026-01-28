@@ -1,7 +1,7 @@
 {
     "version":            "1.3",
     "project_name":       "CarHvacController",
-    "project_version":    "1c9a16d-dirty",
+    "project_version":    "505be1d-dirty",
     "project_path":       "C:/Users/Admin/Documents/CarHvacController",
     "idf_path":           "C:/Users/Admin/esp/master/esp-idf",
     "build_dir":          "C:/Users/Admin/Documents/CarHvacController/build",

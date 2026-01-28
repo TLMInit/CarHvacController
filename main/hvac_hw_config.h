@@ -193,12 +193,11 @@
      * Two 16-bit ADC modules for analog signal measurement
      * - ADS1115 #1: 4 analog inputs (0-3V3 range)
      * - ADS1115 #2: 4 analog inputs (0-3V3 range)
-     * Note: Shares I2C_NUM_1 with SHT30 sensor (ESP32-S3 has only 2 I2C controllers)
+     * Note: I2C pins below are sent to IO Node via UART I2CINIT command.
      ******************************************************************************/
-    #define ADS1115_I2C_PORT        I2C_NUM_1       // Shared with SHT30
-    #define ADS1115_PIN_SDA         GPIO_NUM_43     // Same as SHT30
-    #define ADS1115_PIN_SCL         GPIO_NUM_44     // Same as SHT30
-    #define ADS1115_I2C_SPEED_HZ    100000          // 100 kHz (match SHT30)
+    #define ADS1115_I2C_SDA         GPIO_NUM_8      // Sent to IO Node
+    #define ADS1115_I2C_SCL         GPIO_NUM_9      // Sent to IO Node
+    #define ADS1115_I2C_SPEED_HZ    400000          // 400 kHz
 
     // ADS1115 I2C Addresses (configurable via ADDR pin)
     #define ADS1115_ADDR_1          0x48            // ADDR pin → GND
@@ -220,10 +219,10 @@
 
     // Valve enable flags - set to 0 to disable unconnected valves during testing
     #define VALVE_CENTER_1_ENABLED      1   // Center vent valve 1
-    #define VALVE_CENTER_2_ENABLED      0   // Center vent valve 2 (disabled for testing)
-    #define VALVE_FOOT_ENABLED          0   // Foot vent valve (disabled for testing)
-    #define VALVE_WINDSCREEN_ENABLED    0   // Windscreen valve (disabled for testing)
-    #define VALVE_COOLANT_ENABLED       0   // Coolant valve (disabled for testing)
+    #define VALVE_CENTER_2_ENABLED      1   // Center vent valve 2 (disabled for testing)
+    #define VALVE_FOOT_ENABLED          1   // Foot vent valve (disabled for testing)
+    #define VALVE_WINDSCREEN_ENABLED    1   // Windscreen valve (disabled for testing)
+    #define VALVE_COOLANT_ENABLED       1   // Coolant valve (disabled for testing)
 
     /*******************************************************************************
      * HVAC Operating Modes

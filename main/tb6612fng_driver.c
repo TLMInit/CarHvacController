@@ -80,13 +80,13 @@ static TaskHandle_t valve_task_handle = NULL;
 // Time constants for valve control (in ms)
 #define VALVE_FULL_TRAVEL_TIME_MS   10000    // Time for 0-100% travel
 #define VALVE_TASK_PERIOD_MS        25      // Task update period (faster for better response)
-#define VALVE_MOTOR_SPEED           100     // Maximum motor speed (0-255)
+#define VALVE_MOTOR_SPEED           80     // Maximum motor speed (0-255)
 #define VALVE_POSITION_TOLERANCE    2       // Acceptable error window (%) - tighter tolerance
 #define VALVE_HYSTERESIS            2       // Extra margin before restarting (%) - prevents hunting
 #define VALVE_STALL_TIMEOUT_MS      6000     // No movement timeout
 #define VALVE_MOVEMENT_THRESHOLD    2       // Minimum change considered movement
-#define VALVE_MIN_SPEED             20      // Minimum PWM to overcome stiction
-#define VALVE_RAMP_START_ERROR      20      // Start ramping down speed when error is below this % (was 20)
+#define VALVE_MIN_SPEED             30      // Minimum PWM to overcome stiction
+#define VALVE_RAMP_START_ERROR      40      // Start ramping down speed when error is below this % (was 20)
 #define VALVE_DEBUG_LOG_MS          300     // Periodic debug log interval
 #define VALVE_PLATEAU_ZONE          5      // Dead zone at 0% and 100% where readings are unreliable
 #define VALVE_EMA_ALPHA             128      // EMA filter: 128/256 = 50% = moderate filtering (faster response)
@@ -96,6 +96,13 @@ static TaskHandle_t valve_task_handle = NULL;
 #define VALVE_DEADZONE_ADC          5       // ADC dead zone at extreme positions (0-5% and 95-100%)
 #define VALVE_DEADZONE_LOW_PCT      2       // Minimum target clamp (%)
 #define VALVE_DEADZONE_HIGH_PCT     2       // Maximum target clamp (%)
+#define VALVE_ADC_WRAPAROUND_THRESH 40      // ADC jump larger than this indicates potentiometer wrap-around
+#define VALVE_BOUNDARY_SAFE_MARGIN  1       // Safety margin from calibrated boundaries (1% = range 1-99%)
+
+// Coolant valve specific settings (linear valve, different motor characteristics)
+#define COOLANT_MOTOR_SPEED         255     // Maximum motor speed for coolant valve (0-255)
+#define COOLANT_MIN_SPEED           100      // Minimum PWM for coolant valve
+#define COOLANT_RAMP_START_ERROR    20      // Start ramping down when error is below this %
 
 // Forward declarations
 void tb6612fng_calibration_tick(void);
@@ -118,7 +125,7 @@ static valve_calibration_t valve_calibration[HVAC_VALVE_MAX] = {
     {0, 100, VALVE_BUTTERFLY_CENTER_PCT, 5, 95, false, false},  // CENTER_2
     {0, 100, VALVE_BUTTERFLY_CENTER_PCT, 5, 95, false, false},  // FOOT
     {0, 100, VALVE_BUTTERFLY_CENTER_PCT, 5, 95, true, false},   // WINDSCREEN (inverted)
-    {0, 100, 50, 5, 95, false, false},                          // COOLANT (linear)
+    {4, 94, 50, 7, 91, false, true},                            // COOLANT (linear, pre-calibrated 4-94%)
 };
 
 // Per-valve motor direction inversion flags (legacy, will be replaced by calibration)
@@ -135,8 +142,12 @@ static uint32_t valve_last_log_ms[HVAC_VALVE_MAX] = {0};
 static uint16_t valve_filtered_pos[HVAC_VALVE_MAX] = {0};  // Filtered position * 256 for precision
 static uint8_t valve_raw_pos[HVAC_VALVE_MAX] = {0};         // Last scaled position (unfiltered) for immediate stop
 static uint8_t valve_adc_pos[HVAC_VALVE_MAX] = {0};         // Last raw ADC reading for debugging
+static uint8_t valve_adc_last_stable[HVAC_VALVE_MAX] = {50}; // Last stable ADC reading (for wrap-around detection)
+static bool valve_at_boundary[HVAC_VALVE_MAX] = {false};    // True if valve hit a calibrated boundary
+static int8_t valve_wraparound_blocked_dir[HVAC_VALVE_MAX] = {0}; // Direction blocked due to wraparound: +1=FWD blocked, -1=REV blocked, 0=none
 static bool valve_filter_init[HVAC_VALVE_MAX] = {false};
 static tb6612_direction_t last_motor_dir[HVAC_VALVE_MAX] = {TB6612_DIR_STOP};  // Track last direction for logging
+static int8_t valve_target_adc_side[HVAC_VALVE_MAX] = {0};  // Latched V-shape side: +1=upper, -1=lower, 0=undecided
 static volatile bool valve_calibrating[HVAC_VALVE_MAX] = {false};  // Per-valve calibration flag
 
 // Per-valve calibration state (for background calibration)
@@ -318,6 +329,11 @@ esp_err_t tb6612fng_set_valve_position(hvac_valve_id_t valve_id, uint8_t positio
         return ESP_ERR_INVALID_ARG;
     }
     
+    // Silently ignore position changes for disabled valves
+    if (!is_valve_enabled(valve_id)) {
+        return ESP_OK;
+    }
+    
     if (position > 100) {
         position = 100;
     }
@@ -335,6 +351,13 @@ esp_err_t tb6612fng_set_valve_position(hvac_valve_id_t valve_id, uint8_t positio
         state->target_position = position;
         state->stalled = false;
         state->last_motion_ms = 0;
+        // Reset boundary flag when setting a new target - let valve try to reach it
+        valve_at_boundary[valve_id] = false;
+        // Reset V-shape side latch when target changes significantly
+        // This allows the valve to choose the optimal path to the new target
+        valve_target_adc_side[valve_id] = 0;
+        // Clear wraparound direction block - new target means fresh attempt
+        valve_wraparound_blocked_dir[valve_id] = 0;
         ESP_LOGI(TAG, "Valve %d target: %d%% -> %d%% (pos=%d%%)", 
                  valve_id, old_target, position, state->position);
         xSemaphoreGive(valve_mutex);
@@ -454,6 +477,40 @@ void tb6612fng_valve_task(void *pvParameters)
                 // Get current ADC reading
                 uint8_t adc_pos = valve_adc_pos[i];
                 
+                // Wrap-around detection for butterfly valves
+                // If ADC jumps by more than threshold, it indicates potentiometer wrap-around
+                bool wraparound_detected = false;
+                if (i != HVAC_VALVE_COOLANT && valve_calibration[i].calibrated && state->is_moving) {
+                    int16_t adc_jump = (int16_t)adc_pos - (int16_t)valve_adc_last_stable[i];
+                    if (adc_jump < 0) adc_jump = -adc_jump;
+                    
+                    if (adc_jump > VALVE_ADC_WRAPAROUND_THRESH) {
+                        wraparound_detected = true;
+                        valve_at_boundary[i] = true;
+                        // Block the direction that caused the wraparound
+                        // last_motor_dir tracks what direction we WERE going
+                        if (last_motor_dir[i] == TB6612_DIR_FORWARD) {
+                            valve_wraparound_blocked_dir[i] = +1;  // Block FWD
+                        } else if (last_motor_dir[i] == TB6612_DIR_REVERSE) {
+                            valve_wraparound_blocked_dir[i] = -1;  // Block REV
+                        }
+                        ESP_LOGW(TAG, "V%d: ADC wraparound detected! (%d%% -> %d%%), blocking %s direction",
+                                 i, valve_adc_last_stable[i], adc_pos,
+                                 valve_wraparound_blocked_dir[i] > 0 ? "FWD" : "REV");
+                        
+                        // Stop motor immediately
+                        set_motor_direction((hvac_valve_id_t)i, config, TB6612_DIR_BRAKE, state->position);
+                        set_motor_speed(config, 0);
+                        state->is_moving = false;
+                        continue;
+                    }
+                }
+                
+                // Update last stable ADC for wrap-around detection (only if not a wraparound)
+                if (!wraparound_detected) {
+                    valve_adc_last_stable[i] = adc_pos;
+                }
+                
                 // Calculate error based on valve type
                 int16_t error;
                 int16_t abs_error;
@@ -469,25 +526,66 @@ void tb6612fng_valve_task(void *pvParameters)
                     // Inverse: |adc - center| = (100 - pos) * half_range / 100
                     valve_calibration_t *cal = &valve_calibration[i];
                     uint8_t center = cal->calibrated ? cal->adc_center : 50;
+                    uint8_t adc_min = cal->calibrated ? cal->adc_min : 0;
+                    uint8_t adc_max = cal->calibrated ? cal->adc_max : 100;
                     uint8_t half_range = cal->calibrated ? 
                         (cal->adc_max - cal->adc_min) / 2 : 50;
+                    
+                    // Calculate safe boundaries with margin to prevent wrap-around
+                    uint8_t safe_min = adc_min + VALVE_BOUNDARY_SAFE_MARGIN;
+                    uint8_t safe_max = (adc_max > VALVE_BOUNDARY_SAFE_MARGIN) ? 
+                                       adc_max - VALVE_BOUNDARY_SAFE_MARGIN : adc_max;
                     
                     // Calculate how far from center the target ADC should be
                     uint8_t target_offset = (100 - state->target_position) * half_range / 100;
                     
-                    // Choose direction: go toward current ADC position (shortest path)
-                    int16_t target_adc;
-                    if (adc_pos >= center) {
-                        // Currently above center, target above center
-                        target_adc = center + target_offset;
-                    } else {
-                        // Currently below center, target below center
-                        target_adc = center - target_offset;
+                    // Determine which side of V-shape to target (latched to prevent oscillation)
+                    // Only decide when side is undecided (0) - once moving, keep the same side
+                    int8_t *target_side = &valve_target_adc_side[i];
+                    
+                    // If a direction is blocked by wraparound, force the opposite side
+                    // FWD blocked (+1) means we can't decrease ADC, so target upper side (+1)
+                    // REV blocked (-1) means we can't increase ADC, so target lower side (-1)
+                    if (valve_wraparound_blocked_dir[i] != 0) {
+                        int8_t forced_side = valve_wraparound_blocked_dir[i];  // Same sign: +1→upper, -1→lower
+                        if (*target_side != forced_side) {
+                            ESP_LOGI(TAG, "V%d: Switching to %s side due to wraparound block",
+                                     i, forced_side > 0 ? "upper" : "lower");
+                            *target_side = forced_side;
+                        }
+                    }
+                    // If undecided or at center target (100% open), choose based on current position
+                    else if (*target_side == 0 || state->target_position >= 98) {
+                        // Choose side based on current ADC position (shortest path to target)
+                        // Use a small hysteresis band around center to avoid flip-flopping
+                        if (adc_pos >= center + 3) {
+                            *target_side = +1;  // Upper side
+                        } else if (adc_pos <= center - 3) {
+                            *target_side = -1;  // Lower side
+                        } else if (*target_side == 0) {
+                            // In hysteresis band and undecided - pick based on which is closer
+                            *target_side = (adc_pos >= center) ? +1 : -1;
+                        }
+                        // If target_side is already set and we're in hysteresis band, keep current side
                     }
                     
-                    // Clamp target_adc to valid range
-                    if (target_adc < 0) target_adc = 0;
-                    if (target_adc > 100) target_adc = 100;
+                    // Calculate target ADC based on latched side
+                    int16_t target_adc;
+                    if (*target_side > 0) {
+                        // Target on upper side (above center)
+                        target_adc = center + target_offset;
+                        // Clamp to safe upper boundary
+                        if (target_adc > safe_max) target_adc = safe_max;
+                    } else {
+                        // Target on lower side (below center)
+                        target_adc = center - target_offset;
+                        // Clamp to safe lower boundary
+                        if (target_adc < safe_min) target_adc = safe_min;
+                    }
+                    
+                    // Additional clamping for safety
+                    if (target_adc < safe_min) target_adc = safe_min;
+                    if (target_adc > safe_max) target_adc = safe_max;
                     
                     error = target_adc - (int16_t)adc_pos;
                 }
@@ -529,26 +627,35 @@ void tb6612fng_valve_task(void *pvParameters)
                     should_stop = true;
                 }
                 
-                // BOUNDARY ENFORCEMENT: For calibrated butterfly valves, stop if ADC is at calibrated boundary
-                // This prevents the valve from going into the noisy multi-rotation region
+                // BOUNDARY ENFORCEMENT: For calibrated butterfly valves
+                // Only stop if we would move AWAY from center at a boundary
+                // Movement toward center is always allowed to escape the boundary
                 if (i != HVAC_VALVE_COOLANT && valve_calibration[i].calibrated) {
                     uint8_t adc_pos = valve_adc_pos[i];
                     uint8_t adc_min = valve_calibration[i].adc_min;
                     uint8_t adc_max = valve_calibration[i].adc_max;
                     
-                    // Add small margin to account for motor momentum
-                    uint8_t boundary_margin = 2;
+                    // Use the safe boundary margin
+                    uint8_t safe_min = adc_min + VALVE_BOUNDARY_SAFE_MARGIN;
+                    uint8_t safe_max = (adc_max > VALVE_BOUNDARY_SAFE_MARGIN) ? 
+                                       adc_max - VALVE_BOUNDARY_SAFE_MARGIN : adc_max;
                     
-                    // If we're at or beyond the boundary, we're at maximum closed position
-                    // The scaled position will already be 0% (fully closed) due to clamping
-                    if (adc_pos <= adc_min + boundary_margin || adc_pos >= adc_max - boundary_margin) {
-                        // At boundary - if target is 0% (closed), we're done
-                        if (state->target_position == 0) {
-                            should_stop = true;
-                            ESP_LOGD(TAG, "V%d: At calibrated boundary (adc=%d%%, range=%d-%d), target reached",
-                                     i, adc_pos, adc_min, adc_max);
+                    bool at_upper = adc_pos >= safe_max;
+                    bool at_lower = adc_pos <= safe_min;
+                    
+                    // Only stop if at boundary AND error would push us further out
+                    // error > 0 means we want to increase ADC (toward upper)
+                    // error < 0 means we want to decrease ADC (toward lower)
+                    if ((at_upper && error > 0) || (at_lower && error < 0)) {
+                        should_stop = true;
+                        // Only log once when first hitting boundary
+                        if (!valve_at_boundary[i]) {
+                            valve_at_boundary[i] = true;
+                            ESP_LOGI(TAG, "V%d: At safe boundary (adc=%d%%, safe range=%d-%d%%), blocking outward movement",
+                                     i, adc_pos, safe_min, safe_max);
                         }
                     }
+                    // Note: We do NOT stop if error would move us back toward center
                 }
                 
                 // Hysteresis: stop if within tolerance, only restart if outside tolerance+hysteresis
@@ -589,19 +696,56 @@ void tb6612fng_valve_task(void *pvParameters)
                 if (i != HVAC_VALVE_COOLANT && valve_calibration[i].calibrated) {
                     uint8_t adc_min = valve_calibration[i].adc_min;
                     uint8_t adc_max = valve_calibration[i].adc_max;
-                    uint8_t boundary_margin = 3;
                     
-                    if (error > 0 && adc_pos >= adc_max - boundary_margin) {
-                        // Want to increase ADC but at upper boundary
-                        direction_blocked = true;
-                        ESP_LOGD(TAG, "V%d: Blocked at upper boundary (adc=%d%%, max=%d%%)", 
-                                 i, adc_pos, adc_max);
-                    } else if (error < 0 && adc_pos <= adc_min + boundary_margin) {
-                        // Want to decrease ADC but at lower boundary
-                        direction_blocked = true;
-                        ESP_LOGD(TAG, "V%d: Blocked at lower boundary (adc=%d%%, min=%d%%)", 
-                                 i, adc_pos, adc_min);
+                    // Use safe boundary margins
+                    uint8_t safe_min = adc_min + VALVE_BOUNDARY_SAFE_MARGIN;
+                    uint8_t safe_max = (adc_max > VALVE_BOUNDARY_SAFE_MARGIN) ? 
+                                       adc_max - VALVE_BOUNDARY_SAFE_MARGIN : adc_max;
+                    
+                    // Check if movement direction is blocked due to previous wraparound
+                    // desired_dir: FWD decreases ADC, REV increases ADC
+                    // valve_wraparound_blocked_dir: +1 = FWD blocked, -1 = REV blocked
+                    if (valve_wraparound_blocked_dir[i] != 0) {
+                        bool blocked_by_wraparound = false;
+                        if (valve_wraparound_blocked_dir[i] > 0 && desired_dir == TB6612_DIR_FORWARD) {
+                            blocked_by_wraparound = true;
+                        } else if (valve_wraparound_blocked_dir[i] < 0 && desired_dir == TB6612_DIR_REVERSE) {
+                            blocked_by_wraparound = true;
+                        }
+                        
+                        if (blocked_by_wraparound) {
+                            direction_blocked = true;
+                            // Don't spam the log - just block silently after first message
+                        }
                     }
+                    
+                    // Block movement AWAY from center when at boundary
+                    // But ALLOW movement TOWARD center to escape the boundary
+                    bool at_upper = adc_pos >= safe_max;
+                    bool at_lower = adc_pos <= safe_min;
+                    
+                    if (at_upper && error > 0) {
+                        // At upper boundary and want to go further up - BLOCK
+                        direction_blocked = true;
+                        if (!valve_at_boundary[i]) {
+                            valve_at_boundary[i] = true;
+                            ESP_LOGI(TAG, "V%d: Blocked at upper boundary (adc=%d%%, safe_max=%d%%)", 
+                                     i, adc_pos, safe_max);
+                        }
+                    } else if (at_lower && error < 0) {
+                        // At lower boundary and want to go further down - BLOCK
+                        direction_blocked = true;
+                        if (!valve_at_boundary[i]) {
+                            valve_at_boundary[i] = true;
+                            ESP_LOGI(TAG, "V%d: Blocked at lower boundary (adc=%d%%, safe_min=%d%%)", 
+                                     i, adc_pos, safe_min);
+                        }
+                    } else if (valve_at_boundary[i] && !at_upper && !at_lower && valve_wraparound_blocked_dir[i] == 0) {
+                        // Was at boundary but now back in safe zone AND no wraparound block - clear flag
+                        valve_at_boundary[i] = false;
+                        ESP_LOGI(TAG, "V%d: Escaped boundary zone (adc=%d%%)", i, adc_pos);
+                    }
+                    // Note: Movement toward center (error<0 at upper, error>0 at lower) is ALLOWED
                 }
                 
                 // If direction is blocked due to boundary, stop the motor
@@ -627,24 +771,28 @@ void tb6612fng_valve_task(void *pvParameters)
                 }
                 
                 // Proportional speed control: ramp down as we approach target
-                // Full speed when error >= VALVE_RAMP_START_ERROR (40%)
-                // Linearly decrease to VALVE_MIN_SPEED as error approaches tolerance
+                // Full speed when error >= RAMP_START_ERROR
+                // Linearly decrease to MIN_SPEED as error approaches tolerance
+                // Use different settings for coolant valve (linear) vs butterfly valves
+                uint8_t max_speed = (i == HVAC_VALVE_COOLANT) ? COOLANT_MOTOR_SPEED : VALVE_MOTOR_SPEED;
+                uint8_t min_speed = (i == HVAC_VALVE_COOLANT) ? COOLANT_MIN_SPEED : VALVE_MIN_SPEED;
+                uint8_t ramp_start = (i == HVAC_VALVE_COOLANT) ? COOLANT_RAMP_START_ERROR : VALVE_RAMP_START_ERROR;
+                
                 uint8_t speed;
-                if (abs_error >= VALVE_RAMP_START_ERROR) {
-                    speed = VALVE_MOTOR_SPEED;  // Full speed
+                if (abs_error >= ramp_start) {
+                    speed = max_speed;  // Full speed
                 } else {
-                    // Linear interpolation: MIN_SPEED at tolerance, MAX_SPEED at RAMP_START_ERROR
-                    // speed = MIN + (error - tolerance) * (MAX - MIN) / (RAMP_START - tolerance)
-                    int range = VALVE_RAMP_START_ERROR - VALVE_POSITION_TOLERANCE;
+                    // Linear interpolation: min_speed at tolerance, max_speed at ramp_start
+                    int range = ramp_start - VALVE_POSITION_TOLERANCE;
                     int error_from_tolerance = abs_error - VALVE_POSITION_TOLERANCE;
                     if (error_from_tolerance < 0) error_from_tolerance = 0;
-                    speed = VALVE_MIN_SPEED + (error_from_tolerance * (VALVE_MOTOR_SPEED - VALVE_MIN_SPEED)) / range;
+                    speed = min_speed + (error_from_tolerance * (max_speed - min_speed)) / range;
                 }
-                if (speed < VALVE_MIN_SPEED) {
-                    speed = VALVE_MIN_SPEED;
+                if (speed < min_speed) {
+                    speed = min_speed;
                 }
-                if (speed > VALVE_MOTOR_SPEED) {
-                    speed = VALVE_MOTOR_SPEED;
+                if (speed > max_speed) {
+                    speed = max_speed;
                 }
 
                 set_motor_direction((hvac_valve_id_t)i, config, desired_dir, state->position);
@@ -832,7 +980,11 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
             // Store calibration results
             uint8_t adc_center = (prog->global_min + prog->global_max) / 2;
             uint8_t deadzone_margin = 3;
-            bool is_inverted = (prog->last_direction < 0);
+            // Determine if motor direction is inverted:
+            // During calibration we run FWD. If ADC decreased (last_direction < 0), 
+            // that's NORMAL behavior (FWD = decrease ADC). If ADC increased, it's inverted.
+            // So is_inverted = true when last_direction > 0 (ADC increased during FWD)
+            bool is_inverted = (prog->last_direction > 0);
             
             valve_calibration[valve_id].adc_min = prog->global_min;
             valve_calibration[valve_id].adc_max = prog->global_max;
@@ -854,9 +1006,16 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
                 valve_states[valve_id].stalled = false;
                 valve_filter_init[valve_id] = false;
                 
-                ESP_LOGI(TAG, "V%d: CALIBRATED - ADC %d%%-%d%%, center=%d%%, inverted=%s, seeking to %d%%",
+                // Reset boundary tracking for clean start after calibration
+                valve_at_boundary[valve_id] = false;
+                valve_adc_last_stable[valve_id] = current_adc;
+                
+                ESP_LOGI(TAG, "V%d: CALIBRATED - ADC %d%%-%d%%, center=%d%%, inverted=%s, safe range=%d-%d%%, seeking to %d%%",
                          valve_id, prog->global_min, prog->global_max, adc_center,
-                         is_inverted ? "YES" : "NO", requested_target);
+                         is_inverted ? "YES" : "NO", 
+                         prog->global_min + VALVE_BOUNDARY_SAFE_MARGIN,
+                         prog->global_max - VALVE_BOUNDARY_SAFE_MARGIN,
+                         requested_target);
                 
                 xSemaphoreGive(valve_mutex);
             } else {
@@ -1278,8 +1437,9 @@ static esp_err_t __attribute__((unused)) calibrate_valve_internal(hvac_valve_id_
     uint8_t high_deadzone = global_max - deadzone_margin;
     
     // Determine direction inversion based on how ADC changed during forward movement
-    // If ADC mostly decreased during forward movement, it's inverted
-    bool is_inverted = (end_adc < start_adc) || (last_direction < 0);
+    // Control logic assumes: FWD decreases ADC, REV increases ADC
+    // If ADC mostly INCREASED during forward movement, the motor is inverted
+    bool is_inverted = (end_adc > start_adc) || (last_direction > 0);
     
     // Store calibration data
     valve_calibration[valve_id].adc_min = global_min;
