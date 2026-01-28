@@ -3,8 +3,8 @@
  * @brief HVAC Sensor Management Implementation
  * 
  * Uses ESP-IDF managed components:
- * - Custom SHT30 driver using new I2C master API
- * - espressif/ds18b20 and espressif/onewire_bus for DS18B20 sensors
+ * - BME280 for cabin temperature and humidity (via remote I2C)
+ * - espressif/ds18b20 and espressif/onewire_bus for DS18B20 duct sensor
  * - ADS1115 driver for valve position feedback via analog inputs
  */
 
@@ -46,7 +46,6 @@ static i2c_master_bus_handle_t sensor_i2c_bus_handle = NULL;
 static i2c_master_dev_handle_t sht30_dev_handle = NULL;
 static bool sht30_initialized = false;
 static onewire_bus_handle_t onewire_bus = NULL;
-static ds18b20_device_handle_t ds18b20_coolant = NULL;
 static ds18b20_device_handle_t ds18b20_duct = NULL;
 #endif
 
@@ -137,10 +136,10 @@ static esp_err_t init_sht30(void)
 
 static esp_err_t init_ds18b20_sensors(void)
 {
-    ESP_LOGI(TAG, "Initializing DS18B20 sensors on shared 1-Wire bus (GPIO %d)", DS18B20_ONEWIRE_PIN);
+    ESP_LOGI(TAG, "Initializing DS18B20 duct sensor on 1-Wire bus (GPIO %d)", DS18B20_ONEWIRE_PIN);
     esp_err_t ret;
     
-    // Initialize shared 1-Wire bus for both DS18B20 sensors
+    // Initialize 1-Wire bus for DS18B20 duct sensor
     onewire_bus_config_t bus_config = {
         .bus_gpio_num = DS18B20_ONEWIRE_PIN,
     };
@@ -151,12 +150,11 @@ static esp_err_t init_ds18b20_sensors(void)
     ret = onewire_new_bus_rmt(&bus_config, &rmt_config, &onewire_bus);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create 1-Wire bus: %s", esp_err_to_name(ret));
-        sensor_data[SENSOR_COOLANT_TEMP].status = SENSOR_STATUS_NOT_FOUND;
         sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_NOT_FOUND;
         return ret;
     }
     
-    // Search for all DS18B20 devices on the shared bus
+    // Search for DS18B20 device on the bus
     onewire_device_iter_handle_t iter = NULL;
     ret = onewire_new_device_iter(onewire_bus, &iter);
     if (ret != ESP_OK) {
@@ -164,56 +162,26 @@ static esp_err_t init_ds18b20_sensors(void)
         return ret;
     }
     
-    onewire_device_t devices[DS18B20_MAX_SENSORS];
-    int device_count = 0;
-    
-    // Find all devices on the bus
-    while (device_count < DS18B20_MAX_SENSORS) {
-        ret = onewire_device_iter_get_next(iter, &devices[device_count]);
-        if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "Found 1-Wire device #%d: %016llX", 
-                     device_count + 1, devices[device_count].address);
-            device_count++;
-        } else {
-            break;  // No more devices
-        }
-    }
-    
+    onewire_device_t device;
+    ret = onewire_device_iter_get_next(iter, &device);
     onewire_del_device_iter(iter);
     
-    ESP_LOGI(TAG, "Found %d DS18B20 sensor(s) on 1-Wire bus", device_count);
-    
-    // Assign devices to coolant and duct sensors
-    // First device found = coolant, second = duct
-    ds18b20_config_t ds_config = {};
-    
-    if (device_count >= 1) {
-        ret = ds18b20_new_device_from_enumeration(&devices[0], &ds_config, &ds18b20_coolant);
-        if (ret == ESP_OK) {
-            ds18b20_set_resolution(ds18b20_coolant, DS18B20_RESOLUTION_12B);
-            ESP_LOGI(TAG, "DS18B20 coolant sensor initialized (address: %016llX)", 
-                     devices[0].address);
-        } else {
-            ESP_LOGE(TAG, "Failed to create DS18B20 coolant device");
-            sensor_data[SENSOR_COOLANT_TEMP].status = SENSOR_STATUS_NOT_FOUND;
-        }
-    } else {
-        ESP_LOGW(TAG, "No DS18B20 found for coolant sensor");
-        sensor_data[SENSOR_COOLANT_TEMP].status = SENSOR_STATUS_NOT_FOUND;
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "No DS18B20 found for duct sensor");
+        sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_NOT_FOUND;
+        return ESP_OK;
     }
     
-    if (device_count >= 2) {
-        ret = ds18b20_new_device_from_enumeration(&devices[1], &ds_config, &ds18b20_duct);
-        if (ret == ESP_OK) {
-            ds18b20_set_resolution(ds18b20_duct, DS18B20_RESOLUTION_12B);
-            ESP_LOGI(TAG, "DS18B20 duct sensor initialized (address: %016llX)", 
-                     devices[1].address);
-        } else {
-            ESP_LOGE(TAG, "Failed to create DS18B20 duct device");
-            sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_NOT_FOUND;
-        }
+    ESP_LOGI(TAG, "Found 1-Wire device: %016llX", device.address);
+    
+    // Initialize duct temperature sensor
+    ds18b20_config_t ds_config = {};
+    ret = ds18b20_new_device_from_enumeration(&device, &ds_config, &ds18b20_duct);
+    if (ret == ESP_OK) {
+        ds18b20_set_resolution(ds18b20_duct, DS18B20_RESOLUTION_12B);
+        ESP_LOGI(TAG, "DS18B20 duct sensor initialized (address: %016llX)", device.address);
     } else {
-        ESP_LOGW(TAG, "No second DS18B20 found for duct sensor");
+        ESP_LOGE(TAG, "Failed to create DS18B20 duct device");
         sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_NOT_FOUND;
     }
     
@@ -284,34 +252,6 @@ update_status:
         } else {
             sensor_data[SENSOR_CABIN_TEMP].status = SENSOR_STATUS_ERROR;
             sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_ERROR;
-        }
-        xSemaphoreGive(sensor_mutex);
-    }
-}
-
-static void read_ds18b20_coolant(void)
-{
-    if (ds18b20_coolant == NULL) {
-        return;
-    }
-    
-    float temperature;
-    esp_err_t ret = ds18b20_trigger_temperature_conversion(ds18b20_coolant);
-    if (ret == ESP_OK) {
-        // Wait for conversion (750ms max for 12-bit)
-        vTaskDelay(pdMS_TO_TICKS(100));
-        ret = ds18b20_get_temperature(ds18b20_coolant, &temperature);
-    }
-    
-    if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        if (ret == ESP_OK) {
-            sensor_data[SENSOR_COOLANT_TEMP].value = temperature;
-            sensor_data[SENSOR_COOLANT_TEMP].status = SENSOR_STATUS_OK;
-            sensor_data[SENSOR_COOLANT_TEMP].last_update_ms = get_time_ms();
-            ESP_LOGD(TAG, "Coolant temp: %.1f°C", temperature);
-        } else {
-            sensor_data[SENSOR_COOLANT_TEMP].status = SENSOR_STATUS_ERROR;
-            ESP_LOGW(TAG, "DS18B20 coolant read error");
         }
         xSemaphoreGive(sensor_mutex);
     }
@@ -548,12 +488,6 @@ static void read_remote_temperature_sensors(void)
     
     // Read ambient (cabin) temp/humidity via BME280 I2C
     read_remote_bme280();
-    
-    // No coolant temp sensor in this system
-    if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        sensor_data[SENSOR_COOLANT_TEMP].status = SENSOR_STATUS_NOT_FOUND;
-        xSemaphoreGive(sensor_mutex);
-    }
 }
 #endif
 
@@ -744,11 +678,9 @@ void hvac_sensors_get_all(hvac_sensor_readings_t *readings)
     if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         readings->cabin_temp_c = sensor_data[SENSOR_CABIN_TEMP].value;
         readings->cabin_humidity = sensor_data[SENSOR_CABIN_HUMIDITY].value;
-        readings->coolant_temp_c = sensor_data[SENSOR_COOLANT_TEMP].value;
         readings->duct_temp_c = sensor_data[SENSOR_DUCT_TEMP].value;
         
         readings->cabin_status = sensor_data[SENSOR_CABIN_TEMP].status;
-        readings->coolant_status = sensor_data[SENSOR_COOLANT_TEMP].status;
         readings->duct_status = sensor_data[SENSOR_DUCT_TEMP].status;
         xSemaphoreGive(sensor_mutex);
     }
@@ -773,11 +705,6 @@ float hvac_sensors_get_cabin_temp(void)
 float hvac_sensors_get_cabin_humidity(void)
 {
     return hvac_sensors_get_value(SENSOR_CABIN_HUMIDITY);
-}
-
-float hvac_sensors_get_coolant_temp(void)
-{
-    return hvac_sensors_get_value(SENSOR_COOLANT_TEMP);
 }
 
 float hvac_sensors_get_duct_temp(void)

@@ -3,7 +3,8 @@
  * @brief Remote IO implementation - Binary COBS protocol over UART with IO Node
  * 
  * Uses COBS framing with CRC16 for reliable communication.
- * UART events and DMA for efficient data transfer.
+ * All UART communication runs on a dedicated task pinned to Core 1 to prevent
+ * race conditions and ensure reliable timing.
  */
 
 #include "hvac_hw_config.h"
@@ -44,18 +45,41 @@ static const char *TAG = "REMOTE_IO";
 #define DS18B20_TIMEOUT_MS      1000    // Longer timeout for temperature conversion
 #define FRAME_TIMEOUT_MS        20      // Timeout to reset frame receiver state
 
+// Dedicated core configuration
+#define REMOTE_IO_TASK_CORE     1       // Run on Core 1 (Core 0 runs main app)
+#define REMOTE_IO_TASK_PRIORITY 10      // High priority for responsive IO
+#define REMOTE_IO_TASK_STACK    4096    // Stack size for IO task
+#define REMOTE_IO_CMD_QUEUE_LEN 16      // Max pending commands
+
+/*******************************************************************************
+ * Command Queue Types
+ ******************************************************************************/
+
+typedef struct {
+    uint8_t cmd;
+    uint8_t payload[COBS_MAX_PAYLOAD_SIZE];
+    size_t payload_len;
+    int timeout_ms;
+    // Response storage (caller provides)
+    uint8_t *resp_type;
+    uint8_t *resp_data;
+    size_t *resp_len;
+    size_t resp_max_len;
+    // Synchronization
+    SemaphoreHandle_t done_sem;
+    esp_err_t *result;
+} io_cmd_request_t;
+
 /*******************************************************************************
  * Private Data
  ******************************************************************************/
 
 static int s_uart_num = -1;
-static SemaphoreHandle_t s_mutex = NULL;
 static QueueHandle_t s_uart_queue = NULL;
+static QueueHandle_t s_cmd_queue = NULL;
+static TaskHandle_t s_io_task_handle = NULL;
 static bool s_initialized = false;
 static cobs_receiver_t s_receiver;
-
-// Response ready flag
-static bool s_response_ready = false;
 
 // Statistics
 static uint32_t s_tx_frames = 0;
@@ -72,30 +96,22 @@ static uint32_t get_time_ms(void)
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
 
-// Send a binary command frame and wait for response
-static esp_err_t send_command_binary(uint8_t cmd, const uint8_t *payload, size_t payload_len,
-                                     uint8_t *resp_type, uint8_t *resp_data, size_t *resp_len,
-                                     int timeout_ms)
+// Execute command directly on IO task (internal, runs on Core 1)
+static esp_err_t execute_command_internal(uint8_t cmd, const uint8_t *payload, size_t payload_len,
+                                          uint8_t *resp_type, uint8_t *resp_data, size_t *resp_len,
+                                          size_t resp_max_len, int timeout_ms)
 {
-    if (!s_initialized) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-    
     // Build and send frame
     uint8_t frame[COBS_MAX_FRAME_SIZE];
     size_t frame_len = cobs_build_frame(cmd, payload, payload_len, frame, sizeof(frame));
     
     if (frame_len == 0) {
-        xSemaphoreGive(s_mutex);
         return ESP_ERR_INVALID_ARG;
     }
     
     // Flush RX buffer and reset receiver
     uart_flush_input(s_uart_num);
     cobs_receiver_reset(&s_receiver);
-    s_response_ready = false;
     
     // Send frame
     uart_write_bytes(s_uart_num, frame, frame_len);
@@ -136,7 +152,7 @@ static esp_err_t send_command_binary(uint8_t cmd, const uint8_t *payload, size_t
                         // Return response
                         if (resp_type) *resp_type = msg_type;
                         if (resp_data && resp_len) {
-                            size_t copy_len = (data_len < *resp_len) ? data_len : *resp_len;
+                            size_t copy_len = (data_len < resp_max_len) ? data_len : resp_max_len;
                             memcpy(resp_data, data, copy_len);
                             *resp_len = data_len;
                         }
@@ -163,7 +179,101 @@ static esp_err_t send_command_binary(uint8_t cmd, const uint8_t *payload, size_t
         ESP_LOGD(TAG, "Command 0x%02X timeout", cmd);
     }
     
-    xSemaphoreGive(s_mutex);
+    return result;
+}
+
+// IO task runs on dedicated core - processes all UART communication
+static void remote_io_task(void *arg)
+{
+    ESP_LOGI(TAG, "Remote IO task started on Core %d", xPortGetCoreID());
+    
+    io_cmd_request_t request;
+    
+    while (1) {
+        // Wait for command request
+        if (xQueueReceive(s_cmd_queue, &request, portMAX_DELAY) == pdTRUE) {
+            // Execute command on this core
+            esp_err_t result = execute_command_internal(
+                request.cmd,
+                request.payload,
+                request.payload_len,
+                request.resp_type,
+                request.resp_data,
+                request.resp_len,
+                request.resp_max_len,
+                request.timeout_ms
+            );
+            
+            // Return result to caller
+            if (request.result) {
+                *request.result = result;
+            }
+            
+            // Signal completion
+            if (request.done_sem) {
+                xSemaphoreGive(request.done_sem);
+            }
+        }
+    }
+}
+
+// Send a binary command frame and wait for response (called from any task/core)
+static esp_err_t send_command_binary(uint8_t cmd, const uint8_t *payload, size_t payload_len,
+                                     uint8_t *resp_type, uint8_t *resp_data, size_t *resp_len,
+                                     int timeout_ms)
+{
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Create synchronization semaphore for this request
+    SemaphoreHandle_t done_sem = xSemaphoreCreateBinary();
+    if (done_sem == NULL) {
+        ESP_LOGE(TAG, "Failed to create done semaphore");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    // Prepare request
+    io_cmd_request_t request = {
+        .cmd = cmd,
+        .payload_len = payload_len,
+        .timeout_ms = timeout_ms,
+        .resp_type = resp_type,
+        .resp_data = resp_data,
+        .resp_len = resp_len,
+        .resp_max_len = resp_len ? *resp_len : 0,
+        .done_sem = done_sem,
+        .result = NULL,
+    };
+    
+    // Copy payload
+    if (payload && payload_len > 0) {
+        if (payload_len > sizeof(request.payload)) {
+            vSemaphoreDelete(done_sem);
+            return ESP_ERR_INVALID_SIZE;
+        }
+        memcpy(request.payload, payload, payload_len);
+    }
+    
+    // Allocate result on stack
+    esp_err_t result = ESP_FAIL;
+    request.result = &result;
+    
+    // Queue the request
+    if (xQueueSend(s_cmd_queue, &request, pdMS_TO_TICKS(timeout_ms + 100)) != pdTRUE) {
+        ESP_LOGE(TAG, "Command queue full");
+        vSemaphoreDelete(done_sem);
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    // Wait for completion with extra margin
+    if (xSemaphoreTake(done_sem, pdMS_TO_TICKS(timeout_ms + 500)) != pdTRUE) {
+        ESP_LOGE(TAG, "Command completion timeout");
+        vSemaphoreDelete(done_sem);
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    vSemaphoreDelete(done_sem);
     return result;
 }
 
@@ -210,17 +320,34 @@ esp_err_t remote_io_init(int uart_num, int tx_pin, int rx_pin, int baud_rate)
         return ret;
     }
     
-    // Note: Pattern detection removed - using COBS receiver state machine for frame detection
-    // Pattern detection causes "pattern queue full" warnings on noisy lines
-    
-    s_mutex = xSemaphoreCreateMutex();
-    if (s_mutex == NULL) {
+    // Create command queue for inter-task communication
+    s_cmd_queue = xQueueCreate(REMOTE_IO_CMD_QUEUE_LEN, sizeof(io_cmd_request_t));
+    if (s_cmd_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create command queue");
         uart_driver_delete(uart_num);
         return ESP_ERR_NO_MEM;
     }
     
     // Initialize COBS receiver
     cobs_receiver_init(&s_receiver, FRAME_TIMEOUT_MS);
+    
+    // Create dedicated IO task pinned to Core 1
+    BaseType_t task_ret = xTaskCreatePinnedToCore(
+        remote_io_task,
+        "remote_io",
+        REMOTE_IO_TASK_STACK,
+        NULL,
+        REMOTE_IO_TASK_PRIORITY,
+        &s_io_task_handle,
+        REMOTE_IO_TASK_CORE
+    );
+    
+    if (task_ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create IO task");
+        vQueueDelete(s_cmd_queue);
+        uart_driver_delete(uart_num);
+        return ESP_ERR_NO_MEM;
+    }
     
     s_initialized = true;
     
@@ -231,6 +358,7 @@ esp_err_t remote_io_init(int uart_num, int tx_pin, int rx_pin, int baud_rate)
     ESP_LOGI(TAG, "  RX Pin:     GPIO%d", rx_pin);
     ESP_LOGI(TAG, "  Baud Rate:  %d", baud_rate);
     ESP_LOGI(TAG, "  Protocol:   COBS + CRC16");
+    ESP_LOGI(TAG, "  IO Task:    Core %d, Priority %d", REMOTE_IO_TASK_CORE, REMOTE_IO_TASK_PRIORITY);
     ESP_LOGI(TAG, "============================================");
     
     return ESP_OK;
@@ -408,15 +536,16 @@ esp_err_t remote_ads1115_read_bulk(int bus_num, uint8_t i2c_addr,
                                    int16_t *values)
 {
     // Read each channel individually
-    (void)bus_num; (void)i2c_addr;  // Ignored - IO Node knows the ADS config
+    (void)bus_num;  // Bus number not used, IO Node has one I2C bus
     
     for (int i = 0; i < num_channels; i++) {
-        uint8_t payload[1] = { channels[i] };
+        // Payload: [i2c_addr, channel]
+        uint8_t payload[2] = { i2c_addr, channels[i] };
         uint8_t resp_type;
         uint8_t resp_data[3];
         size_t resp_len = sizeof(resp_data);
         
-        esp_err_t ret = send_command_binary(MSG_ADS_READ, payload, 1, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
+        esp_err_t ret = send_command_binary(MSG_ADS_READ, payload, 2, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
         
         if (ret != ESP_OK || resp_type != MSG_ADS_VALUE || resp_len < 3) {
             return ret == ESP_OK ? ESP_FAIL : ret;
@@ -532,10 +661,9 @@ void remote_io_flush(void)
 {
     if (!s_initialized) return;
     
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-    uart_flush_input(s_uart_num);
-    cobs_receiver_reset(&s_receiver);
-    xSemaphoreGive(s_mutex);
+    // Flush is handled internally by the IO task before each command
+    // No direct UART access needed from other cores
+    ESP_LOGD(TAG, "Flush requested (handled by IO task)");
 }
 
 esp_err_t remote_io_reset(void)
@@ -572,16 +700,13 @@ esp_err_t remote_io_stop_all_pwm(void)
 
 esp_err_t remote_io_reinit(void)
 {
-    // Re-initialize UART communication
+    // Re-initialize communication state
+    // Flush is now handled internally by IO task
     if (!s_initialized) {
         return ESP_ERR_INVALID_STATE;
     }
     
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-    uart_flush_input(s_uart_num);
-    cobs_receiver_reset(&s_receiver);
-    xSemaphoreGive(s_mutex);
-    
+    ESP_LOGI(TAG, "Reinit requested");
     return ESP_OK;
 }
 

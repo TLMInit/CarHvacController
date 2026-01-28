@@ -51,7 +51,6 @@ typedef struct {
     // Sensor readings (cached)
     float cabin_temp_c;             // Current cabin temperature
     float cabin_humidity;           // Current humidity
-    float coolant_temp_c;           // Engine coolant temperature
     float duct_temp_c;              // Duct outlet temperature
     
     // Valve positions (0-100%)
@@ -71,6 +70,9 @@ typedef struct {
     bool sensor_fault;              // True if any sensor reported error
     bool valve_fault;               // True if valve stall detected
     uint8_t valve_fault_mask;       // Bitmask of stalled valves
+    
+    // A/C compressor state
+    bool ac_compressor_on;          // Actual compressor state (may differ from ac_enabled)
 } hvac_state_t;
 
 /**

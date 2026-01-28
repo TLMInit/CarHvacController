@@ -113,7 +113,6 @@ typedef struct {
 
 // Per-valve calibration data (default to uncalibrated)
 // For butterfly valves: V-shaped mapping where center = fully open
-// Based on observed ADC readings, valves swing ~35-65% ADC range
 static valve_calibration_t valve_calibration[HVAC_VALVE_MAX] = {
     {0, 100, VALVE_BUTTERFLY_CENTER_PCT, 5, 95, false, false},  // CENTER_1
     {0, 100, VALVE_BUTTERFLY_CENTER_PCT, 5, 95, false, false},  // CENTER_2
@@ -245,16 +244,9 @@ static void set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *
 static void set_motor_speed(const motor_config_t *config, uint8_t speed)
 {
 #if USE_REMOTE_IO
-    // Retry up to 3 times on failure (transient communication errors)
-    esp_err_t ret = ESP_FAIL;
-    for (int retry = 0; retry < 3 && ret != ESP_OK; retry++) {
-        ret = remote_pwm_set_duty(config->pwm_pin, speed);
-        if (ret != ESP_OK && retry < 2) {
-            vTaskDelay(pdMS_TO_TICKS(5));  // Brief delay before retry
-        }
-    }
+    esp_err_t ret = remote_pwm_set_duty(config->pwm_pin, speed);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "PWM set failed for pin %d: %s (after retries)", config->pwm_pin, esp_err_to_name(ret));
+        ESP_LOGE(TAG, "PWM set failed for pin %d: %s", config->pwm_pin, esp_err_to_name(ret));
     } else if (speed > 0) {
         ESP_LOGI(TAG, "PWM pin=%d duty=%d", config->pwm_pin, speed);
     }

@@ -17,6 +17,10 @@
 #include <math.h>
 #include <string.h>
 
+#if USE_REMOTE_IO
+#include "remote_io.h"
+#endif
+
 static const char *TAG = "HVAC_CTRL";
 
 /*******************************************************************************
@@ -31,9 +35,6 @@ static const char *TAG = "HVAC_CTRL";
 #define NVS_KEY_SETTINGS        "settings"
 #define NVS_KEY_THERMAL_CAL     "thermal_cal"
 
-// Coolant temperature thresholds
-#define COOLANT_WARM_THRESHOLD  50.0f       // Coolant warm enough for heating
-
 // Thermal adaptation constants
 #define THERMAL_SAMPLE_PERIOD   2000        // 2 seconds between samples
 #define THERMAL_LEARN_SAMPLES   30          // 60 seconds of data
@@ -41,6 +42,10 @@ static const char *TAG = "HVAC_CTRL";
 #define MIN_COOLANT_GAIN        10.0f       // Minimum adaptive gain
 #define MAX_COOLANT_GAIN        50.0f       // Maximum adaptive gain
 #define THERMAL_LEARNING_RATE   0.1f        // Learning rate (0-1)
+
+// A/C compressor control constants
+#define AC_HUMIDITY_THRESHOLD   65.0f       // Auto A/C when humidity > this (%)
+#define AC_DEFOG_HUMIDITY       55.0f       // Target humidity when defogging
 
 /*******************************************************************************
  * Private Data
@@ -99,6 +104,64 @@ static const char* fan_level_names[] = {
 /*******************************************************************************
  * Private Functions
  ******************************************************************************/
+
+/**
+ * @brief Set A/C compressor relay state
+ * @param on true to turn on compressor, false to turn off
+ */
+static void set_ac_compressor(bool on)
+{
+    static bool last_state = false;
+    
+    if (on == last_state) {
+        return;  // No change needed
+    }
+    
+#if USE_REMOTE_IO
+    int level = on ? (AC_RELAY_ACTIVE_HIGH ? 1 : 0) : (AC_RELAY_ACTIVE_HIGH ? 0 : 1);
+    esp_err_t ret = remote_gpio_set_level(AC_RELAY_PIN, level);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set A/C relay: %s", esp_err_to_name(ret));
+        return;
+    }
+#else
+    gpio_set_level(AC_RELAY_PIN, on ? (AC_RELAY_ACTIVE_HIGH ? 1 : 0) : (AC_RELAY_ACTIVE_HIGH ? 0 : 1));
+#endif
+    
+    last_state = on;
+    hvac_state.ac_compressor_on = on;
+    ESP_LOGI(TAG, "A/C compressor %s", on ? "ON" : "OFF");
+}
+
+/**
+ * @brief Initialize A/C compressor relay GPIO
+ */
+static esp_err_t init_ac_compressor_gpio(void)
+{
+#if USE_REMOTE_IO
+    esp_err_t ret = remote_gpio_set_mode(AC_RELAY_PIN, REMOTE_GPIO_OUTPUT);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init A/C relay GPIO: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    // Start with A/C off
+    set_ac_compressor(false);
+    return ESP_OK;
+#else
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << AC_RELAY_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t ret = gpio_config(&io_conf);
+    if (ret == ESP_OK) {
+        set_ac_compressor(false);
+    }
+    return ret;
+#endif
+}
 
 static void notify_state_change(void)
 {
@@ -287,7 +350,6 @@ static void run_temperature_control(void)
     
     hvac_state.cabin_temp_c = readings.cabin_temp_c;
     hvac_state.cabin_humidity = readings.cabin_humidity;
-    hvac_state.coolant_temp_c = readings.coolant_temp_c;
     hvac_state.duct_temp_c = readings.duct_temp_c;
     
     // Get valve position feedback
@@ -299,7 +361,6 @@ static void run_temperature_control(void)
     hvac_state.blower_speed = bts7960_get_target_speed();
 
     hvac_state.sensor_fault = (readings.cabin_status != SENSOR_STATUS_OK) ||
-                              (readings.coolant_status != SENSOR_STATUS_OK) ||
                               (readings.duct_status != SENSOR_STATUS_OK);
 
     uint8_t fault_mask = 0;
@@ -327,22 +388,14 @@ static void run_temperature_control(void)
         hvac_state.is_heating = true;
         hvac_state.is_cooling = false;
         
-        // Check if coolant is warm enough
-        if (!isnan(hvac_state.coolant_temp_c) && 
-            hvac_state.coolant_temp_c > COOLANT_WARM_THRESHOLD) {
-            // Calculate coolant valve position using adaptive gain
-            float adaptive_gain = thermal_adapt.adaptive_coolant_gain;
-            uint8_t valve_pos = (uint8_t)fminf(100.0f, fabsf(error) * adaptive_gain);
-            tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, valve_pos);
-            
-            if (thermal_adapt.sample_count < 10) {
-                ESP_LOGD(TAG, "Heating: error=%.2f°C, gain=%.1f, valve=%d%%, learning=%d samples",
-                         error, adaptive_gain, valve_pos, thermal_adapt.sample_count);
-            }
-        } else {
-            // Coolant not warm, close valve
-            tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, 0);
-            hvac_state.coolant_valve_pos = 0;
+        // Calculate coolant valve position using adaptive gain
+        float adaptive_gain = thermal_adapt.adaptive_coolant_gain;
+        uint8_t valve_pos = (uint8_t)fminf(100.0f, fabsf(error) * adaptive_gain);
+        tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, valve_pos);
+        
+        if (thermal_adapt.sample_count < 10) {
+            ESP_LOGD(TAG, "Heating: error=%.2f°C, gain=%.1f, valve=%d%%, learning=%d samples",
+                     error, adaptive_gain, valve_pos, thermal_adapt.sample_count);
         }
     } else if (error < -TEMP_DEADBAND) {
         // Need cooling
@@ -410,6 +463,55 @@ static void run_temperature_control(void)
             tb6612fng_set_valve_position(HVAC_VALVE_WINDSCREEN, 50);
         }
     }
+    
+    // =========================================================================
+    // A/C Compressor Control
+    // =========================================================================
+    // The A/C removes moisture from the air, essential for defogging in humid/cold conditions.
+    // Run A/C when:
+    // 1. User has enabled A/C (ac_enabled) and system is not in OFF mode
+    // 2. In DEFROST or DEFROST_FOOT mode (always run A/C to defog)
+    // 3. AUTO mode with high humidity (above threshold)
+    // 
+    // For Danish truck with limited fresh air: A/C dehumidifies recirculated air,
+    // which combined with heat creates warm, dry air for effective defrost.
+    // =========================================================================
+    
+    bool should_run_ac = false;
+    
+    // Check if mode requires A/C
+    bool is_defrost_mode = (hvac_state.mode == HVAC_MODE_DEFROST || 
+                            hvac_state.mode == HVAC_MODE_DEFROST_FOOT);
+    
+    // Defrost modes: Always run A/C for defogging, regardless of ac_enabled setting
+    // Heat + A/C is the most effective defogging combination
+    if (is_defrost_mode) {
+        should_run_ac = true;
+        // Also ensure coolant valve is fully open for maximum heat during defrost
+        tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, 100);
+    }
+    
+    // Auto mode: Run A/C when humidity is high (proactive defogging)
+    if (hvac_state.mode == HVAC_MODE_AUTO && 
+        !isnan(hvac_state.cabin_humidity) && 
+        hvac_state.cabin_humidity > AC_HUMIDITY_THRESHOLD) {
+        should_run_ac = true;
+        ESP_LOGD(TAG, "AUTO: High humidity (%.1f%%), A/C for dehumidification", 
+                 hvac_state.cabin_humidity);
+    }
+    
+    // User-enabled A/C: Run if user toggled A/C on (for cooling or manual dehumidification)
+    if (hvac_state.ac_enabled && hvac_state.mode != HVAC_MODE_OFF) {
+        should_run_ac = true;
+    }
+    
+    // Don't run A/C if system is OFF
+    if (hvac_state.mode == HVAC_MODE_OFF) {
+        should_run_ac = false;
+    }
+    
+    // Apply A/C compressor state
+    set_ac_compressor(should_run_ac);
 }
 
 /*******************************************************************************
@@ -435,8 +537,14 @@ esp_err_t hvac_controller_init(void)
     hvac_state.temp_unit = TEMP_UNIT_CELSIUS;
     hvac_state.cabin_temp_c = NAN;
     hvac_state.cabin_humidity = NAN;
-    hvac_state.coolant_temp_c = NAN;
     hvac_state.duct_temp_c = NAN;
+    hvac_state.ac_compressor_on = false;
+    
+    // Initialize A/C compressor relay GPIO
+    esp_err_t ret = init_ac_compressor_gpio();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "A/C relay GPIO init failed: %s (continuing anyway)", esp_err_to_name(ret));
+    }
     
     // Try to load saved settings
     hvac_controller_load_settings();

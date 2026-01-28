@@ -137,6 +137,13 @@ extern "C" {
 #define TB6612_3_PWMA_CHANNEL   LEDC_CHANNEL_5
 
 /*******************************************************************************
+ * A/C Compressor Control (via relay on IO Node)
+ * GPIO6 on IO Node controls A/C compressor clutch relay
+ ******************************************************************************/
+#define AC_RELAY_PIN            GPIO_NUM_6      // A/C compressor request (IO Node)
+#define AC_RELAY_ACTIVE_HIGH    1               // 1 = relay active when pin HIGH
+
+/*******************************************************************************
  * BTS7960 Motor Driver Configuration (Blower Motor)
  * 
  * BTS7960 is a high-current H-bridge for the HVAC blower motor
@@ -163,12 +170,11 @@ extern "C" {
 #define SHT30_I2C_SPEED_HZ      100000          // 100 kHz
 
 /*******************************************************************************
- * DS18B20 Temperature Sensors (1-Wire) - ON REMOTE IO NODE
- * - One for coolant temperature
- * - One for duct air temperature
+ * DS18B20 Duct Temperature Sensor (1-Wire) - ON REMOTE IO NODE
+ * - Single sensor for duct air temperature
  ******************************************************************************/
 #define DS18B20_ONEWIRE_PIN     GPIO_NUM_7      // On IO Node
-#define DS18B20_MAX_SENSORS     2
+#define DS18B20_MAX_SENSORS     1
 
 /*******************************************************************************
  * Remote IO Node UART Configuration

@@ -71,7 +71,6 @@ static lv_obj_t *btn_ac = NULL;
 static lv_obj_t *btn_recirc = NULL;
 
 // Status indicators
-static lv_obj_t *lbl_coolant_temp = NULL;
 static lv_obj_t *lbl_duct_temp = NULL;
 
 // Valve position indicators
@@ -389,8 +388,6 @@ static void create_hidden_labels(lv_obj_t *parent)
 {
     // Create hidden dummy labels for data that's shown in debug screen
     // This avoids NULL pointer crashes in hvac_ui_update when debug tab not visible
-    lbl_coolant_temp = lv_label_create(parent);
-    lv_obj_add_flag(lbl_coolant_temp, LV_OBJ_FLAG_HIDDEN);
     lbl_duct_temp = lv_label_create(parent);
     lv_obj_add_flag(lbl_duct_temp, LV_OBJ_FLAG_HIDDEN);
     // Note: Valve position labels are created in debug screen now
@@ -751,14 +748,6 @@ void hvac_ui_update(void)
         lv_obj_clear_state(btn_recirc, LV_STATE_CHECKED);
     }
     
-    // Update coolant temperature
-    if (!isnan(state.coolant_temp_c)) {
-        snprintf(buf, sizeof(buf), "%.0f°C", state.coolant_temp_c);
-        lv_label_set_text(lbl_coolant_temp, buf);
-    } else {
-        lv_label_set_text(lbl_coolant_temp, "--°C");
-    }
-    
     // Update duct temperature
     if (!isnan(state.duct_temp_c)) {
         snprintf(buf, sizeof(buf), "%.0f°C", state.duct_temp_c);
@@ -800,8 +789,8 @@ void hvac_ui_update(void)
     if (lv_tabview_get_tab_act(tabview) == 1) {
         // Temps panel - raw sensor readings
         snprintf(buf, sizeof(buf),
-            "Cabin: %.1f°C\nCoolant: %.1f°C\nDuct: %.1f°C\nHumid: %.0f%%",
-            state.cabin_temp_c, state.coolant_temp_c,
+            "Cabin: %.1f°C\nDuct: %.1f°C\nHumid: %.0f%%",
+            state.cabin_temp_c,
             state.duct_temp_c, state.cabin_humidity);
         lv_label_set_text(lbl_raw_sensors, buf);
         

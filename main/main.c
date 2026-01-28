@@ -458,9 +458,8 @@ void app_main(void)
                      state.cabin_temp_c,
                      state.cabin_humidity);
             
-            if (!isnan(state.coolant_temp_c)) {
-                ESP_LOGI(TAG, "Coolant: %.1f°C, Duct: %.1f°C",
-                         state.coolant_temp_c, state.duct_temp_c);
+            if (!isnan(state.duct_temp_c)) {
+                ESP_LOGI(TAG, "Duct: %.1f°C", state.duct_temp_c);
             }
         }
         

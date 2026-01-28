@@ -3,9 +3,8 @@
  * @brief HVAC Sensor Management Module
  * 
  * Manages temperature and humidity sensors:
- * - SHT30-D: Cabin temperature and humidity (I2C)
- * - DS18B20 #1: Coolant temperature (1-Wire)
- * - DS18B20 #2: Duct air temperature (1-Wire)
+ * - BME280: Cabin temperature and humidity (I2C via remote IO)
+ * - DS18B20: Duct air temperature (1-Wire via remote IO)
  */
 
 #ifndef HVAC_SENSORS_H
@@ -30,7 +29,6 @@ extern "C" {
 typedef enum {
     SENSOR_CABIN_TEMP = 0,      // SHT30-D temperature
     SENSOR_CABIN_HUMIDITY,      // SHT30-D humidity
-    SENSOR_COOLANT_TEMP,        // DS18B20 coolant
     SENSOR_DUCT_TEMP,           // DS18B20 duct air
     SENSOR_MAX
 } hvac_sensor_id_t;
@@ -61,7 +59,6 @@ typedef struct {
 typedef struct {
     float cabin_temp_c;         // Cabin temperature in °C
     float cabin_humidity;       // Cabin humidity in %RH
-    float coolant_temp_c;       // Coolant temperature in °C
     float duct_temp_c;          // Duct air temperature in °C
     uint8_t center_valve_pos;   // Center valve 1 position (0-100%)
     uint8_t center2_valve_pos;  // Center valve 2 position (0-100%)
@@ -69,7 +66,6 @@ typedef struct {
     uint8_t windscreen_valve_pos;  // Windscreen valve position (0-100%)
     uint8_t coolant_valve_pos;  // Coolant control valve position (0-100%)
     sensor_status_t cabin_status;
-    sensor_status_t coolant_status;
     sensor_status_t duct_status;
 } hvac_sensor_readings_t;
 
@@ -126,12 +122,6 @@ float hvac_sensors_get_cabin_temp(void);
  * @return Humidity in %RH (NAN if error)
  */
 float hvac_sensors_get_cabin_humidity(void);
-
-/**
- * @brief Get coolant temperature
- * @return Temperature in °C (NAN if error)
- */
-float hvac_sensors_get_coolant_temp(void);
 
 /**
  * @brief Get duct air temperature
