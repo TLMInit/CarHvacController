@@ -362,14 +362,52 @@ static float bme280_compensate_humidity(int32_t adc_H, int32_t t_fine)
     return h;
 }
 
+#define SENSOR_MAX_RATE_C_PER_S  5.0f   // Faster than this is a bad reading, not the cabin
+#define SENSOR_REJECT_LIMIT      3      // Rejects in a row before the sensor is marked ERROR
+
+// Range and rate check before a temperature is accepted; caller holds sensor_mutex.
+// The rate is measured against the last accepted value over the real time gap,
+// so a sensor that was away for a while can come back at a different temperature.
+static bool plausible_temp(hvac_sensor_id_t id, float t, float lo, float hi)
+{
+    static uint8_t rejects[SENSOR_MAX];
+    const sensor_data_t *s = &sensor_data[id];
+
+    bool ok = (t >= lo && t <= hi);     // false for NAN too
+    if (ok && !isnan(s->value)) {
+        float dt_s = (get_time_ms() - s->last_update_ms) / 1000.0f;
+        ok = fabsf(t - s->value) <= SENSOR_MAX_RATE_C_PER_S * fmaxf(dt_s, 1.0f);
+    }
+    if (ok) {
+        rejects[id] = 0;
+        return true;
+    }
+    if (rejects[id] < SENSOR_REJECT_LIMIT) {
+        rejects[id]++;
+    }
+    ESP_LOGW(TAG, "Sensor %d: %.2f C rejected as implausible (last %.2f C, %d in a row)",
+             id, t, s->value, rejects[id]);
+    if (rejects[id] >= SENSOR_REJECT_LIMIT) {
+        sensor_data[id].status = SENSOR_STATUS_ERROR;
+    }
+    return false;
+}
+
 static void read_remote_ds18b20_duct(void)
 {
     float temperature;
     esp_err_t ret = remote_onewire_read_ds18b20(DS18B20_ONEWIRE_PIN, NULL, &temperature);
     bool grace = (get_time_ms() < 5000);
-    
+
     if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        if (ret == ESP_OK) {
+        // 85.00 C is the DS18B20's power-on scratchpad (no conversion since its reset)
+        bool power_on_value = (ret == ESP_OK && temperature == 85.0f &&
+                               !(sensor_data[SENSOR_DUCT_TEMP].value > 75.0f));
+        if (power_on_value) {
+            ESP_LOGW(TAG, "DS18B20 power-on value 85.00 C ignored");
+        } else if (ret == ESP_OK && !plausible_temp(SENSOR_DUCT_TEMP, temperature, -40.0f, 100.0f)) {
+            // rejected and logged; status handled by plausible_temp()
+        } else if (ret == ESP_OK) {
             sensor_data[SENSOR_DUCT_TEMP].value = temperature;
             sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_OK;
             sensor_data[SENSOR_DUCT_TEMP].last_update_ms = get_time_ms();
@@ -460,16 +498,21 @@ static void read_remote_bme280(void)
     float humidity = bme280_compensate_humidity(adc_H, t_fine);
     
     if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        sensor_data[SENSOR_CABIN_TEMP].value = temperature;
-        sensor_data[SENSOR_CABIN_TEMP].status = SENSOR_STATUS_OK;
-        sensor_data[SENSOR_CABIN_TEMP].last_update_ms = get_time_ms();
-        
-        sensor_data[SENSOR_CABIN_HUMIDITY].value = humidity;
-        sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_OK;
-        sensor_data[SENSOR_CABIN_HUMIDITY].last_update_ms = get_time_ms();
-        
-        ESP_LOGI(TAG, "BME280: %.1fC, %.1f%%RH (raw: T=%d, H=%d)", 
-                 temperature, humidity, adc_T, adc_H);
+        // BME280 operating range; humidity is already clamped to 0-100 by the compensation
+        if (plausible_temp(SENSOR_CABIN_TEMP, temperature, -40.0f, 85.0f)) {
+            sensor_data[SENSOR_CABIN_TEMP].value = temperature;
+            sensor_data[SENSOR_CABIN_TEMP].status = SENSOR_STATUS_OK;
+            sensor_data[SENSOR_CABIN_TEMP].last_update_ms = get_time_ms();
+
+            sensor_data[SENSOR_CABIN_HUMIDITY].value = humidity;
+            sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_OK;
+            sensor_data[SENSOR_CABIN_HUMIDITY].last_update_ms = get_time_ms();
+
+            ESP_LOGI(TAG, "BME280: %.1fC, %.1f%%RH (raw: T=%d, H=%d)",
+                     temperature, humidity, adc_T, adc_H);
+        } else if (sensor_data[SENSOR_CABIN_TEMP].status == SENSOR_STATUS_ERROR) {
+            sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_ERROR;
+        }
         xSemaphoreGive(sensor_mutex);
     }
     return;
