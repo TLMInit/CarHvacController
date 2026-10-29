@@ -14,6 +14,7 @@
 #include "tb6612fng_driver.h"
 #include "hvac_ui.h"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -772,8 +773,10 @@ void hvac_sensors_task(void *pvParameters)
     const uint8_t CALIB_TEMP_READ_INTERVAL = 20;
     
     uint32_t last_node_poll_ms = get_time_ms();
+    esp_task_wdt_add(NULL);
 
     while (1) {
+        esp_task_wdt_reset();
 #if USE_REMOTE_IO
         // Node uptime and reset reason: tells a node restart apart from lost replies
         if (get_time_ms() - last_node_poll_ms >= 10000) {

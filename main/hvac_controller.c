@@ -9,6 +9,7 @@
 #include "tb6612fng_driver.h"
 #include "bts7960_driver.h"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "freertos/FreeRTOS.h"
@@ -1025,8 +1026,10 @@ void hvac_controller_register_callback(hvac_state_callback_t callback, void *use
 void hvac_controller_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "HVAC controller task started");
-    
+    esp_task_wdt_add(NULL);
+
     while (1) {
+        esp_task_wdt_reset();
         if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             run_temperature_control();
             xSemaphoreGive(state_mutex);

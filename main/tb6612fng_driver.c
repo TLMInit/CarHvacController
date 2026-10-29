@@ -7,6 +7,7 @@
 #include "hvac_hw_config.h"
 #include "hvac_sensors.h"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -467,7 +468,12 @@ void tb6612fng_valve_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Valve control task started");
     
+    // A hung valve task would leave a motor driving while other tasks keep the link alive
+    esp_task_wdt_add(NULL);
+
     while (1) {
+        esp_task_wdt_reset();
+
         // Run per-valve calibration state machines (non-blocking)
         tb6612fng_calibration_tick();
         
