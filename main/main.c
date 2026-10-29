@@ -27,6 +27,7 @@
 #include "driver/i2c_master.h"
 #include "driver/ledc.h"
 #include "esp_heap_caps.h"
+#include "esp_app_desc.h"
 
 // ESP LCD and touch components
 #include "esp_lcd_panel_io.h"
@@ -322,6 +323,7 @@ void app_main(void)
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "  Automotive HVAC Control System");
     ESP_LOGI(TAG, "  ESP32-S3-Touch-LCD-2");
+    ESP_LOGI(TAG, "  Firmware %s", esp_app_get_description()->version);
     ESP_LOGI(TAG, "========================================");
     
     // Initialize NVS
