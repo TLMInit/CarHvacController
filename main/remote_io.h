@@ -207,4 +207,45 @@ esp_err_t remote_io_poll_node(void);
  */
 void remote_io_get_node_info(const char **version, uint32_t *uptime_s, uint32_t *resets);
 
+// ==================== v2.1 interfaces (implemented by WP-C) ====================
+
+/**
+ * @brief HELLO handshake: sends PROTOCOL_VERSION, records the node's protocol and
+ * capability bits. Sent by the link layer at every connect (boot, link recovered,
+ * node restart); callable directly. A node without HELLO answers ERR_INVALID_CMD:
+ * then node_proto = 1, caps = 0 and the decoder keeps tolerating the trailing pad.
+ */
+esp_err_t remote_io_hello(uint8_t *node_proto, uint8_t *node_caps);
+
+/** @brief 1-Wire search on the node's bus. Fills up to max ROM codes; needs NODE_CAP_SEARCH. */
+esp_err_t remote_ds18b20_search(uint8_t roms[][8], int max, int *count);
+
+/** @brief Progress of a node OTA: bytes sent so far of total. Called from the OTA caller's task. */
+typedef void (*remote_ota_progress_cb_t)(uint32_t done, uint32_t total, void *ctx);
+
+/**
+ * @brief Stream a node firmware image (already in RAM/PSRAM) to the node:
+ * OTA_BEGIN, OTA_DATA at full link speed, OTA_END, then RESET; waits for the node
+ * to come back and answer PING and VERSION (which confirms the image on the node).
+ * Blocking; call from a worker task, never from the LVGL task. Needs NODE_CAP_OTA.
+ */
+esp_err_t remote_io_ota_node(const uint8_t *image, size_t len, const uint8_t sha256[32],
+                             remote_ota_progress_cb_t cb, void *ctx);
+
+/** @brief Link health snapshot for the diagnostics page and /api/diag. */
+typedef struct {
+    bool connected;                 /* a valid frame within the last 3 s */
+    uint32_t rtt_last_us;           /* last completed round trip */
+    uint32_t rtt_p95_us;            /* 95th percentile over the last minute */
+    uint32_t timeouts_last_min;
+    uint32_t tx_frames, rx_frames, crc_errors, timeouts, mismatches;
+    uint8_t node_proto;             /* 0 until HELLO answered; 1 = node without HELLO */
+    uint8_t node_caps;              /* NODE_CAP_* */
+    char node_version[48];          /* from VERSION, without the up=/rst= part; "?" if unknown */
+    uint32_t node_uptime_s;
+    uint32_t node_restarts;         /* restarts seen since display boot (not counting the boot reset) */
+} remote_io_health_t;
+
+void remote_io_get_health(remote_io_health_t *out);
+
 #endif // REMOTE_IO_H

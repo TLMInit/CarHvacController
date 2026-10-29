@@ -31,8 +31,18 @@ extern "C" {
 #define COBS_MAX_PAYLOAD_SIZE   64      // Maximum payload size before COBS encoding
 #define COBS_MAX_FRAME_SIZE     (COBS_MAX_PAYLOAD_SIZE + 2 + 2)  // payload + COBS overhead + CRC
 
-// Protocol version for compatibility checking
-#define PROTOCOL_VERSION        1
+// Protocol version for compatibility checking.
+// 2: HELLO handshake, ONEWIRE_SEARCH, node OTA. A display sends HELLO with this
+// value at every connect; a node that has seen HELLO stops padding replies whose
+// CRC ends in 0x00 (protocol 1 displays strip one trailing zero when decoding).
+#define PROTOCOL_VERSION        2
+
+// HELLO_RESP capability bits
+#define NODE_CAP_SEARCH         0x01    // ONEWIRE_SEARCH supported
+#define NODE_CAP_OTA            0x02    // OTA_BEGIN/DATA/END/STATUS supported
+
+#define ONEWIRE_SEARCH_MAX_ROMS 4       // ROM_LIST carries at most this many 8-byte ROM codes
+#define OTA_DATA_MAX            56      // OTA_DATA payload: offset(4) + up to 56 bytes = 60 <= 63
 
 /*******************************************************************************
  * Message Types (Controller -> IO Node: 0x01-0x7F, IO Node -> Controller: 0x80-0xFF)
@@ -42,6 +52,7 @@ extern "C" {
 typedef enum {
     MSG_PING            = 0x01,     // No data, expects PONG response
     MSG_VERSION         = 0x02,     // No data, expects version string
+    MSG_HELLO           = 0x03,     // display PROTOCOL_VERSION(1), expects HELLO_RESP
     MSG_GPIO_SET        = 0x10,     // pin(1), level(1)
     MSG_GPIO_GET        = 0x11,     // pin(1), expects GPIO_VALUE response
     MSG_GPIO_MODE       = 0x12,     // pin(1), mode(1)
@@ -52,6 +63,11 @@ typedef enum {
     MSG_ADS_READ        = 0x40,     // channel(1), expects ADS_VALUE response
     MSG_DS18B20_START   = 0x50,     // Start temperature conversion
     MSG_DS18B20_READ    = 0x51,     // Read temperature, expects TEMP_VALUE
+    MSG_ONEWIRE_SEARCH  = 0x52,     // No data, expects ROM_LIST
+    MSG_OTA_BEGIN       = 0x60,     // size u32 BE, sha256[32]; expects OTA_ACK
+    MSG_OTA_DATA        = 0x61,     // offset u32 BE, data[1..OTA_DATA_MAX]; expects OTA_ACK
+    MSG_OTA_END         = 0x62,     // No data: verify sha256, set boot slot; expects OTA_ACK, then RESET reboots
+    MSG_OTA_STATUS      = 0x63,     // No data, expects OTA_ACK
     MSG_RESET           = 0xF0,     // Reset IO Node
 } cobs_msg_cmd_t;
 
@@ -65,7 +81,19 @@ typedef enum {
     MSG_I2C_DATA        = 0x85,     // len(1), data(N)
     MSG_ADS_VALUE       = 0x86,     // channel(1), value_hi(1), value_lo(1)
     MSG_TEMP_VALUE      = 0x87,     // temp_x100_hi(1), temp_x100_lo(1) (signed, °C*100)
+    MSG_HELLO_RESP      = 0x88,     // node PROTOCOL_VERSION(1), capability bits(1), version string (NUL-terminated)
+    MSG_ROM_LIST        = 0x89,     // count(1), count x rom(8), count <= ONEWIRE_SEARCH_MAX_ROMS
+    MSG_OTA_ACK         = 0x8A,     // state(1) ota_state_t, bytes_received u32 BE
 } cobs_msg_resp_t;
+
+// Node OTA state carried in OTA_ACK
+typedef enum {
+    OTA_STATE_IDLE      = 0,        // no transfer
+    OTA_STATE_RECEIVING = 1,        // OTA_BEGIN accepted, data being written to the inactive slot
+    OTA_STATE_READY     = 2,        // OTA_END: hash matched, boot slot set; RESET to run it
+    OTA_STATE_ERROR     = 3,        // write, size or hash failure; OTA_BEGIN starts over
+    OTA_STATE_PENDING   = 4,        // running a new image not yet confirmed (rollback armed)
+} ota_state_t;
 
 // GPIO modes (matches io_gpio.h, prefixed to avoid ESP-IDF conflict)
 typedef enum {
@@ -86,6 +114,9 @@ typedef enum {
     ERR_CRC_MISMATCH    = 6,
     ERR_FRAME_ERROR     = 7,
     ERR_OVERFLOW        = 8,
+    ERR_OTA_STATE       = 9,        // OTA command out of order
+    ERR_OTA_WRITE       = 10,       // flash write failed / offset not contiguous
+    ERR_OTA_VERIFY      = 11,       // size or sha256 mismatch at OTA_END
 } cobs_error_t;
 
 /*******************************************************************************

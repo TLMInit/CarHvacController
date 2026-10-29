@@ -34,6 +34,24 @@ typedef enum {
 } temp_unit_t;
 
 /**
+ * @brief One-tap presets (v2.1, WP-E). Applying one sets mode/setpoint/fan/A/C as
+ * listed; recirc only when SET_RECIRC_FITTED. The preset stays "active" (shown on
+ * the status line) until the user changes mode, setpoint, fan or A/C.
+ *   DEFOG:    DEF, A/C on, fan High
+ *   MAX_HEAT: Foot, 30 °C, fan High, A/C off
+ *   MAX_COOL: Face, 16 °C, A/C on, recirc on (if fitted), fan High
+ *   ECO:      AUTO, A/C off, fan AUTO capped at Medium
+ */
+typedef enum {
+    HVAC_PRESET_NONE = 0,
+    HVAC_PRESET_DEFOG,
+    HVAC_PRESET_MAX_HEAT,
+    HVAC_PRESET_MAX_COOL,
+    HVAC_PRESET_ECO,
+    HVAC_PRESET_COUNT
+} hvac_preset_t;
+
+/**
  * @brief HVAC controller state
  */
 typedef struct {
@@ -72,6 +90,17 @@ typedef struct {
     
     // A/C compressor state
     bool ac_compressor_on;          // Actual compressor state (may differ from ac_enabled)
+
+    // v2.1 (WP-E fills these; NaN/false/NONE until it does)
+    hvac_preset_t preset;           // Active preset, NONE once the user changes something
+    uint8_t control_mode;           // set_control_mode_t: CLASSIC or CASCADE
+    bool heater_delay_active;       // AUTO fan held low until the heater is warm
+    bool defog_active;              // Dew-point defog is overriding distribution/A/C
+    float dew_point_c;              // Cabin dew point (Magnus), NaN without T/RH
+    float outside_temp_c;           // Role OUTSIDE, NaN if not assigned
+    float coolant_temp_c;           // Role COOLANT, NaN if not assigned
+    float duct_target_c;            // Cascade: duct temperature target, NaN in classic
+    char ac_reason[32];             // Why the compressor is on/off, e.g. "Interlock: blower below LOW"
 } hvac_state_t;
 
 /**
@@ -98,6 +127,18 @@ typedef void (*hvac_state_callback_t)(const hvac_state_t *state, void *user_data
 /*******************************************************************************
  * Function Declarations
  ******************************************************************************/
+
+/** @brief Apply a preset (v2.1, WP-E). HVAC_PRESET_NONE only clears the active marker. */
+esp_err_t hvac_controller_apply_preset(hvac_preset_t preset);
+
+/** @brief Active preset, or HVAC_PRESET_NONE. */
+hvac_preset_t hvac_controller_get_preset(void);
+
+/** @brief "Defog", "Max heat", "Max cool", "Eco" ("" for NONE), English. */
+const char *hvac_controller_preset_name(hvac_preset_t preset);
+
+/** @brief Re-read controller-related settings (settings apply_cb). Cheap; any task. */
+void hvac_controller_apply_settings(void);
 
 /**
  * @brief Initialize HVAC controller

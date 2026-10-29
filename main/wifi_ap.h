@@ -1,0 +1,36 @@
+/**
+ * @file wifi_ap.h
+ * @brief Phone access point "HVAC-<mac4>", WPA2, mode from SET_WIFI_AP_MODE.
+ *
+ * INTERFACE (lead). Implemented by WP-G in wifi_ap.c.
+ * OFF: radio off. 10MIN: on at boot (and when the setting is changed to it),
+ * off after 10 min without a connected client. ALWAYS: on.
+ */
+
+#ifndef WIFI_AP_H
+#define WIFI_AP_H
+
+#include <stdbool.h>
+#include <stdint.h>
+#include "esp_err.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/** Call once after settings_init(); applies the current mode. */
+esp_err_t wifi_ap_init(void);
+
+/** Re-read SET_WIFI_AP_MODE / SET_AP_PASSWORD (settings apply_cb). */
+void wifi_ap_apply_settings(void);
+
+bool wifi_ap_is_on(void);
+const char *wifi_ap_ssid(void);             /* "HVAC-1A2B" */
+int wifi_ap_client_count(void);
+uint32_t wifi_ap_remaining_s(void);         /* 10MIN mode: seconds left without a client, else 0 */
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* WIFI_AP_H */

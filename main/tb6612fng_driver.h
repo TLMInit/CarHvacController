@@ -196,6 +196,48 @@ esp_err_t tb6612fng_get_calibration(hvac_valve_id_t valve_id,
  */
 void tb6612fng_get_all_valve_states(valve_state_t *states);
 
+// ==================== v2.1 interfaces (implemented by WP-D) ====================
+
+/** Where a valve's calibration came from at boot. */
+typedef enum {
+    VALVE_CAL_SRC_DEFAULT = 0,      /* built-in defaults (never calibrated, or calibration failed) */
+    VALVE_CAL_SRC_STORED,           /* loaded from hvac_cal and plausible */
+    VALVE_CAL_SRC_CALIBRATED,       /* calibrated this boot (and stored) */
+    VALVE_CAL_SRC_FIXED,            /* not calibrated by design (coolant, linear) */
+} valve_cal_source_t;
+
+/** Everything the valve service page and the self-test show about one valve. */
+typedef struct {
+    valve_cal_source_t cal_source;
+    bool calibrating;
+    bool service_active;            /* jog / learn / recalibrate in progress */
+    uint8_t adc_min, adc_max, adc_center;
+    bool is_inverted;               /* effective (after the per-valve direction setting) */
+    uint8_t speed;                  /* effective PWM (after the per-valve speed setting) */
+    uint8_t adc_pos;                /* last raw reading, ADC % */
+    uint8_t position;               /* open % */
+    uint8_t target;                 /* open % */
+    bool moving, stalled, feedback_fault;
+} tb6612_valve_info_t;
+
+void tb6612fng_get_valve_info(hvac_valve_id_t valve_id, tb6612_valve_info_t *out);
+
+/**
+ * Service API (valve service page). The caller enforces "mode OFF" (the UI refuses
+ * otherwise); the driver additionally refuses while the valve calibrates.
+ * jog: dir +1 FWD, -1 REV, 0 stop. A jog must be repeated at least every 300 ms
+ * (while the button is held); the driver stops the motor if it is not.
+ */
+esp_err_t tb6612fng_service_jog(hvac_valve_id_t valve_id, int dir);
+esp_err_t tb6612fng_service_stop(hvac_valve_id_t valve_id);
+/** Recalibrate one valve now (non-blocking; result into the event log and hvac_cal). */
+esp_err_t tb6612fng_service_recalibrate(hvac_valve_id_t valve_id);
+/** Short move, observe the ADC sign, store is_inverted (non-blocking). */
+esp_err_t tb6612fng_service_learn_direction(hvac_valve_id_t valve_id);
+
+/** Re-read the per-valve speed/direction settings and the safe margin (settings apply_cb). */
+void tb6612fng_apply_settings(void);
+
 #ifdef __cplusplus
 }
 #endif
