@@ -428,15 +428,8 @@ static void update_mode_buttons(hvac_mode_t mode)
             break;
     }
     
-    // Disable/enable fan slider based on auto mode
-    if (mode == HVAC_MODE_AUTO) {
-        lv_obj_add_state(slider_fan, LV_STATE_DISABLED);
-        lv_obj_set_style_opa(slider_fan, LV_OPA_50, 0);
-        lv_label_set_text(lbl_fan_speed, "Auto");
-    } else {
-        lv_obj_clear_state(slider_fan, LV_STATE_DISABLED);
-        lv_obj_set_style_opa(slider_fan, LV_OPA_COVER, 0);
-    }
+    // The fan slider stays usable in AUTO: touching it switches the fan to manual.
+    // The fan label follows the fan level (update_fan_slider), not the mode.
 }
 
 static void update_fan_slider(hvac_fan_speed_t level)

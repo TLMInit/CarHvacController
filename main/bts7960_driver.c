@@ -160,12 +160,17 @@ esp_err_t bts7960_set_speed(uint8_t speed_percent)
         if (!blower_state.is_enabled && speed_percent > 0) {
             bts7960_enable();
         }
-        
+
+        // The AUTO fan calls this every 100 ms; only a change goes to the node
+        // (bts7960_refresh() re-sends it once a second anyway)
+        bool changed = (duty != blower_state.current_speed) || blower_state.is_ramping;
         blower_state.target_speed = duty;
         blower_state.current_speed = duty;
         blower_state.is_ramping = false;
-        
-        set_pwm_duty(duty);
+
+        if (changed) {
+            set_pwm_duty(duty);
+        }
         
         ESP_LOGD(TAG, "Blower speed set to %d%% (duty: %d)", speed_percent, duty);
         xSemaphoreGive(blower_mutex);

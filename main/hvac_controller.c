@@ -853,7 +853,9 @@ esp_err_t hvac_controller_set_mode(hvac_mode_t mode)
             warmup_state.start_time_ms = 0;
             warmup_state.initial_cabin_temp = NAN;
             warmup_state.initial_humidity = NAN;
-            ESP_LOGI(TAG, "Entered AUTO mode, warmup state reset");
+            // AUTO climate starts with the automatic fan; the fan slider switches it back to manual
+            hvac_state.fan_level = HVAC_FAN_AUTO;
+            ESP_LOGI(TAG, "Entered AUTO mode, warmup state reset, fan AUTO");
         }
         
         if (mode == HVAC_MODE_OFF) {
