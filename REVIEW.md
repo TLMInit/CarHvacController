@@ -41,57 +41,58 @@ Display hashes are in this repo; node hashes (marked *node*) are in `CarHvacIoNo
 
 | ID | Title | Phase | Status |
 |---|---|---|---|
-| S-01 | Failed position read fed to the loop as 0 | 1 | authorised |
-| S-02 | Stall detection disabled | 1 | authorised |
-| S-03 | Motor run time unbounded while link stays up | 1 (step 1), 2b (lease) | step 1 authorised |
-| S-04 | Display reboot does not stop running motors | 1 | authorised |
-| S-05 | Blower and relay never re-commanded | 1 | authorised |
-| S-06 | Use-after-free in the link queue | 1 | authorised |
-| S-07 | A/C without blower interlock | 1 (via C-01) | authorised |
-| S-08 | Controller steers on frozen sensor value | 1 | authorised |
-| S-09 | Calibration runs blind with node absent | — | open |
-| S-10 | Two tasks commanding one motor | 1 | authorised |
+| S-01 | Failed position read fed to the loop as 0 | 1 | **done** b9840e9 |
+| S-02 | Stall detection disabled | 1 | **done** 6f7c36c |
+| S-03 | Motor run time unbounded while link stays up | 1 (step 1), 2b (lease) | step 1 **done** 82feebd (10 s, see commit); step 2 held |
+| S-04 | Display reboot does not stop running motors | 1 | **done** 4f29e75 |
+| S-05 | Blower and relay never re-commanded | 1 | **done** 0d0bb86 |
+| S-06 | Use-after-free in the link queue | 1 | **done** 957b16a |
+| S-07 | A/C without blower interlock | 1 (via C-01) | **done** via C-01 936b1bc |
+| S-08 | Controller steers on frozen sensor value | 1 | **done** 3b6ca2f |
+| S-09 | Calibration runs blind with node absent | — | partly: calibration now gives up when feedback is lost (b9840e9); re-calibrating when the node appears later is open |
+| S-10 | Two tasks commanding one motor | 1 | **done** 9e2e069 |
 | S-11 | Trailing-zero bug | 2b | held |
 | L-01 | Fixed tick waits per round trip | 2a | authorised |
 | L-02 | Unchanged commands re-sent under `valve_mutex` | 2a | authorised |
-| L-03 | Semaphore churn | 1 (via S-06) | authorised |
+| L-03 | Semaphore churn | 1 (via S-06) | **done** via S-06 957b16a |
 | L-04 | Replies not matched to command | 2a | authorised |
-| L-05 | Dead or misleading link API | 2a (stats getter in 1) | authorised |
+| L-05 | Dead or misleading link API | 2a (stats getter in 1) | stats getter declared 99ca320; rest authorised (2a) |
 | L-06 / L-07 | Bulk read, full-state exchange | 2b | held |
-| C-01 | A/C interlocks | 1 | authorised |
-| C-02 | Valve targets flap within a cycle | 1 | authorised |
+| C-01 | A/C interlocks | 1 | **done** 936b1bc |
+| C-02 | Valve targets flap within a cycle | 1 | **done** e4c4acf |
 | C-03 | Valve positioning resolution and units | 3 | held |
 | C-04 | Calibration at every boot | 3 | held |
 | C-05 | Thermal adaptation / cascade PI | 3 | held |
-| C-06 | AUTO fan unreachable | 1 (selection only) | authorised |
-| C-07 | Saved settings half-applied | 1 | authorised |
-| C-08 | Recirc / rear defrost without actuator | 1 (remove rear defrost) | authorised |
+| C-06 | AUTO fan unreachable | 1 (selection only) | **done** 6e32f15 |
+| C-07 | Saved settings half-applied | 1 | **done** e4a1acc (no OFF button: layout, for the UI branch) |
+| C-08 | Recirc / rear defrost without actuator | 1 (remove rear defrost) | **done** 5b55235 (rear defrost removed; recirc kept as a flag) |
 | C-09 | AUTO cannot cool | 3 | held (owner: default yes) |
 | SN-01 | Sensor task blocks 750 ms | 2a | authorised |
-| SN-02 | No plausibility checks | 1 | authorised |
+| SN-02 | No plausibility checks | 1 | **done** 70f977e |
 | SN-03 | BME280 driver details | 3 | held |
 | SN-04 | Dead local path | 4 | held |
-| SN-05 | Sensor fault pop-up at every boot | 1 | authorised |
-| U-01 | UI thread does link I/O | 1 (keep last snapshot only) | authorised |
+| SN-05 | Sensor fault pop-up at every boot | 1 | **done** e438b8b |
+| U-01 | UI thread does link I/O | 1 (keep last snapshot only) | minimal form **done** 2a85ec6; queue refactor held |
 | U-02 | Update cadence and drawing cost | 4 | held |
-| U-03 | Diagnostics page | 1 (link stats, node uptime only) | authorised |
+| U-03 | Diagnostics page | 1 (link stats, node uptime only) | link stats + node info **done** a465c59; rest held |
 | U-04 | Fault pop-ups | 5 | held |
 | U-05 | LVGL mutex discipline | — | no action |
 | M-01 / M-02 | Module layout, shared protocol code | 4 | held |
 | B-01 | `sdkconfig.defaults` does not reproduce the build | 0 | **done** da769b8 |
 | B-02 | Toolchain and dependency pinning | 0 | **done** 7f6c77c; *node* df86a8d |
 | B-03 | Repo hygiene, baseline release, version strings | 0 | **done** 82831fc, fe699cd, tag `v1.0-baseline`; *node* 512353c, 1f9f754 (CI, README: step 4–5 held) |
-| N-01 | Node watchdog inside the supervised task | 1 | authorised |
-| N-02 | README claim about re-commanding | 1 (with S-05) | authorised |
+| N-01 | Node watchdog inside the supervised task | 1 | **done** *node* c7160c7 |
+| N-02 | README claim about re-commanding | 1 (with S-05) | **done** *node* c90571f (README); display side S-05 |
 | N-03 | Watchdog timeout 500 ms | 2b | held |
-| N-04 | I2C bus recovery | 1 | authorised |
-| N-05 | Error-code mapping | 1 | authorised |
+| N-04 | I2C bus recovery | 1 | **done** *node* 500f78a |
+| N-05 | Error-code mapping | 1 | **done** *node* a2965c1 |
 | N-06 | ADS background scan | 2b | held |
 | N-07 | Reply to corrupt frames | 2b | held |
-| N-08 | DS18B20 85 °C on the node | — | display side via SN-02 |
-| N-09 | Pin allow-list, LED note | 1 | authorised |
+| N-08 | DS18B20 85 °C on the node | — | display side **done** via SN-02 70f977e |
+| N-09 | Pin allow-list, LED note | 1 | **done** *node* 09e98e0, README c90571f |
 | N-10 | Missing `dependencies.lock` | 0 | **done** *node* df86a8d |
 | N-11 | `watch` CLI command | 5 | held |
+| INST | Instrumentation for the "everything drops" reports | 1 | **done** 6a0fe99 (timeout lines), 99ca320 (node restarts), a465c59 (debug tab); *node* d83c7fd (uptime + reset reason) |
 
 ---
 
@@ -970,3 +971,159 @@ the previous tagged release of both boards (B-03 step 2 comes first for exactly 
   ignored by the display repo.
 - **P0-7 Windows long paths.** Checking out any commit that still tracks `build/` needs
   `core.longpaths=true` (now set in this repo's config).
+
+---
+
+## Found during Phase 1
+
+- **P1-1 A third mechanism for "everything drops", needing no lost frame.** The UI drew an
+  unfilled `hvac_state_t` whenever `hvac_controller_get_state()` could not take
+  `state_mutex` within 100 ms (fixed for the screen in U-01, `2a85ec6`). The controller
+  holds that mutex for its whole cycle, and inside it each `tb6612fng_set_valve_position()`
+  waits up to 50 ms for `valve_mutex`. The valve task holds `valve_mutex` for its whole
+  iteration: ≈ 3 round trips × 3.5 ms per moving valve, so ≈ 52 ms with five valves moving.
+  In AUTO, two or three target writes per cycle can each wait up to 50 ms, which pushes the
+  controller past the UI's 100 ms. That needs only valves moving in AUTO, no timeout and no
+  node reset. The bench log tells the three mechanisms apart:
+  - `Controller busy ... kept last screen` alone → this one;
+  - `TIMEOUT ...` lines → lost replies;
+  - `IO NODE RESTARTED` → a node reset.
+
+  L-02 (Phase 2a) takes the UART I/O out from under `valve_mutex`, which removes the cause.
+- **P1-2 `hvac_sensors_get_all()` left the caller's struct uninitialised on a mutex
+  timeout.** The controller then used stack garbage as temperatures for one cycle. Fixed
+  with S-08 (`3b6ca2f`).
+- **P1-3 `bts7960_set_speed`/`_ramp` call `bts7960_enable()` while holding the
+  non-recursive `blower_mutex`.** If the blower is disabled, that call blocks the caller for
+  100 ms and then fails silently. No current code path disables the blower
+  (`bts7960_disable` is unused), so this is latent. Not changed.
+- **P1-4 Fan slider after AUTO fan (C-06).** The slider keeps its last position while the fan
+  is AUTO. Choosing that same level raises no `VALUE_CHANGED`, so the user must move off it
+  and back. Left for the UI redesign branch.
+- **P1-5 S-03 deviation.** The task-watchdog timeout stays 10 s, not 3–5 s. With the node
+  absent and all tasks contending for the link, one sensors cycle can take ~6.5 s
+  (`82feebd`).
+- **P1-6 Behaviour now live in the car (C-06).** The AUTO warm-up fan boost was dead code
+  until now:
+  - With a cabin below 15 °C, AUTO runs fan High, windscreen 100 %, coolant 100 % and A/C.
+  - The A/C waits at least 10 s after boot (minimum off-time) and needs the blower ≥ LOW.
+  - Worth watching on the first cold start.
+- **P1-7 Stall threshold vs pot noise.** S-02 calls a valve "moving" when its raw reading
+  changes by ≥ 2 %. Pot noise above 2 % would hide a stall. Check with `ionode_cli.py ads-all`
+  repeated on a stationary valve.
+- **P1-8 S-04 needs the new node.** `MSG_RESET` handling is part of the rewrite. Against a
+  node without it, the display logs that the node did not come back and carries on.
+- **P1-9 The display image grew 11.8 KB** (Montserrat 12 is now used by the debug tab).
+  59 % of the app partition is still free.
+
+---
+
+## Bench checklist — Phase 1
+
+Setup:
+- Display, node and all five actuators, blower and relay on the bench supply.
+- Display console: its USB port (USB-Serial-JTAG).
+- Node console: the DevKitC "UART" USB-C port, 115200 baud.
+- Build both from branch `phase-1` and flash: `idf.py -p <port> flash monitor`, in the
+  display repo and in `CarHvacIoNode/`.
+
+Console lines are shown as `TAG: text`. "Within N s" counts from the action. Tick each box.
+
+1. **Boot (B-03, S-04, INST, SN-05).** Power both.
+   - [ ] Display: `HVAC_MAIN:   Firmware v1.0-baseline-…`
+   - [ ] Display: `HVAC_MAIN: IO Node connected!`, then `Resetting IO Node to its safe boot state...`.
+     A few `REMOTE_IO: TIMEOUT PING …` lines follow while the node reboots, then
+     `IO Node back after reset`, then `REMOTE_IO: IO node: ionode 2.0 (…) up=0 rst=SW`.
+   - [ ] Node: `LINK: Reset requested by the display`, then the boot banner again, then
+     `Ready, waiting for the display`.
+   - [ ] No "Sensor fault" box appears at boot.
+   - [ ] Debug tab (swipe left): the bottom lines read `Link tx … timeout …` and
+     `Node ionode 2.0 (…) up …s restarts 0`.
+2. **Display reboot with a valve moving (S-04).** Press AUTO, then the down arrow (foot) so
+   valves start moving, then reset the display.
+   - [ ] Every valve motor stops within about 1 s of the display starting to boot (node:
+     `Reset requested by the display`). Valves then calibrate as before.
+3. **Saved settings (C-07).**
+   - Select face (up arrow), fan slider to M-Hi, setpoint 24.0. Wait 6 s.
+   - [ ] Display: `HVAC_CTRL: Settings saved to NVS`, once, about 5 s after the last touch.
+   - Power-cycle the display.
+   - [ ] Face selected, fan M-Hi, 24.0 °C.
+   - [ ] The blower actually runs at M-Hi after boot (it stayed off before this build).
+4. **AUTO fan (C-06).** Press AUTO.
+   - [ ] Display: `Entered AUTO mode, warmup state reset, fan AUTO`; the fan label shows `Auto`.
+   - [ ] Move the slider to Low: `Fan level set to: Low` and the blower slows. The mode
+     stays AUTO.
+5. **Link loss and recovery (S-05, N-01, S-01, INST).** Face mode, fan Medium, A/C on.
+   Wait 30 s so the A/C minimum on-time has passed. Pull the wire from display TX to node
+   GPIO21.
+   - [ ] Display, at once: `REMOTE_IO: TIMEOUT <cmd> [..] from <task>: link wait … +
+     command 20x ms (1 in a row, …)`, at most 10 such lines, then every 50th.
+   - [ ] Display, within ~2 s: `TB6612FNG: V0: position feedback LOST - motor stopped,
+     valve held`, and the same for V1 to V4.
+   - [ ] Node, after 3 s: `LINK: No frames for 3000 ms: outputs forced to safe state`;
+     the blower stops and the relay drops.
+   - Reconnect the wire.
+   - [ ] Display: `Link recovered after N timed-out command(s)` and
+     `V0..V4: position feedback back - control resumes`.
+   - [ ] Node: `Link restored`.
+   - [ ] Within ~1 s, without touching the display, the blower runs again and the relay
+     re-engages (A/C needs 10 s minimum off-time, so the relay comes back after 10 s).
+6. **Node reset seen by the display (INST, S-05).** Press EN/RST on the node.
+   - [ ] Within 10 s, display: `REMOTE_IO: IO NODE RESTARTED: uptime … s -> … s, reset
+     reason POWERON (1 since boot)` (an EN reset may also report `EXT`).
+   - [ ] The blower and relay come back within ~1 s of the node answering.
+   - [ ] Debug tab: `restarts 1`.
+7. **Stall (S-02).** Change mode so one butterfly valve must move, and hold its shaft
+   firmly (low torque, but keep fingers clear of the linkage).
+   - [ ] After 6 s: `TB6612FNG: V<n>: STALL (no movement for 6 s) at pos=…% adc=…%
+     tgt=…%, will retry`, and the "Valve fault" box appears.
+   - [ ] Retries at +10 s, +20 s, +30 s: `retrying after stall (k of 3)`.
+   - [ ] On the fourth stall: `… latched until mode change`, and the motor stays off.
+   - [ ] Release the shaft and press a mode button: the valve moves to its target.
+   - [ ] Pot noise check (P1-7): with that valve idle, run `ionode_cli.py ads <0x48|0x49>
+     <ch>` ten times on a PC connected to the node in place of the display. The spread
+     must be < 2 % (< ~520 raw).
+8. **I2C failure (N-04, S-01).** Disconnect VDD of ADS1115 #1 (0x48) for 5 s, then reconnect.
+   - [ ] Node: `IO_I2C: 3 I2C errors in a row: resetting the bus`.
+   - [ ] Display: `V0..V3: position feedback LOST …`, then `… back …` after reconnect.
+     V4 (coolant, on 0x49) is unaffected.
+9. **A/C interlocks (C-01).** DEFROST mode, fan Medium; the relay engages.
+   - Move the fan slider to OFF.
+   - [ ] At once: `HVAC_CTRL: A/C REQUEST: OFF - Reason: Interlock: blower below LOW`,
+     and the relay drops immediately.
+   - Move the slider back to Low.
+   - [ ] `A/C REQUEST: ON - Reason: DEFROST mode`. The relay engages no sooner than 10 s
+     after it dropped.
+   - AUTO mode: breathe on the BME280 until humidity is over 65 %.
+   - [ ] `A/C REQUEST: ON - Reason: High humidity`.
+   - [ ] The relay must not drop before humidity is below 58 % **and** it has been on 30 s.
+10. **Sensor loss (S-08, SN-02).** Unplug the BME280.
+    - [ ] Within ~5 s: cabin shows `--`, the "Sensor fault" box appears, and
+      `TB6612FNG: Valve 4 target: …% -> 50%` (fallback coolant).
+    - [ ] Replug: values return; the coolant valve follows AUTO again.
+    - Unplug and replug the DS18B20.
+    - [ ] `HVAC_SENSORS: DS18B20 power-on value 85.00 C ignored` appears at most once, and
+      no 85 °C ever shows on the debug tab.
+11. **The owner's "everything drops" (P1-1, U-01).** AUTO, valves moving, 30 min.
+    - [ ] The main screen never shows 0.0 / OFF.
+    - Note any `HVAC_UI: Controller busy for 100 ms: kept last screen (n …)` lines, and the
+      `UI busy`, `timeout` and `restarts` counts on the debug tab, and send them in. They
+      say which mechanism it was.
+12. **Node alone, with `tools/ionode_cli.py` on a PC** (display link cable unplugged).
+    - [ ] `version` prints `ionode 2.0 (…) up=<s> rst=POWERON`.
+    - [ ] `gpio-set 1 1` → `ERROR invalid pin` (N-09).
+    - [ ] `ads 0x48 5` → `ERROR invalid arguments` (N-05).
+    - [ ] `stress 200`: 0 failures.
+
+Not testable from the bench UI: S-10 (no OFF button; `stop_valve` is reached only through a
+restored OFF mode) and the S-03 / N-01 task-watchdog paths (no way to hang a task on
+purpose). These were checked by reading the code only.
+
+Car (after the bench passes): one cold start below 15 °C cabin in AUTO. Expect:
+- the warm-up phase: fan High, windscreen 100 %, coolant 100 %;
+- A/C from about 10 s after boot;
+- the warm-up ends at ≥ 18 °C with humidity < 60 % (after at least 60 s);
+- no relay chatter.
+
+Rollback: flash `../releases/v1.0-baseline/` with the offsets in its `flasher_args.json`.
+The node has no earlier build to go back to.
