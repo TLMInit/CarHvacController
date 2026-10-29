@@ -19,6 +19,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_app_desc.h"
 #include "node_config.h"
 #include "io_hw.h"
 #include "io_i2c.h"
@@ -30,7 +31,7 @@ static const char *TAG = "IONODE";
 void app_main(void)
 {
     ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, " HVAC IO Node  %s", NODE_VERSION_STRING);
+    ESP_LOGI(TAG, " HVAC IO Node  %s (%s)", NODE_VERSION_STRING, esp_app_get_description()->version);
     ESP_LOGI(TAG, "========================================");
 
     ESP_ERROR_CHECK(io_hw_init());

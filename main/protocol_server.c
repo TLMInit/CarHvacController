@@ -12,6 +12,7 @@
  * display re-commands everything when it returns, so recovery is automatic.
  */
 
+#include <stdio.h>
 #include <string.h>
 #include "protocol_server.h"
 #include "node_config.h"
@@ -23,6 +24,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -101,8 +103,10 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
         return;
 
     case MSG_VERSION: {
-        const char *v = NODE_VERSION_STRING;
-        send_frame(MSG_VERSION_RESP, (const uint8_t *)v, strlen(v) + 1);
+        char v[COBS_MAX_PAYLOAD_SIZE - 1];
+        int n = snprintf(v, sizeof(v), "%s (%.24s)", NODE_VERSION_STRING,
+                         esp_app_get_description()->version);
+        send_frame(MSG_VERSION_RESP, (const uint8_t *)v, (size_t)n + 1);
         return;
     }
 

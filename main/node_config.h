@@ -16,7 +16,7 @@
 #include "driver/uart.h"
 #include "driver/i2c_master.h"
 
-#define NODE_VERSION_STRING     "ionode 2.0 (2026-10-29)"
+#define NODE_VERSION_STRING     "ionode 2.0"   /* protocol_server.c appends the build's git describe */
 
 /* ---- UART link to the display -------------------------------------------
  * Display side: UART1, TX GPIO10 -> node RX, RX GPIO11 <- node TX, 921600 8N1.
