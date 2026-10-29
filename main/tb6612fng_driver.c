@@ -85,7 +85,9 @@ static TaskHandle_t valve_task_handle = NULL;
 #define VALVE_POSITION_TOLERANCE    2       // Acceptable error window (%) - tighter tolerance
 #define VALVE_HYSTERESIS            2       // Extra margin before restarting (%) - prevents hunting
 #define VALVE_STALL_TIMEOUT_MS      6000     // No movement timeout
-#define VALVE_MAX_MOVE_MS           15000    // One move in one direction longer than 1.5 x full travel = stall
+#define VALVE_MAX_MOVE_MS           (2 * VALVE_FULL_TRAVEL_TIME_MS)  // One move in one direction longer than this = stall
+#define VALVE_WRAP_BLOCK_MS         5000     // A direction blocked after a pot wrap-around is released after this
+#define VALVE_WRAP_CLEAR_NEAR_PCT   9        // ...or as soon as the valve is within this of its target
 #define VALVE_STALL_RETRIES         3        // Retries after a stall (10 s, 20 s, 30 s), then latched
 #define VALVE_STALL_RETRY_MS        10000    // Back-off step between retries
 #define VALVE_MOVEMENT_THRESHOLD    2       // Minimum change considered movement
@@ -149,6 +151,7 @@ static uint8_t valve_adc_pos[HVAC_VALVE_MAX] = {0};         // Last raw ADC read
 static uint8_t valve_adc_last_stable[HVAC_VALVE_MAX] = {50}; // Last stable ADC reading (for wrap-around detection)
 static bool valve_at_boundary[HVAC_VALVE_MAX] = {false};    // True if valve hit a calibrated boundary
 static int8_t valve_wraparound_blocked_dir[HVAC_VALVE_MAX] = {0}; // Direction blocked due to wraparound: +1=FWD blocked, -1=REV blocked, 0=none
+static uint32_t valve_wrap_block_ms[HVAC_VALVE_MAX];           // When that direction was blocked
 static bool valve_filter_init[HVAC_VALVE_MAX] = {false};
 static tb6612_direction_t last_motor_dir[HVAC_VALVE_MAX] = {TB6612_DIR_STOP};  // Track last direction for logging
 static int8_t valve_target_adc_side[HVAC_VALVE_MAX] = {0};  // Latched V-shape side: +1=upper, -1=lower, 0=undecided
@@ -180,6 +183,8 @@ typedef struct {
     uint32_t phase_start_ms;
     uint8_t stall_ref_adc;      // Pot reading at the last observed movement
     uint32_t stall_ref_ms;      // Time of the last observed movement
+    int16_t pre_wrap_net;       // Net ADC change while rotating FWD, up to the first wrap-around
+    bool wrap_seen;             // The rotation has crossed the pot's wrap point
 } valve_calib_progress_t;
 
 static valve_calib_progress_t valve_calib_progress[HVAC_VALVE_MAX] = {0};
@@ -528,6 +533,19 @@ void tb6612fng_valve_task(void *pvParameters)
                 // Get current ADC reading
                 uint8_t adc_pos = valve_adc_pos[i];
                 
+                // A wrap block is temporary: released after 5 s, or once the valve is near its
+                // target (a block that outlived its cause kept the valve on the wrong side)
+                if (valve_wraparound_blocked_dir[i] != 0) {
+                    bool near_target = abs((int)state->target_position - (int)state->position)
+                                       <= VALVE_WRAP_CLEAR_NEAR_PCT;
+                    if (near_target || now_ms - valve_wrap_block_ms[i] >= VALVE_WRAP_BLOCK_MS) {
+                        ESP_LOGI(TAG, "V%d: wrap block released (%s)", i,
+                                 near_target ? "near target" : "after 5 s");
+                        valve_wraparound_blocked_dir[i] = 0;
+                        valve_at_boundary[i] = false;
+                    }
+                }
+
                 // Wrap-around detection for butterfly valves
                 // If ADC jumps by more than threshold, it indicates potentiometer wrap-around
                 bool wraparound_detected = false;
@@ -545,6 +563,7 @@ void tb6612fng_valve_task(void *pvParameters)
                         } else if (last_motor_dir[i] == TB6612_DIR_REVERSE) {
                             valve_wraparound_blocked_dir[i] = -1;  // Block REV
                         }
+                        valve_wrap_block_ms[i] = now_ms;
                         ESP_LOGW(TAG, "V%d: ADC wraparound detected! (%d%% -> %d%%), blocking %s direction",
                                  i, valve_adc_last_stable[i], adc_pos,
                                  valve_wraparound_blocked_dir[i] > 0 ? "FWD" : "REV");
@@ -869,7 +888,7 @@ void tb6612fng_valve_task(void *pvParameters)
                         valve_retry_at_ms[i] = (valve_stall_count[i] <= VALVE_STALL_RETRIES)
                                                ? now_ms + VALVE_STALL_RETRY_MS * valve_stall_count[i] : 0;
                         ESP_LOGW(TAG, "V%d: STALL (%s) at pos=%d%% adc=%d%% tgt=%d%%, %s",
-                                 i, still_ms > VALVE_STALL_TIMEOUT_MS ? "no movement for 6 s" : "move longer than 15 s",
+                                 i, still_ms > VALVE_STALL_TIMEOUT_MS ? "no movement for 6 s" : "move longer than 2x full travel",
                                  state->position, adc_pos, state->target_position,
                                  valve_retry_at_ms[i] ? "will retry" : "latched until mode change");
                         continue;
@@ -1007,6 +1026,8 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
                 prog->phase_start_ms = now_ms;
                 prog->stall_ref_adc = prog->start_adc;
                 prog->stall_ref_ms = now_ms;
+                prog->pre_wrap_net = 0;
+                prog->wrap_seen = false;
             }
             break;
         }
@@ -1031,6 +1052,15 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
             int diff = (int)current_adc - (int)prog->last_adc;
             if (abs(diff) > 2) {
                 prog->last_direction = (diff > 0) ? 1 : -1;
+            }
+            // Net movement before the first wrap-around decides the direction; after the
+            // wrap the pot restarts from its other end and a late sample says nothing
+            if (!prog->wrap_seen) {
+                if (abs(diff) > VALVE_ADC_WRAPAROUND_THRESH) {
+                    prog->wrap_seen = true;
+                } else {
+                    prog->pre_wrap_net += diff;
+                }
             }
             prog->last_adc = current_adc;
             
@@ -1074,7 +1104,12 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
             // During calibration we run FWD. If ADC decreased (last_direction < 0), 
             // that's NORMAL behavior (FWD = decrease ADC). If ADC increased, it's inverted.
             // So is_inverted = true when last_direction > 0 (ADC increased during FWD)
-            bool is_inverted = (prog->last_direction > 0);
+            // FWD normally decreases ADC; inverted if the net change before the wrap was upward.
+            // Fall back to the last sampled direction only if there was no net movement.
+            bool is_inverted = (prog->pre_wrap_net != 0) ? (prog->pre_wrap_net > 0)
+                                                          : (prog->last_direction > 0);
+            ESP_LOGI(TAG, "V%d: direction from net ADC change before wrap: %+d%% -> inverted=%s",
+                     valve_id, prog->pre_wrap_net, is_inverted ? "YES" : "NO");
             
             valve_calibration[valve_id].adc_min = prog->global_min;
             valve_calibration[valve_id].adc_max = prog->global_max;
