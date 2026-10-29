@@ -30,6 +30,7 @@ static blower_state_t blower_state = {
 
 static SemaphoreHandle_t blower_mutex = NULL;
 static TaskHandle_t blower_task_handle = NULL;
+static volatile bool last_command_ok = false;
 
 // Ramp control
 static uint32_t ramp_step_delay_ms = 0;
@@ -61,8 +62,9 @@ static void set_pwm_duty(uint16_t duty)
 #if USE_REMOTE_IO
     // Map duty (0-1023) to 0-255 for remote PWM
     uint8_t duty_8bit = (duty > 1023) ? 255 : (duty >> 2);
-    remote_pwm_set_duty(BTS7960_RPWM, duty_8bit);
+    last_command_ok = (remote_pwm_set_duty(BTS7960_RPWM, duty_8bit) == ESP_OK);
 #else
+    last_command_ok = true;
     ledc_set_duty(BTS7960_LEDC_MODE, BTS7960_RPWM_CHANNEL, duty);
     ledc_update_duty(BTS7960_LEDC_MODE, BTS7960_RPWM_CHANNEL);
 #endif
@@ -302,6 +304,11 @@ void bts7960_refresh(void)
         set_pwm_duty(blower_state.current_speed);
         xSemaphoreGive(blower_mutex);
     }
+}
+
+bool bts7960_last_command_ok(void)
+{
+    return last_command_ok;
 }
 
 void bts7960_get_state(blower_state_t *state)

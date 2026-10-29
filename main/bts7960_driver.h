@@ -122,6 +122,11 @@ esp_err_t bts7960_set_fan_level(hvac_fan_speed_t fan_level);
 void bts7960_refresh(void);
 
 /**
+ * @brief True if the node acknowledged the last blower PWM command (always true without remote IO)
+ */
+bool bts7960_last_command_ok(void);
+
+/**
  * @brief Get blower state
  * @param state Pointer to state structure
  */
