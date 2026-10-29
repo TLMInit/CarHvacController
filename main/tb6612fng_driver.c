@@ -162,6 +162,16 @@ static uint8_t valve_stall_count[HVAC_VALVE_MAX];           // Stalls since the 
 static uint32_t valve_retry_at_ms[HVAC_VALVE_MAX];          // When a stalled valve may retry (0 = latched)
 static bool valve_stop_requested[HVAC_VALVE_MAX];           // Set by tb6612fng_stop_valve(), applied by the valve task
 
+// Motor outputs: what the loop wants (pending_*) and what the node last acknowledged (sent_*)
+#define MOTOR_REFRESH_MS    1000    // A moving valve's outputs are re-sent at least this often
+#define SENT_UNKNOWN        (-1)    // Not acknowledged: send on the next apply
+static tb6612_direction_t pending_dir[HVAC_VALVE_MAX];
+static uint8_t pending_speed[HVAC_VALVE_MAX];
+static bool pending_set[HVAC_VALVE_MAX];
+static int16_t sent_dir[HVAC_VALVE_MAX] = { [0 ... HVAC_VALVE_MAX - 1] = SENT_UNKNOWN };
+static int16_t sent_speed[HVAC_VALVE_MAX] = { [0 ... HVAC_VALVE_MAX - 1] = SENT_UNKNOWN };
+static uint32_t sent_ms[HVAC_VALVE_MAX];
+
 // Per-valve calibration state (for background calibration)
 typedef enum {
     CALIB_STATE_IDLE = 0,
@@ -231,8 +241,12 @@ static void set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *
     }
     
     if (ret1 != ESP_OK || ret2 != ESP_OK) {
-        ESP_LOGE(TAG, "GPIO set failed: in1=%s, in2=%s", 
+        ESP_LOGE(TAG, "GPIO set failed: in1=%s, in2=%s",
                  esp_err_to_name(ret1), esp_err_to_name(ret2));
+    }
+    if (valve_id < HVAC_VALVE_MAX) {
+        // Unknown after a failure, so the next apply_motor() sends it again
+        sent_dir[valve_id] = (ret1 == ESP_OK && ret2 == ESP_OK) ? (int16_t)direction : SENT_UNKNOWN;
     }
 #else
     switch (direction) {
@@ -271,16 +285,41 @@ static void set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *
 static void set_motor_speed(const motor_config_t *config, uint8_t speed)
 {
 #if USE_REMOTE_IO
+    int v = config - motor_configs;
     esp_err_t ret = remote_pwm_set_duty(config->pwm_pin, speed);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "PWM set failed for pin %d: %s", config->pwm_pin, esp_err_to_name(ret));
-    } else if (speed > 0) {
-        ESP_LOGI(TAG, "PWM pin=%d duty=%d", config->pwm_pin, speed);
+        sent_speed[v] = SENT_UNKNOWN;
+    } else {
+        ESP_LOGD(TAG, "PWM pin=%d duty=%d", config->pwm_pin, speed);
+        sent_speed[v] = speed;
+        sent_ms[v] = xTaskGetTickCount() * portTICK_PERIOD_MS;
     }
 #else
     ledc_set_duty(TB6612_LEDC_MODE, config->pwm_channel, speed);
     ledc_update_duty(TB6612_LEDC_MODE, config->pwm_channel);
 #endif
+}
+
+// The valve loop decides outputs under valve_mutex and sends them after releasing it,
+// only when they differ from what the node acknowledged, plus a refresh once a second.
+static void queue_motor(int valve, tb6612_direction_t direction, uint8_t speed)
+{
+    pending_dir[valve] = direction;
+    pending_speed[valve] = speed;
+    pending_set[valve] = true;
+}
+
+static void apply_motor(int valve, uint32_t now_ms)
+{
+    const motor_config_t *config = &motor_configs[valve];
+    bool refresh = (now_ms - sent_ms[valve]) >= MOTOR_REFRESH_MS;
+    if (refresh || sent_dir[valve] != (int16_t)pending_dir[valve]) {
+        set_motor_direction((hvac_valve_id_t)valve, config, pending_dir[valve], valve_states[valve].position);
+    }
+    if (refresh || sent_speed[valve] != (int16_t)pending_speed[valve]) {
+        set_motor_speed(config, pending_speed[valve]);
+    }
 }
 
 static uint8_t clamp_valve_target(uint8_t position)
@@ -491,13 +530,11 @@ void tb6612fng_valve_task(void *pvParameters)
                 }
                 
                 valve_state_t *state = &valve_states[i];
-                const motor_config_t *config = &motor_configs[i];
 
                 // Stop requested (e.g. mode OFF): brake now; a running calibration is abandoned
                 if (valve_stop_requested[i]) {
                     valve_stop_requested[i] = false;
-                    set_motor_direction((hvac_valve_id_t)i, config, TB6612_DIR_BRAKE, state->position);
-                    set_motor_speed(config, 0);
+                    queue_motor(i, TB6612_DIR_BRAKE, 0);
                     state->is_moving = false;
                     if (valve_calibrating[i]) {
                         ESP_LOGW(TAG, "V%d: Calibration aborted - stop requested", i);
@@ -514,8 +551,7 @@ void tb6612fng_valve_task(void *pvParameters)
                 // No trustworthy position: stop and hold until reads succeed again
                 if (valve_feedback_fault[i]) {
                     if (state->is_moving) {
-                        set_motor_direction((hvac_valve_id_t)i, config, TB6612_DIR_BRAKE, state->position);
-                        set_motor_speed(config, 0);
+                        queue_motor(i, TB6612_DIR_BRAKE, 0);
                         state->is_moving = false;
                     }
                     continue;
@@ -569,8 +605,7 @@ void tb6612fng_valve_task(void *pvParameters)
                                  valve_wraparound_blocked_dir[i] > 0 ? "FWD" : "REV");
                         
                         // Stop motor immediately
-                        set_motor_direction((hvac_valve_id_t)i, config, TB6612_DIR_BRAKE, state->position);
-                        set_motor_speed(config, 0);
+                        queue_motor(i, TB6612_DIR_BRAKE, 0);
                         state->is_moving = false;
                         continue;
                     }
@@ -732,8 +767,7 @@ void tb6612fng_valve_task(void *pvParameters)
                 if (should_stop || abs_error <= VALVE_POSITION_TOLERANCE) {
                     // Within tolerance or crossed target - stop motor
                     if (state->is_moving) {
-                        set_motor_direction((hvac_valve_id_t)i, config, TB6612_DIR_STOP, state->position);
-                        set_motor_speed(config, 0);
+                        queue_motor(i, TB6612_DIR_STOP, 0);
                         state->is_moving = false;
                         state->stalled = false;
                         valve_stall_count[i] = 0;
@@ -819,8 +853,7 @@ void tb6612fng_valve_task(void *pvParameters)
                 // If direction is blocked due to boundary, stop the motor
                 if (direction_blocked) {
                     if (state->is_moving) {
-                        set_motor_direction((hvac_valve_id_t)i, config, TB6612_DIR_STOP, state->position);
-                        set_motor_speed(config, 0);
+                        queue_motor(i, TB6612_DIR_STOP, 0);
                         state->is_moving = false;
                         ESP_LOGI(TAG, "V%d: Stopped at calibrated boundary (pos=%d%%, adc=%d%%)", 
                                  i, state->position, valve_adc_pos[i]);
@@ -880,8 +913,7 @@ void tb6612fng_valve_task(void *pvParameters)
                     uint32_t still_ms = now_ms - state->last_motion_ms;
                     uint32_t move_ms = now_ms - valve_move_start_ms[i];
                     if (still_ms > VALVE_STALL_TIMEOUT_MS || move_ms > VALVE_MAX_MOVE_MS) {
-                        set_motor_direction((hvac_valve_id_t)i, config, TB6612_DIR_BRAKE, state->position);
-                        set_motor_speed(config, 0);
+                        queue_motor(i, TB6612_DIR_BRAKE, 0);
                         state->is_moving = false;
                         state->stalled = true;
                         valve_stall_count[i]++;
@@ -896,8 +928,7 @@ void tb6612fng_valve_task(void *pvParameters)
                 }
                 state->is_moving = true;
 
-                set_motor_direction((hvac_valve_id_t)i, config, desired_dir, state->position);
-                set_motor_speed(config, speed);
+                queue_motor(i, desired_dir, speed);
 
                 if (now_ms - valve_last_log_ms[i] >= VALVE_DEBUG_LOG_MS) {
                     valve_last_log_ms[i] = now_ms;
@@ -928,8 +959,16 @@ void tb6612fng_valve_task(void *pvParameters)
                 }
             }
             xSemaphoreGive(valve_mutex);
+
+            // Link I/O only now, with valve_mutex free for the sensors and controller tasks
+            for (int i = 0; i < HVAC_VALVE_MAX; i++) {
+                if (pending_set[i]) {
+                    pending_set[i] = false;
+                    apply_motor(i, now_ms);
+                }
+            }
         }
-        
+
         vTaskDelay(pdMS_TO_TICKS(VALVE_TASK_PERIOD_MS));
     }
 }
