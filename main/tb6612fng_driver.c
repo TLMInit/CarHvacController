@@ -6,6 +6,9 @@
 #include "tb6612fng_driver.h"
 #include "hvac_hw_config.h"
 #include "hvac_sensors.h"
+#include "settings.h"
+#include "event_log.h"
+#include "valve_cal_store.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
@@ -112,6 +115,7 @@ static TaskHandle_t valve_task_handle = NULL;
 
 // Forward declarations
 void tb6612fng_calibration_tick(void);
+esp_err_t tb6612fng_start_calibration(hvac_valve_id_t valve_id);
 
 // Valve calibration data structure
 typedef struct {
@@ -136,7 +140,7 @@ static valve_calibration_t valve_calibration[HVAC_VALVE_MAX] = {
 
 // Per-valve motor direction inversion flags (legacy, will be replaced by calibration)
 // Set to true if FWD actually DECREASES ADC (inverted wiring)
-static const bool valve_dir_inverted[HVAC_VALVE_MAX] = {
+static bool valve_dir_inverted[HVAC_VALVE_MAX] = {
     true,  // HVAC_VALVE_CENTER_1 - FWD increases ADC
     true,  // HVAC_VALVE_CENTER_2 - FWD increases ADC
     true,  // HVAC_VALVE_FOOT - FWD increases ADC
@@ -198,6 +202,66 @@ typedef struct {
 } valve_calib_progress_t;
 
 static valve_calib_progress_t valve_calib_progress[HVAC_VALVE_MAX] = {0};
+
+// v2.1: settings overrides, calibration source, boot decision and service state
+static volatile uint8_t g_safe_margin = VALVE_BOUNDARY_SAFE_MARGIN;
+static volatile uint8_t valve_speed_ovr[HVAC_VALVE_MAX];       // 0 = built-in max speed
+static volatile uint8_t valve_dir_ovr[HVAC_VALVE_MAX];         // set_valve_dir_t
+static valve_cal_source_t valve_cal_source[HVAC_VALVE_MAX] = {
+    [HVAC_VALVE_COOLANT] = VALVE_CAL_SRC_FIXED,
+};
+static volatile bool valve_have_reading[HVAC_VALVE_MAX];       // update_feedback() delivered a value
+static volatile bool valve_boot_wait[HVAC_VALVE_MAX];          // boot: waiting for the first reading
+static bool valve_boot_force_cal[HVAC_VALVE_MAX];              // boot: calibrate even if a record exists
+
+#define SERVICE_JOG_SPEED       40      // PWM for jogging (slow)
+#define SERVICE_JOG_TIMEOUT_MS  300     // A jog not repeated within this stops (dead-man)
+#define SERVICE_LEARN_MS        800     // FWD move length of learn_direction
+static volatile bool valve_svc_active[HVAC_VALVE_MAX];         // excluded from normal control
+static volatile int8_t valve_svc_jog_dir[HVAC_VALVE_MAX];
+static uint32_t valve_svc_jog_ms[HVAC_VALVE_MAX];
+static bool valve_svc_recal_req[HVAC_VALVE_MAX];
+static bool valve_svc_recal_run[HVAC_VALVE_MAX];
+static bool valve_svc_learn_req[HVAC_VALVE_MAX];
+static bool valve_svc_learn_run[HVAC_VALVE_MAX];
+static uint32_t valve_svc_learn_ms[HVAC_VALVE_MAX];
+static uint8_t valve_svc_learn_prev[HVAC_VALVE_MAX];
+static int16_t valve_svc_learn_net[HVAC_VALVE_MAX];
+
+static bool valve_effective_inverted(int i)
+{
+    switch (valve_dir_ovr[i]) {
+        case SET_VDIR_NORMAL:   return false;
+        case SET_VDIR_INVERTED: return true;
+        default:                return valve_calibration[i].calibrated ? valve_calibration[i].is_inverted
+                                                                       : valve_dir_inverted[i];
+    }
+}
+
+static uint8_t valve_max_speed(int i)
+{
+    if (valve_speed_ovr[i] != 0) {
+        return valve_speed_ovr[i];
+    }
+    return (i == HVAC_VALVE_COOLANT) ? COOLANT_MOTOR_SPEED : VALVE_MOTOR_SPEED;
+}
+
+static void valve_save_calibration(int i)
+{
+    valve_cal_record_t rec = {
+        .adc_min = valve_calibration[i].adc_min,
+        .adc_max = valve_calibration[i].adc_max,
+        .adc_center = valve_calibration[i].adc_center,
+        .low_deadzone = valve_calibration[i].adc_low_deadzone,
+        .high_deadzone = valve_calibration[i].adc_high_deadzone,
+        .is_inverted = valve_calibration[i].is_inverted,
+        .speed = valve_speed_ovr[i],
+    };
+    esp_err_t err = valve_cal_store_save((hvac_valve_id_t)i, &rec);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "V%d: saving calibration failed: %s", i, esp_err_to_name(err));
+    }
+}
 
 // Forward declarations
 static bool any_valve_calibrating(void);
@@ -340,6 +404,155 @@ static uint8_t clamp_valve_target(uint8_t position)
     return position;
 }
 
+
+static void valve_service_end(int i, uint32_t now_ms)
+{
+    valve_svc_active[i] = false;
+    valve_svc_jog_dir[i] = 0;
+    // The pot may have turned (or wrapped) meanwhile: no stale wrap detection or latched side
+    valve_wraparound_blocked_dir[i] = 0;
+    valve_at_boundary[i] = false;
+    valve_target_adc_side[i] = 0;
+    valve_adc_last_stable[i] = valve_adc_pos[i];
+    valve_states[i].is_moving = false;
+    valve_states[i].last_motion_ms = now_ms;
+}
+
+static void valve_service_clear(int i)
+{
+    valve_svc_active[i] = false;
+    valve_svc_jog_dir[i] = 0;
+    valve_svc_recal_req[i] = false;
+    valve_svc_recal_run[i] = false;
+    valve_svc_learn_req[i] = false;
+    valve_svc_learn_run[i] = false;
+}
+
+// Runs in the valve task under valve_mutex. True = the valve is under service, skip normal control.
+// Slow work (NVS, link I/O of a calibration start) is handed out through the masks.
+static bool valve_service_tick(int i, uint32_t now_ms, uint32_t *recal_mask, uint32_t *save_mask)
+{
+    if (!valve_svc_active[i]) {
+        return false;
+    }
+    uint8_t adc = valve_adc_pos[i];
+
+    if (valve_svc_recal_req[i]) {
+        valve_svc_recal_req[i] = false;
+        valve_svc_recal_run[i] = true;
+        *recal_mask |= 1u << i;
+        return true;
+    }
+    if (valve_svc_recal_run[i]) {
+        if (valve_calibrating[i] || (*recal_mask & (1u << i))) {
+            return true;
+        }
+        valve_svc_recal_run[i] = false;     // result already in the event log (calibration tick)
+        valve_service_end(i, now_ms);
+        return false;
+    }
+
+    if (valve_svc_learn_req[i]) {
+        valve_svc_learn_req[i] = false;
+        if (valve_feedback_fault[i] || !valve_have_reading[i]) {
+            event_log_add(EVT_CAL, "V%d dir learn failed: no feedback", i);
+            valve_service_end(i, now_ms);
+            return false;
+        }
+        valve_svc_learn_run[i] = true;
+        valve_svc_learn_ms[i] = now_ms;
+        valve_svc_learn_prev[i] = adc;
+        valve_svc_learn_net[i] = 0;
+        hvac_sensors_set_calibration_mode(true);    // fast position reads for the short move
+        queue_motor(i, TB6612_DIR_FORWARD, VALVE_MOTOR_SPEED);
+        return true;
+    }
+    if (valve_svc_learn_run[i]) {
+        int d = (int)adc - (int)valve_svc_learn_prev[i];
+        valve_svc_learn_prev[i] = adc;
+        if (abs(d) <= VALVE_ADC_WRAPAROUND_THRESH) {    // a wrap-around jump says nothing about the direction
+            valve_svc_learn_net[i] += d;
+        }
+        if (valve_feedback_fault[i] || now_ms - valve_svc_learn_ms[i] >= SERVICE_LEARN_MS) {
+            int net = valve_svc_learn_net[i];
+            queue_motor(i, TB6612_DIR_BRAKE, 0);
+            valve_svc_learn_run[i] = false;
+            if (!any_valve_calibrating()) {
+                hvac_sensors_set_calibration_mode(false);
+            }
+            if (valve_feedback_fault[i]) {
+                event_log_add(EVT_CAL, "V%d dir learn failed: feedback lost", i);
+            } else if (abs(net) < VALVE_MOVEMENT_THRESHOLD) {
+                event_log_add(EVT_CAL, "V%d dir learn failed: no movement", i);
+            } else {
+                bool inv = net > 0;     // FWD raised the ADC
+                valve_calibration[i].is_inverted = inv;
+                valve_dir_inverted[i] = inv;
+                if (valve_calibration[i].calibrated) {
+                    *save_mask |= 1u << i;
+                }
+                event_log_add(EVT_CAL, "V%d dir learned: inverted=%s (%+d%%)", i, inv ? "yes" : "no", net);
+            }
+            valve_service_end(i, now_ms);
+        }
+        return true;
+    }
+
+    if (valve_svc_jog_dir[i] != 0) {
+        if (now_ms - valve_svc_jog_ms[i] >= SERVICE_JOG_TIMEOUT_MS) {
+            queue_motor(i, TB6612_DIR_BRAKE, 0);
+            valve_service_end(i, now_ms);
+            return false;
+        }
+        queue_motor(i, valve_svc_jog_dir[i] > 0 ? TB6612_DIR_FORWARD : TB6612_DIR_REVERSE, SERVICE_JOG_SPEED);
+        valve_adc_last_stable[i] = adc;
+        return true;
+    }
+
+    valve_service_end(i, now_ms);   // active without a job: nothing to wait for
+    return false;
+}
+
+// Boot decision for one valve, valve task, outside valve_mutex: stored calibration if it still fits
+// the pot, else calibrate this valve only (the result is saved by the calibration tick).
+static void valve_boot_decide(int i)
+{
+    valve_cal_record_t rec;
+    uint8_t adc = valve_adc_pos[i];
+    esp_err_t err = valve_boot_force_cal[i] ? ESP_ERR_INVALID_ARG : valve_cal_store_load((hvac_valve_id_t)i, &rec);
+    const char *why;
+
+    if (err == ESP_OK && valve_cal_store_plausible(&rec, adc)) {
+        valve_calibration_t *c = &valve_calibration[i];
+        c->adc_min = rec.adc_min;
+        c->adc_max = rec.adc_max;
+        c->adc_center = rec.adc_center;
+        c->adc_low_deadzone = rec.low_deadzone;
+        c->adc_high_deadzone = rec.high_deadzone;
+        c->is_inverted = rec.is_inverted;
+        c->calibrated = true;
+        valve_cal_source[i] = VALVE_CAL_SRC_STORED;
+        valve_filter_init[i] = false;
+        valve_adc_last_stable[i] = adc;
+        ESP_LOGI(TAG, "V%d: using stored calibration (adc %d-%d, center %d, inverted=%s, saved boot #%lu, now adc=%d%%)",
+                 i, rec.adc_min, rec.adc_max, rec.adc_center, rec.is_inverted ? "yes" : "no",
+                 (unsigned long)rec.boot_counter, adc);
+        event_log_add(EVT_CAL, "V%d stored cal used %d-%d", i, rec.adc_min, rec.adc_max);
+        return;
+    }
+
+    if (valve_boot_force_cal[i])        why = "recalibrate-all requested";
+    else if (err == ESP_ERR_NOT_FOUND)  why = "no stored calibration";
+    else if (err == ESP_ERR_INVALID_CRC) why = "stored record corrupt";
+    else if (err == ESP_OK)             why = "stored record does not fit current position";
+    else                                why = "store unavailable";
+    ESP_LOGI(TAG, "V%d: calibrating (%s, adc=%d%%)", i, why, adc);
+    event_log_add(EVT_CAL, "V%d calibrating: %s", i, why);
+    if (tb6612fng_start_calibration((hvac_valve_id_t)i) != ESP_OK) {
+        valve_cal_source[i] = VALVE_CAL_SRC_DEFAULT;
+        event_log_add(EVT_CAL, "V%d calibration not started", i);
+    }
+}
 /*******************************************************************************
  * Public Functions
  ******************************************************************************/
@@ -357,6 +570,7 @@ esp_err_t tb6612fng_init(void)
     
     // Initialize all valve states
     memset(valve_states, 0, sizeof(valve_states));
+    tb6612fng_apply_settings();
     
     ESP_LOGI(TAG, "TB6612FNG driver initialized");
     return ESP_OK;
@@ -523,6 +737,7 @@ void tb6612fng_valve_task(void *pvParameters)
         
         if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            uint32_t boot_mask = 0, recal_mask = 0, save_mask = 0;   // slow work done after the mutex is released
             for (int i = 0; i < HVAC_VALVE_MAX; i++) {
                 // Skip disabled valves
                 if (!is_valve_enabled((hvac_valve_id_t)i)) {
@@ -536,10 +751,25 @@ void tb6612fng_valve_task(void *pvParameters)
                     valve_stop_requested[i] = false;
                     queue_motor(i, TB6612_DIR_BRAKE, 0);
                     state->is_moving = false;
+                    valve_service_clear(i);
                     if (valve_calibrating[i]) {
                         ESP_LOGW(TAG, "V%d: Calibration aborted - stop requested", i);
                         valve_calib_progress[i].state = CALIB_STATE_FAILED;
                     }
+                    continue;
+                }
+
+                // Boot: no control until the first position reading has decided stored-or-calibrate
+                if (valve_boot_wait[i]) {
+                    if (valve_have_reading[i] && !valve_feedback_fault[i]) {
+                        valve_boot_wait[i] = false;
+                        boot_mask |= 1u << i;
+                    }
+                    continue;
+                }
+
+                // Service (jog / learn direction / recalibrate): the valve is out of normal control
+                if (valve_service_tick(i, now_ms, &recal_mask, &save_mask)) {
                     continue;
                 }
 
@@ -637,9 +867,9 @@ void tb6612fng_valve_task(void *pvParameters)
                         (cal->adc_max - cal->adc_min) / 2 : 50;
                     
                     // Calculate safe boundaries with margin to prevent wrap-around
-                    uint8_t safe_min = adc_min + VALVE_BOUNDARY_SAFE_MARGIN;
-                    uint8_t safe_max = (adc_max > VALVE_BOUNDARY_SAFE_MARGIN) ? 
-                                       adc_max - VALVE_BOUNDARY_SAFE_MARGIN : adc_max;
+                    uint8_t safe_min = adc_min + g_safe_margin;
+                    uint8_t safe_max = (adc_max > g_safe_margin) ? 
+                                       adc_max - g_safe_margin : adc_max;
                     
                     // Calculate how far from center the target ADC should be
                     uint8_t target_offset = (100 - state->target_position) * half_range / 100;
@@ -741,9 +971,9 @@ void tb6612fng_valve_task(void *pvParameters)
                     uint8_t adc_max = valve_calibration[i].adc_max;
                     
                     // Use the safe boundary margin
-                    uint8_t safe_min = adc_min + VALVE_BOUNDARY_SAFE_MARGIN;
-                    uint8_t safe_max = (adc_max > VALVE_BOUNDARY_SAFE_MARGIN) ? 
-                                       adc_max - VALVE_BOUNDARY_SAFE_MARGIN : adc_max;
+                    uint8_t safe_min = adc_min + g_safe_margin;
+                    uint8_t safe_max = (adc_max > g_safe_margin) ? 
+                                       adc_max - g_safe_margin : adc_max;
                     
                     bool at_upper = adc_pos >= safe_max;
                     bool at_lower = adc_pos <= safe_min;
@@ -800,9 +1030,9 @@ void tb6612fng_valve_task(void *pvParameters)
                     uint8_t adc_max = valve_calibration[i].adc_max;
                     
                     // Use safe boundary margins
-                    uint8_t safe_min = adc_min + VALVE_BOUNDARY_SAFE_MARGIN;
-                    uint8_t safe_max = (adc_max > VALVE_BOUNDARY_SAFE_MARGIN) ? 
-                                       adc_max - VALVE_BOUNDARY_SAFE_MARGIN : adc_max;
+                    uint8_t safe_min = adc_min + g_safe_margin;
+                    uint8_t safe_max = (adc_max > g_safe_margin) ? 
+                                       adc_max - g_safe_margin : adc_max;
                     
                     // Check if movement direction is blocked due to previous wraparound
                     // desired_dir: FWD decreases ADC, REV increases ADC
@@ -863,9 +1093,7 @@ void tb6612fng_valve_task(void *pvParameters)
                 
                 // Apply per-valve direction inversion
                 // Use calibrated inversion if available, else use hardcoded array
-                bool inverted = valve_calibration[i].calibrated ? 
-                               valve_calibration[i].is_inverted : 
-                               valve_dir_inverted[i];
+                bool inverted = valve_effective_inverted(i);
                 
                 if (inverted) {
                     desired_dir = (desired_dir == TB6612_DIR_FORWARD) ? TB6612_DIR_REVERSE : TB6612_DIR_FORWARD;
@@ -875,8 +1103,9 @@ void tb6612fng_valve_task(void *pvParameters)
                 // Full speed when error >= RAMP_START_ERROR
                 // Linearly decrease to MIN_SPEED as error approaches tolerance
                 // Use different settings for coolant valve (linear) vs butterfly valves
-                uint8_t max_speed = (i == HVAC_VALVE_COOLANT) ? COOLANT_MOTOR_SPEED : VALVE_MOTOR_SPEED;
+                uint8_t max_speed = valve_max_speed(i);
                 uint8_t min_speed = (i == HVAC_VALVE_COOLANT) ? COOLANT_MIN_SPEED : VALVE_MIN_SPEED;
+                if (min_speed > max_speed) min_speed = max_speed;   // a low speed override must not invert the ramp
                 uint8_t ramp_start = (i == HVAC_VALVE_COOLANT) ? COOLANT_RAMP_START_ERROR : VALVE_RAMP_START_ERROR;
                 
                 uint8_t speed;
@@ -923,6 +1152,7 @@ void tb6612fng_valve_task(void *pvParameters)
                                  i, still_ms > VALVE_STALL_TIMEOUT_MS ? "no movement for 6 s" : "move longer than 2x full travel",
                                  state->position, adc_pos, state->target_position,
                                  valve_retry_at_ms[i] ? "will retry" : "latched until mode change");
+                        event_log_add(EVT_STALL, "V%d stall adc=%d%% tgt=%d%%", i, adc_pos, state->target_position);
                         continue;
                     }
                 }
@@ -960,7 +1190,22 @@ void tb6612fng_valve_task(void *pvParameters)
             }
             xSemaphoreGive(valve_mutex);
 
-            // Link I/O only now, with valve_mutex free for the sensors and controller tasks
+            // Link I/O and NVS only now, with valve_mutex free for the sensors and controller tasks
+            for (int i = 0; i < HVAC_VALVE_MAX; i++) {
+                if (boot_mask & (1u << i)) {
+                    valve_boot_decide(i);
+                }
+                if (recal_mask & (1u << i)) {
+                    if (tb6612fng_start_calibration((hvac_valve_id_t)i) != ESP_OK) {
+                        event_log_add(EVT_CAL, "V%d recalibration not started", i);
+                        valve_svc_recal_run[i] = false;
+                        valve_svc_active[i] = false;
+                    }
+                }
+                if (save_mask & (1u << i)) {
+                    valve_save_calibration(i);
+                }
+            }
             for (int i = 0; i < HVAC_VALVE_MAX; i++) {
                 if (pending_set[i]) {
                     pending_set[i] = false;
@@ -1014,6 +1259,7 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
         } else if (now_ms - prog->stall_ref_ms > VALVE_STALL_TIMEOUT_MS) {
             ESP_LOGW(TAG, "V%d: Calibration aborted - STALL (no movement for 6 s at adc=%d%%)",
                      valve_id, current_adc);
+            event_log_add(EVT_STALL, "V%d cal stall adc=%d%%", valve_id, current_adc);
             prog->state = CALIB_STATE_FAILED;
         }
     }
@@ -1177,8 +1423,8 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
                 ESP_LOGI(TAG, "V%d: CALIBRATED - ADC %d%%-%d%%, center=%d%%, inverted=%s, safe range=%d-%d%%, seeking to %d%%",
                          valve_id, prog->global_min, prog->global_max, adc_center,
                          is_inverted ? "YES" : "NO", 
-                         prog->global_min + VALVE_BOUNDARY_SAFE_MARGIN,
-                         prog->global_max - VALVE_BOUNDARY_SAFE_MARGIN,
+                         prog->global_min + g_safe_margin,
+                         prog->global_max - g_safe_margin,
                          requested_target);
                 
                 xSemaphoreGive(valve_mutex);
@@ -1188,6 +1434,11 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
                          is_inverted ? "YES" : "NO");
             }
             
+            valve_cal_source[valve_id] = VALVE_CAL_SRC_CALIBRATED;
+            valve_save_calibration(valve_id);
+            event_log_add(EVT_CAL, "V%d calibrated %d-%d c%d inv=%s", valve_id, prog->global_min,
+                          prog->global_max, adc_center, is_inverted ? "yes" : "no");
+
             // Calibration done, release valve for normal control
             // Valve will now seek to its target_position
             valve_calibrating[valve_id] = false;
@@ -1206,6 +1457,10 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
             set_motor_speed(config, 0);
             
             ESP_LOGW(TAG, "V%d: Calibration FAILED - using defaults", valve_id);
+            if (!valve_calibration[valve_id].calibrated) {
+                valve_cal_source[valve_id] = VALVE_CAL_SRC_DEFAULT;
+            }
+            event_log_add(EVT_CAL, "V%d calibration FAILED", valve_id);
             valve_calibrating[valve_id] = false;
             prog->state = CALIB_STATE_IDLE;
             
@@ -1677,20 +1932,29 @@ esp_err_t tb6612fng_get_calibration(hvac_valve_id_t valve_id,
     return ESP_OK;
 }
 
+// Boot: stored calibration if it still fits the pot, else calibrate that valve only.
+// The decision happens in the valve task once the first position reading is in.
 esp_err_t tb6612fng_auto_calibrate_all(void)
 {
-    // Use the new independent calibration system
-    // This is now non-blocking - valves calibrate independently while others can seek
-    ESP_LOGI(TAG, "====== STARTING INDEPENDENT AUTO-CALIBRATION ======");
-    ESP_LOGI(TAG, "Valves will calibrate independently - others can operate normally");
-    
-    // Start calibration for all butterfly valves
-    esp_err_t ret = tb6612fng_start_calibration_all();
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Some valves failed to start calibration");
+    bool recal_all = settings_get_int(SET_RECAL_ALL_NEXT_BOOT) != 0;
+    if (recal_all) {
+        ESP_LOGW(TAG, "Recalibrate-all requested: erasing stored calibration");
+        valve_cal_store_erase_all();
+        settings_set_int(SET_RECAL_ALL_NEXT_BOOT, 0);   // erased first: an interrupted run just calibrates again
     }
-    
-    // Immediately return; calibration continues in the background
+    for (int i = 0; i < HVAC_VALVE_MAX; i++) {
+        if (i == HVAC_VALVE_COOLANT) {
+            valve_cal_source[i] = VALVE_CAL_SRC_FIXED;
+            ESP_LOGI(TAG, "V%d: fixed calibration (linear valve)", i);
+            continue;
+        }
+        if (!is_valve_enabled((hvac_valve_id_t)i)) {
+            ESP_LOGI(TAG, "V%d: disabled in config, no calibration", i);
+            continue;
+        }
+        valve_boot_force_cal[i] = recal_all;
+        valve_boot_wait[i] = true;
+    }
     return ESP_OK;
 }
 
@@ -1779,6 +2043,7 @@ void tb6612fng_update_feedback(hvac_valve_id_t valve_id, uint8_t position)
     
     // Store raw (unfiltered) position immediately for predictive stop
     valve_raw_pos[valve_id] = scaled_pos;
+    valve_have_reading[valve_id] = true;
     valve_adc_pos[valve_id] = position;  // Store actual ADC reading for debugging
     
     // Apply EMA filter to smooth noisy ADC readings
@@ -1840,6 +2105,7 @@ void tb6612fng_set_feedback_fault(hvac_valve_id_t valve_id, bool fault)
     valve_feedback_fault[valve_id] = fault;
     if (fault) {
         ESP_LOGW(TAG, "V%d: position feedback LOST - motor stopped, valve held", valve_id);
+        event_log_add(EVT_STALL, "V%d position feedback lost", valve_id);
     } else {
         ESP_LOGW(TAG, "V%d: position feedback back - control resumes", valve_id);
     }
@@ -1876,4 +2142,137 @@ void tb6612fng_clear_stall(hvac_valve_id_t valve_id)
         valve_retry_at_ms[valve_id] = 0;
         xSemaphoreGive(valve_mutex);
     }
+}
+
+void tb6612fng_apply_settings(void)
+{
+    for (int i = 0; i < HVAC_VALVE_MAX; i++) {
+        int32_t speed = settings_get_int((setting_id_t)(SET_VALVE_SPEED_0 + i));
+        valve_speed_ovr[i] = (uint8_t)(speed < 0 ? 0 : speed > 255 ? 255 : speed);
+        int32_t dir = settings_get_int((setting_id_t)(SET_VALVE_DIR_0 + i));
+        valve_dir_ovr[i] = (uint8_t)((dir == SET_VDIR_NORMAL || dir == SET_VDIR_INVERTED) ? dir : SET_VDIR_AUTO);
+    }
+    int32_t margin = settings_get_int(SET_SAFE_MARGIN_PCT);
+    g_safe_margin = (uint8_t)(margin < 0 ? 0 : margin > 10 ? 10 : margin);
+}
+
+void tb6612fng_get_valve_info(hvac_valve_id_t valve_id, tb6612_valve_info_t *out)
+{
+    if (out == NULL) {
+        return;
+    }
+    memset(out, 0, sizeof(*out));
+    if (valve_id >= HVAC_VALVE_MAX) {
+        return;
+    }
+    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        const valve_state_t *s = &valve_states[valve_id];
+        out->cal_source = valve_cal_source[valve_id];
+        out->calibrating = valve_calibrating[valve_id];
+        out->service_active = valve_svc_active[valve_id];
+        out->adc_min = valve_calibration[valve_id].adc_min;
+        out->adc_max = valve_calibration[valve_id].adc_max;
+        out->adc_center = valve_calibration[valve_id].adc_center;
+        out->is_inverted = valve_effective_inverted(valve_id);
+        out->speed = valve_max_speed(valve_id);
+        out->adc_pos = valve_adc_pos[valve_id];
+        out->position = s->position;
+        out->target = s->target_position;
+        out->moving = s->is_moving;
+        out->stalled = s->stalled;
+        out->feedback_fault = valve_feedback_fault[valve_id];
+        xSemaphoreGive(valve_mutex);
+    }
+}
+
+// Common start of a service request: the valve must be idle (not calibrating, no other service job)
+static esp_err_t service_begin(hvac_valve_id_t valve_id, bool *took_mutex)
+{
+    *took_mutex = false;
+    if (valve_id >= HVAC_VALVE_MAX || !is_valve_enabled(valve_id)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    *took_mutex = true;
+    if (valve_calibrating[valve_id] || valve_boot_wait[valve_id]) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return ESP_OK;
+}
+
+esp_err_t tb6612fng_service_jog(hvac_valve_id_t valve_id, int dir)
+{
+    if (dir == 0) {
+        return tb6612fng_service_stop(valve_id);
+    }
+    bool locked;
+    esp_err_t err = service_begin(valve_id, &locked);
+    if (locked) {
+        if (err == ESP_OK && valve_svc_active[valve_id] && valve_svc_jog_dir[valve_id] == 0) {
+            err = ESP_ERR_INVALID_STATE;    // learn / recalibrate running
+        }
+        if (err == ESP_OK) {
+            valve_svc_jog_dir[valve_id] = (dir > 0) ? 1 : -1;
+            valve_svc_jog_ms[valve_id] = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            valve_svc_active[valve_id] = true;
+        }
+        xSemaphoreGive(valve_mutex);
+    }
+    return err;
+}
+
+esp_err_t tb6612fng_service_stop(hvac_valve_id_t valve_id)
+{
+    if (valve_id >= HVAC_VALVE_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    // The stop request is applied (and the service state cleared) by the valve task; the target is kept
+    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    valve_stop_requested[valve_id] = true;
+    xSemaphoreGive(valve_mutex);
+    return ESP_OK;
+}
+
+esp_err_t tb6612fng_service_recalibrate(hvac_valve_id_t valve_id)
+{
+    if (valve_id == HVAC_VALVE_COOLANT) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    bool locked;
+    esp_err_t err = service_begin(valve_id, &locked);
+    if (locked) {
+        if (err == ESP_OK && valve_svc_active[valve_id]) {
+            err = ESP_ERR_INVALID_STATE;
+        }
+        if (err == ESP_OK) {
+            valve_svc_recal_req[valve_id] = true;
+            valve_svc_active[valve_id] = true;
+        }
+        xSemaphoreGive(valve_mutex);
+    }
+    return err;
+}
+
+esp_err_t tb6612fng_service_learn_direction(hvac_valve_id_t valve_id)
+{
+    if (valve_id == HVAC_VALVE_COOLANT) {
+        return ESP_ERR_NOT_SUPPORTED;   // linear valve: use the per-valve direction setting
+    }
+    bool locked;
+    esp_err_t err = service_begin(valve_id, &locked);
+    if (locked) {
+        if (err == ESP_OK && valve_svc_active[valve_id]) {
+            err = ESP_ERR_INVALID_STATE;
+        }
+        if (err == ESP_OK) {
+            valve_svc_learn_req[valve_id] = true;
+            valve_svc_active[valve_id] = true;
+        }
+        xSemaphoreGive(valve_mutex);
+    }
+    return err;
 }
