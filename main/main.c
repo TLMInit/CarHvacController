@@ -49,6 +49,10 @@
 #include "hvac_sensors.h"
 #include "hvac_controller.h"
 #include "hvac_ui.h"
+#include "settings.h"
+#include "valve_cal_store.h"
+#include "selftest.h"
+#include "console_cmds.h"
 #include <math.h>
 
 static const char *TAG = "HVAC_MAIN";
@@ -335,7 +339,11 @@ void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-    
+
+    // Preferences first: drivers and the controller read them during their init
+    ESP_ERROR_CHECK(settings_init());
+    ESP_ERROR_CHECK(valve_cal_store_init());
+
     // Create LVGL mutex (recursive mutex like working example)
     lvgl_mutex = xSemaphoreCreateRecursiveMutex();
     if (lvgl_mutex == NULL) {
@@ -452,10 +460,16 @@ void app_main(void)
     } else {
         ESP_LOGW(TAG, "IO Node absent at boot: valve calibration SKIPPED (reboot with the node connected to calibrate)");
     }
-    
+
+    // After calibration has started, so the self-test waits for it to finish
+    selftest_start();
+
     // Start LVGL task (pinned to core 1 like working example)
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, NULL, 1);
-    
+
+    // Last: a console "set" runs the apply callbacks of everything above at once
+    console_cmds_start();
+
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "  System initialization complete!");
     ESP_LOGI(TAG, "========================================");
