@@ -11,8 +11,12 @@
 #include "onewire_bus.h"
 #include "onewire_bus_impl_rmt.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "IO_1W";
+
+#define DS18B20_READ_ATTEMPTS   3       /* the original node retried scratchpad reads too */
 
 #define OW_CMD_SKIP_ROM         0xCC
 #define OW_CMD_MATCH_ROM        0x55
@@ -90,11 +94,8 @@ esp_err_t io_ds18b20_start(const uint8_t *rom)
     return onewire_bus_write_bytes(s_bus, &cmd, 1);
 }
 
-esp_err_t io_ds18b20_read(const uint8_t *rom, int16_t *temp_x100)
+static esp_err_t read_scratchpad_once(const uint8_t *rom, int16_t *temp_x100)
 {
-    if (temp_x100 == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
     esp_err_t err = select_device(rom);
     if (err != ESP_OK) {
         return err;
@@ -116,4 +117,28 @@ esp_err_t io_ds18b20_read(const uint8_t *rom, int16_t *temp_x100)
     int16_t raw = (int16_t)(((uint16_t)sp[1] << 8) | sp[0]);
     *temp_x100 = (int16_t)((raw * 100) / 16);
     return ESP_OK;
+}
+
+esp_err_t io_ds18b20_read(const uint8_t *rom, int16_t *temp_x100)
+{
+    if (temp_x100 == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t err = ESP_FAIL;
+    for (int attempt = 1; attempt <= DS18B20_READ_ATTEMPTS; attempt++) {
+        err = read_scratchpad_once(rom, temp_x100);
+        if (err == ESP_OK) {
+            if (attempt > 1) {
+                ESP_LOGW(TAG, "Scratchpad read succeeded after %d retry(ies)", attempt - 1);
+            }
+            return ESP_OK;
+        }
+        if (err == ESP_ERR_NOT_FOUND) {
+            return err;         /* no presence pulse: retrying will not help */
+        }
+        ESP_LOGW(TAG, "Scratchpad %s (attempt %d)",
+                 err == ESP_ERR_INVALID_CRC ? "CRC mismatch" : "read failed", attempt);
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+    return err;
 }

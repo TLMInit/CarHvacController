@@ -10,6 +10,7 @@
  *   - 2x ADS1115 + BME280 on I2C                 GPIO 8 (SDA) / 9 (SCL)
  *   - DS18B20 duct sensor on 1-Wire              GPIO 7
  *   - UART link to the display, 921600 baud      GPIO 2 (TX) / 21 (RX)
+ *   - WS2812 status LED (optional)              NODE_STATUS_LED_GPIO, yields its pin to the display
  *
  * Bring-up order matters: outputs first (everything off), then the buses,
  * then the link, so the display's first PING finds a node that is ready.
@@ -24,6 +25,7 @@
 #include "io_hw.h"
 #include "io_i2c.h"
 #include "io_onewire.h"
+#include "io_status_led.h"
 #include "protocol_server.h"
 
 static const char *TAG = "IONODE";
@@ -34,6 +36,9 @@ void app_main(void)
     ESP_LOGI(TAG, " HVAC IO Node  %s (%s)", NODE_VERSION_STRING, esp_app_get_description()->version);
     ESP_LOGI(TAG, "========================================");
 
+    if (io_status_led_init() != ESP_OK) {
+        ESP_LOGW(TAG, "Status LED unavailable; continuing without it");
+    }
     ESP_ERROR_CHECK(io_hw_init());
     ESP_ERROR_CHECK(io_i2c_init());
 

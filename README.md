@@ -145,6 +145,30 @@ timeout. Two measures in this node keep the pair working:
 set `LINK_PAD_TRAILING_ZERO` to 0 here. Until then leave the pad on; a fixed display
 with a padding node would reject 1 reply in 256.
 
+## What the original node had, and what this one does with it
+
+The flash dump of the lost firmware (`CarHvacIONode`, ESP-IDF, 28 Jan 2026) shows
+modules IO_UART_BIN, IO_GPIO, IO_PWM, IO_I2C, IO_ADS1115, IO_ONEWIRE and
+IO_STATUS_LED. Everything the display uses is covered by this node. Two things it
+had on top are back in 2.1:
+
+- **Scratchpad retry.** A DS18B20 read with a CRC mismatch is retried up to three
+  times before an error goes back to the display (`io_onewire.c`).
+- **Status LED.** The original drove the DevKitC's on-board RGB LED through
+  `led_strip` on **GPIO48** (read out of its flash dump), which on this carrier is
+  also the blower PWM input: each refresh pulsed the BTS7960 for 30 µs until the
+  display's `PWM_INIT(48)` took the pin, then the LED went dark. Here it is
+  `NODE_STATUS_LED_GPIO` in `node_config.h`, off by default, and it always yields
+  the pin when the display claims it:
+  - **48** reproduces the original: boot (white), waiting for the display (blue
+    blink), link up (green), dark once the blower pin is claimed. The blower driver
+    sees two 30 µs bursts per second while waiting, as before.
+  - **38** is the LED pin on a DevKitC-1 v1.1 and the foot valve's AIN1 here: harmless
+    while PWMA is 0, dark the first time the foot valve moves.
+  - An external WS2812 on any free GPIO keeps the LED alive permanently.
+  Patterns: white = booting, blue blink = waiting for the display, green = link up,
+  red blink = link lost after it was up, amber flash = an error reply or a bad frame.
+
 ## Files
 
 ```
@@ -153,7 +177,8 @@ main/main.c             bring-up order and the 10 s status line
 main/protocol_server.c  UART task, frame parsing, command dispatch, watchdog
 main/io_hw.c            GPIO and LEDC PWM (timer/channel allocation, safe state)
 main/io_i2c.c           I2C bus, register access, ADS1115 single-shot reads
-main/io_onewire.c       DS18B20 over the RMT 1-Wire bus
+main/io_onewire.c       DS18B20 over the RMT 1-Wire bus, 3-attempt scratchpad retry
+main/io_status_led.c    WS2812 status LED, optional, yields its pin to the display
 main/cobs_protocol.*    copied from the display repo; two marked changes
 tools/ionode_cli.py     PC-side tester speaking the same protocol
 ```

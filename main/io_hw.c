@@ -14,6 +14,7 @@
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "esp_log.h"
+#include "io_status_led.h"
 
 static const char *TAG = "IO_HW";
 
@@ -112,6 +113,7 @@ esp_err_t io_gpio_mode(int pin, uint8_t mode)
     if (!io_pin_allowed(pin)) {
         return ESP_ERR_INVALID_ARG;
     }
+    io_status_led_release_pin(pin);     /* the display wins the pin over the LED */
     release_channel(find_channel(pin));
 
     gpio_config_t cfg = {
@@ -172,6 +174,7 @@ esp_err_t io_pwm_init(int pin, int freq_khz)
         return ESP_ERR_INVALID_ARG;
     }
     uint32_t freq_hz = (uint32_t)freq_khz * 1000U;
+    io_status_led_release_pin(pin);     /* the display wins the pin over the LED */
 
     ledc_timer_t timer;
     esp_err_t err = get_or_create_timer(freq_hz, &timer);
@@ -264,6 +267,9 @@ esp_err_t io_hw_init(void)
 
     static const int outputs[] = NODE_BOOT_OUTPUT_PINS;
     for (size_t i = 0; i < sizeof(outputs) / sizeof(outputs[0]); i++) {
+        if (outputs[i] == NODE_STATUS_LED_GPIO) {
+            continue;       /* stays with the LED until the display claims it */
+        }
         esp_err_t err = io_gpio_mode(outputs[i], 1);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Boot output GPIO%d: %s", outputs[i], esp_err_to_name(err));
@@ -274,6 +280,9 @@ esp_err_t io_hw_init(void)
 
     static const int pwm[][2] = NODE_BOOT_PWM_PINS;
     for (size_t i = 0; i < sizeof(pwm) / sizeof(pwm[0]); i++) {
+        if (pwm[i][0] == NODE_STATUS_LED_GPIO) {
+            continue;       /* stays with the LED until the display claims it */
+        }
         esp_err_t err = io_pwm_init(pwm[i][0], pwm[i][1]);
         if (err != ESP_OK) {
             return err;

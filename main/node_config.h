@@ -16,7 +16,7 @@
 #include "driver/uart.h"
 #include "driver/i2c_master.h"
 
-#define NODE_VERSION_STRING     "ionode 2.0"   /* protocol_server.c appends the build's git describe */
+#define NODE_VERSION_STRING     "ionode 2.1"   /* protocol_server.c appends the build's git describe */
 
 /* ---- UART link to the display -------------------------------------------
  * Display side: UART1, TX GPIO10 -> node RX, RX GPIO11 <- node TX, 921600 8N1.
@@ -56,6 +56,23 @@
  */
 #define NODE_BOOT_PWM_PINS      { {17, 20}, {15, 20}, {40, 20}, {47, 20}, {13, 20}, {48, 25} }
 #define NODE_DEFAULT_PWM_KHZ    20      /* used when PWM_SET arrives for a pin that never saw PWM_INIT */
+
+/* ---- Status LED (WS2812) --------------------------------------------------
+ * The original CarHvacIONode drove the DevKitC's on-board RGB LED on GPIO48
+ * (disassembled from its flash dump: strip_gpio_num = 48, max_leds = 1, RMT at
+ * 10 MHz). On this carrier GPIO48 is also the blower PWM input, so every LED
+ * refresh pulsed the BTS7960 for 30 us until the display's PWM_INIT(48) took
+ * the pin and the LED went dark. The LED yields the pin the same way here:
+ *   48: as the original (DevKitC-1 v1.0). Shows boot, waiting and link-up, then
+ *       dark once the display claims the blower pin; two 30 us bursts per
+ *       second reach the blower driver while waiting.
+ *   38: DevKitC-1 v1.1 LED pin, also the foot valve's AIN1. Harmless while
+ *       PWMA is 0; dark the first time the foot valve moves.
+ * Any free GPIO with an external WS2812 keeps the LED alive for good.
+ * -1 disables the LED entirely.
+ */
+#define NODE_STATUS_LED_GPIO        -1
+#define NODE_STATUS_LED_BRIGHTNESS  24      /* 0-255; the on-board LED is bright */
 
 /* ---- GPIO numbers the link may touch -------------------------------------
  * Exactly the carrier's outputs: the boot output pins and the boot PWM pins above.
