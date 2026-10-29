@@ -48,7 +48,7 @@ static void print_row(const setting_def_t *d)
         }
         break;
     case SET_TYPE_STRING:
-        printf("%d..%d chars, empty = derived", (int)d->min, (int)d->max);
+        printf("%d..%d chars, empty = device default", (int)d->min, (int)d->max);
         break;
     case SET_TYPE_ACTION:
         printf("action: %s", d->label_en);

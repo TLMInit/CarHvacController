@@ -17,7 +17,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
-#include "esp_mac.h"
+#include "esp_random.h"
+#include "bootloader_random.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "nvs.h"
@@ -41,6 +42,7 @@ static volatile uint32_t s_seq;
 static volatile bool s_halt;            /* factory reset in progress: no more writes */
 static nvs_handle_t s_nvs;
 static TaskHandle_t s_persist_task;
+static char s_ap_default[11];   /* AP password used while the user has set none; written once by settings_init */
 
 const setting_def_t *settings_def(setting_id_t id)
 {
@@ -103,10 +105,7 @@ void settings_get_str(setting_id_t id, char *buf, size_t len)
     memcpy(tmp, s_str[s_str_slot[id]], sizeof(tmp));
     taskEXIT_CRITICAL(&s_lock);
     if (tmp[0] == '\0' && id == SET_AP_PASSWORD) {
-        /* shortcut: derived from the public MAC, so guessable by anyone who sees the BSSID; users should set their own */
-        uint8_t mac[6] = {0};
-        esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
-        snprintf(tmp, sizeof(tmp), "hvac-%02x%02x%02x", mac[3], mac[4], mac[5]);
+        snprintf(tmp, sizeof(tmp), "%s", s_ap_default);
     }
     snprintf(buf, len, "%s", tmp);
 }
@@ -518,6 +517,29 @@ static bool table_ok(void)
     return ok;
 }
 
+/* Random per-device default AP password, generated on first boot (and again after a
+ * factory reset) and kept in hvac_cfg. Not derived from the MAC: the BSSID broadcasts it. */
+static void load_ap_default(void)
+{
+    size_t n = sizeof(s_ap_default);
+    if (nvs_get_str(s_nvs, "ap_pass_gen", s_ap_default, &n) == ESP_OK && strlen(s_ap_default) == 10) {
+        return;
+    }
+    static const char alphabet[] = "abcdefghjkmnpqrstuvwxyz23456789";   /* no 0/o, 1/l/i */
+    uint8_t rnd[10];
+    /* Wi-Fi is not up yet, so the RNG needs the SAR-ADC entropy source to be truly random */
+    bootloader_random_enable();
+    esp_fill_random(rnd, sizeof(rnd));
+    bootloader_random_disable();
+    for (size_t i = 0; i < sizeof(rnd); i++) {
+        s_ap_default[i] = alphabet[rnd[i] % (sizeof(alphabet) - 1)];
+    }
+    s_ap_default[10] = '\0';
+    if (nvs_set_str(s_nvs, "ap_pass_gen", s_ap_default) != ESP_OK || nvs_commit(s_nvs) != ESP_OK) {
+        ESP_LOGW(TAG, "AP default password not saved: a new one is made next boot");
+    }
+}
+
 esp_err_t settings_init(void)
 {
     /* A broken table is a build mistake: stop loudly on the first bench boot. */
@@ -586,6 +608,7 @@ esp_err_t settings_init(void)
     if (s_val[SET_HUMIDITY_OFF] > s_val[SET_HUMIDITY_ON] - 2.0f) {
         s_val[SET_HUMIDITY_OFF] = s_val[SET_HUMIDITY_ON] - 2.0f;
     }
+    load_ap_default();
     s_seq++;
 
     if (xTaskCreate(persist_task, "settings_nvs", 3072, NULL, 1, &s_persist_task) != pdPASS) {

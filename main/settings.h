@@ -140,7 +140,7 @@ typedef enum {
 
     /* Connectivity */
     SET_WIFI_AP_MODE,           /* enum set_ap_mode_t, default OFF */
-    SET_AP_PASSWORD,            /* string 8..32; empty default = derived from the MAC at first use */
+    SET_AP_PASSWORD,            /* string 8..32; empty = random per-device password made at first boot */
 
     /* System */
     SET_FACTORY_RESET,          /* action: erase hvac_cfg, hvac_cal, hvac_thermal, hvac; reboot */
