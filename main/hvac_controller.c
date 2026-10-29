@@ -413,8 +413,11 @@ static void run_temperature_control(void)
     hvac_state.coolant_valve_pos = readings.coolant_valve_pos;
     hvac_state.blower_speed = bts7960_get_target_speed();
 
-    hvac_state.sensor_fault = (readings.cabin_status != SENSOR_STATUS_OK) ||
-                              (readings.duct_status != SENSOR_STATUS_OK);
+    // NOT_FOUND in the first seconds after boot means "not read yet", not a fault
+    bool boot_grace = (xTaskGetTickCount() * portTICK_PERIOD_MS) < 10000;
+    hvac_state.sensor_fault =
+        (readings.cabin_status != SENSOR_STATUS_OK && !(boot_grace && readings.cabin_status == SENSOR_STATUS_NOT_FOUND)) ||
+        (readings.duct_status != SENSOR_STATUS_OK && !(boot_grace && readings.duct_status == SENSOR_STATUS_NOT_FOUND));
 
     uint8_t fault_mask = 0;
     for (int valve = 0; valve < HVAC_VALVE_MAX; valve++) {
