@@ -119,11 +119,8 @@ static esp_err_t execute_command_internal(uint8_t cmd, const uint8_t *payload, s
     // Send frame
     uart_write_bytes(s_uart_num, frame, frame_len);
     s_tx_frames++;
-    
-    // Small delay to allow IO Node to process command before response
-    vTaskDelay(pdMS_TO_TICKS(2));
-    
-    // Wait for response
+
+    // Wait for response (no fixed grace delay: the read below returns as soon as bytes arrive)
     uint32_t start_ms = get_time_ms();
     uint32_t now_ms;
     esp_err_t result = ESP_ERR_TIMEOUT;
@@ -131,9 +128,13 @@ static esp_err_t execute_command_internal(uint8_t cmd, const uint8_t *payload, s
     ESP_LOGD(TAG, "Waiting for response (timeout=%dms)...", timeout_ms);
     
     while ((now_ms = get_time_ms()) - start_ms < (uint32_t)timeout_ms) {
-        // Read available bytes
+        // Take what is buffered, or block for the first byte. Asking for 64 bytes made
+        // uart_read_bytes wait out its whole 2-tick slice for every 5-9 byte reply.
         uint8_t rx_buf[64];
-        int len = uart_read_bytes(s_uart_num, rx_buf, sizeof(rx_buf), pdMS_TO_TICKS(2));
+        size_t buffered = 0;
+        uart_get_buffered_data_len(s_uart_num, &buffered);
+        size_t want = (buffered == 0) ? 1 : (buffered < sizeof(rx_buf) ? buffered : sizeof(rx_buf));
+        int len = uart_read_bytes(s_uart_num, rx_buf, want, pdMS_TO_TICKS(2));
         
         if (len > 0) {
             ESP_LOGD(TAG, "RX %d bytes", len);
