@@ -29,6 +29,7 @@ static SemaphoreHandle_t s_lock;
 static volatile bool s_released;
 static volatile bool s_task_running;
 
+#if NODE_STATUS_LED_GPIO >= 0     /* only io_status_led_init() starts the task */
 static void led_show(uint8_t r, uint8_t g, uint8_t b)
 {
     if (s_lock == NULL || xSemaphoreTake(s_lock, pdMS_TO_TICKS(50)) != pdTRUE) {
@@ -78,6 +79,7 @@ static void led_task(void *arg)
     s_task_running = false;
     vTaskDelete(NULL);
 }
+#endif
 
 esp_err_t io_status_led_init(void)
 {
