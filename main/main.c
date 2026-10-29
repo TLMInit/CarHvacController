@@ -343,7 +343,8 @@ void app_main(void)
     
     // Initialize hardware
     ESP_LOGI(TAG, "Initializing hardware...");
-    
+    bool io_node_ready = true;   // false: node never answered at boot
+
 #if USE_REMOTE_IO
     // Initialize Remote IO Node communication FIRST
     ESP_LOGI(TAG, "Initializing Remote IO Node connection...");
@@ -354,6 +355,7 @@ void app_main(void)
     ESP_LOGI(TAG, "Waiting for IO Node...");
     esp_err_t io_ready = remote_io_wait_ready(3000);  // 3 second timeout
     if (io_ready != ESP_OK) {
+        io_node_ready = false;
         ESP_LOGW(TAG, "IO Node not responding, continuing anyway...");
     } else {
         ESP_LOGI(TAG, "IO Node connected!");
@@ -439,9 +441,14 @@ void app_main(void)
     tb6612fng_enable_all();
     bts7960_enable();
     
-    // Kick off non-blocking auto-calibration for all valves
-    ESP_LOGI(TAG, "Starting valve auto-calibration...");
-    ESP_ERROR_CHECK(tb6612fng_auto_calibrate_all());
+    // Kick off non-blocking auto-calibration for all valves; without the node it would
+    // only drive commands into a dead link, so it is skipped (valves keep their defaults)
+    if (io_node_ready) {
+        ESP_LOGI(TAG, "Starting valve auto-calibration...");
+        ESP_ERROR_CHECK(tb6612fng_auto_calibrate_all());
+    } else {
+        ESP_LOGW(TAG, "IO Node absent at boot: valve calibration SKIPPED (reboot with the node connected to calibrate)");
+    }
     
     // Start LVGL task (pinned to core 1 like working example)
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, NULL, 1);
