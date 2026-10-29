@@ -18,3 +18,7 @@ Use the 320×240 panel in landscape. Photograph the full active area straight-on
 14. **Gesture release safety:** swipe starting on a button or inside the diagnostics list switches pages without activating anything; repeat in both directions and confirm an open picker/message box prevents page changes behind it.
 
 Also record the `HVAC_UI` boot log containing `LVGL heap after UI init`, then two or more five-second `hvac_ui_update avg/max` timing lines. Note ambient daylight/night conditions and whether the photographer could read the main screen in under one second without touching it.
+15. **Tap slop — AUTO:** slowly drag across AUTO with either axis moving more than 10 px between press and release; confirm AUTO does not activate.
+16. **Swipe starting on DEF:** perform a fast horizontal swipe starting on DEF; confirm the page changes and quick defrost does not start.
+17. **Swipe inside picker:** open MODE and swipe within the picker; confirm no mode is selected and the picker stays open.
+18. **Repeat slide-off:** hold temperature `+` or fan `+`, then slide more than 10 px on either axis; confirm repeat stepping stops and release causes no extra step.

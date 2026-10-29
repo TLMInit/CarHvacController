@@ -21,6 +21,7 @@
 #include "nvs.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -46,6 +47,8 @@ static const char *TAG = "HVAC_UI";
 #define UI_NVS_KEY_NIGHT     "night_mode"
 #define UI_DIAG_REFRESH_MS   750U
 #define UI_STATS_LOG_MS      5000U
+#define UI_TAP_SLOP          10
+#define UI_BUTTON_CONTEXTS   32U
 
 #define UI_W                 320
 #define UI_H                 240
@@ -81,6 +84,23 @@ static lv_obj_t *btn_fan_down;
 static lv_obj_t *btn_fan_up;
 static lv_obj_t *btn_fan_auto;
 static lv_obj_t *btn_night;
+
+typedef struct {
+    bool in_use;
+    lv_obj_t *obj;
+    lv_event_cb_t action_cb;
+    void *action_user_data;
+    lv_event_cb_t long_press_cb;
+    lv_event_cb_t repeat_cb;
+    lv_point_t press_point;
+    bool press_valid;
+    bool press_invalid;
+    bool click_handled;
+    bool long_press_fired;
+} ui_button_context_t;
+
+/* Fixed contexts keep button dispatch allocation-free, including modal cells. */
+static ui_button_context_t s_button_contexts[UI_BUTTON_CONTEXTS];
 
 static ui_label_t lbl_operating;
 static ui_label_t lbl_fault_badge;
@@ -203,6 +223,138 @@ static void style_button(lv_obj_t *btn, uint32_t normal, uint32_t checked)
     lv_obj_add_flag(btn, LV_OBJ_FLAG_GESTURE_BUBBLE);
 }
 
+static ui_button_context_t *button_context_find(lv_obj_t *obj)
+{
+    for (size_t i = 0; i < UI_BUTTON_CONTEXTS; ++i) {
+        if (s_button_contexts[i].in_use && s_button_contexts[i].obj == obj) {
+            return &s_button_contexts[i];
+        }
+    }
+    return NULL;
+}
+
+static ui_button_context_t *button_context_allocate(lv_obj_t *obj)
+{
+    for (size_t i = 0; i < UI_BUTTON_CONTEXTS; ++i) {
+        ui_button_context_t *ctx = &s_button_contexts[i];
+        if (!ctx->in_use) {
+            memset(ctx, 0, sizeof(*ctx));
+            ctx->in_use = true;
+            ctx->obj = obj;
+            return ctx;
+        }
+    }
+    ESP_LOGE(TAG, "Button context pool exhausted (%u)", (unsigned)UI_BUTTON_CONTEXTS);
+    return NULL;
+}
+
+static void button_context_delete_handler(lv_event_t *e)
+{
+    ui_button_context_t *ctx = lv_event_get_user_data(e);
+    if (ctx) {
+        ctx->obj = NULL;
+        ctx->in_use = false;
+    }
+}
+
+static void button_press_handler(lv_event_t *e)
+{
+    ui_button_context_t *ctx = lv_event_get_user_data(e);
+    lv_indev_t *indev = lv_event_get_indev(e);
+    if (!ctx) return;
+
+    ctx->press_valid = indev != NULL;
+    ctx->press_invalid = false;
+    ctx->click_handled = false;
+    ctx->long_press_fired = false;
+    if (indev) lv_indev_get_point(indev, &ctx->press_point);
+}
+
+/* Invalidate a press as soon as it drifts outside the slop; it cannot re-arm
+ * by moving back to the origin. The release dispatcher repeats this check. */
+static bool button_press_within_slop(lv_event_t *e, ui_button_context_t *ctx)
+{
+    if (!ctx || !ctx->press_valid || ctx->press_invalid) return false;
+    lv_indev_t *indev = lv_event_get_indev(e);
+    if (!indev) {
+        ctx->press_invalid = true;
+        return false;
+    }
+
+    lv_point_t point;
+    lv_indev_get_point(indev, &point);
+    int dx = abs((int)point.x - (int)ctx->press_point.x);
+    int dy = abs((int)point.y - (int)ctx->press_point.y);
+    if (dx > UI_TAP_SLOP || dy > UI_TAP_SLOP) {
+        ctx->press_invalid = true;
+        return false;
+    }
+    return true;
+}
+
+static void button_pressing_handler(lv_event_t *e)
+{
+    ui_button_context_t *ctx = lv_event_get_user_data(e);
+    if (ctx) (void)button_press_within_slop(e, ctx);
+}
+
+static void button_press_lost_handler(lv_event_t *e)
+{
+    ui_button_context_t *ctx = lv_event_get_user_data(e);
+    if (ctx) {
+        ctx->press_invalid = true;
+        ctx->click_handled = true;
+    }
+}
+
+/* LVGL 8.4 sends SHORT_CLICKED and then CLICKED for one tap. Share this
+ * dispatcher and consume the sequence once, so a tap can never run twice. */
+static void button_click_dispatcher(lv_event_t *e)
+{
+    ui_button_context_t *ctx = lv_event_get_user_data(e);
+    if (!ctx || ctx->click_handled) return;
+
+    ctx->click_handled = true;
+    if (ctx->long_press_fired || !button_press_within_slop(e, ctx)) return;
+
+    lv_event_cb_t action = ctx->action_cb;
+    if (action) action(e);
+}
+
+static void button_long_press_dispatcher(lv_event_t *e)
+{
+    ui_button_context_t *ctx = lv_event_get_user_data(e);
+    if (!ctx) return;
+    ctx->long_press_fired = true;
+    if (!button_press_within_slop(e, ctx)) return;
+
+    lv_event_cb_t action = ctx->long_press_cb;
+    if (action) action(e);
+}
+
+static void button_repeat_dispatcher(lv_event_t *e)
+{
+    ui_button_context_t *ctx = lv_event_get_user_data(e);
+    if (!ctx || !button_press_within_slop(e, ctx)) return;
+
+    lv_event_cb_t action = ctx->repeat_cb;
+    if (action) action(e);
+}
+
+static void button_set_action(lv_obj_t *btn, lv_event_cb_t cb, void *user_data)
+{
+    ui_button_context_t *ctx = button_context_find(btn);
+    if (!ctx) return;
+    ctx->action_cb = cb;
+    ctx->action_user_data = user_data;
+}
+
+static void button_set_long_press_handler(lv_obj_t *btn, lv_event_cb_t cb)
+{
+    ui_button_context_t *ctx = button_context_find(btn);
+    if (ctx) ctx->long_press_cb = cb;
+}
+
 static lv_obj_t *make_button(lv_obj_t *parent, const char *text,
                              lv_coord_t x, lv_coord_t y, lv_coord_t w, lv_coord_t h,
                              const lv_font_t *font, lv_event_cb_t cb,
@@ -212,7 +364,20 @@ static lv_obj_t *make_button(lv_obj_t *parent, const char *text,
     lv_obj_set_pos(btn, x, y);
     lv_obj_set_size(btn, w, h);
     style_button(btn, normal, checked);
-    if (cb) lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
+
+    ui_button_context_t *ctx = button_context_allocate(btn);
+    if (ctx) {
+        ctx->action_cb = cb;
+        lv_obj_add_event_cb(btn, button_press_handler, LV_EVENT_PRESSED, ctx);
+        lv_obj_add_event_cb(btn, button_pressing_handler, LV_EVENT_PRESSING, ctx);
+        lv_obj_add_event_cb(btn, button_press_lost_handler, LV_EVENT_PRESS_LOST, ctx);
+        lv_obj_add_event_cb(btn, button_click_dispatcher, LV_EVENT_SHORT_CLICKED, ctx);
+        lv_obj_add_event_cb(btn, button_click_dispatcher, LV_EVENT_CLICKED, ctx);
+        lv_obj_add_event_cb(btn, button_long_press_dispatcher, LV_EVENT_LONG_PRESSED, ctx);
+        lv_obj_add_event_cb(btn, button_repeat_dispatcher, LV_EVENT_LONG_PRESSED_REPEAT, ctx);
+        lv_obj_add_event_cb(btn, button_context_delete_handler, LV_EVENT_DELETE, ctx);
+    }
+
     lv_obj_t *lbl = lv_label_create(btn);
     lv_label_set_text(lbl, text);
     lv_obj_set_style_text_font(lbl, font, 0);
@@ -270,27 +435,25 @@ static void enter_main(void)
 
 static void gesture_handler(lv_event_t *e)
 {
-    /* Gestures bubble to the first ancestor without GESTURE_BUBBLE (scr_main).
-     * Ignore gestures while an overlay is open so it cannot change the page behind it. */
-    if (modal || msg_box) return;
-
+    /* Gestures bubble to scr_main. Capture the direction and suppress release
+     * activation even when an overlay makes the swipe a no-op. */
     lv_indev_t *indev = lv_event_get_indev(e);
     if (!indev) return;
-
     lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+    lv_indev_wait_release(indev);
+
+    if (modal || msg_box) return;
     if (lv_tabview_get_tab_act(tabview) == 0 && dir == LV_DIR_LEFT) {
         enter_debug();
     } else if (lv_tabview_get_tab_act(tabview) == 1 && dir == LV_DIR_RIGHT) {
         enter_main();
     }
-
-    /* Prevent the object under the swipe from activating when the finger lifts. */
-    lv_indev_wait_release(indev);
 }
 
 static void mode_choice_handler(lv_event_t *e)
 {
-    intptr_t mode = (intptr_t)lv_event_get_user_data(e);
+    ui_button_context_t *ctx = lv_event_get_user_data(e);
+    intptr_t mode = ctx ? (intptr_t)ctx->action_user_data : -1;
     modal_close();
     if (mode >= 0 && mode < HVAC_MODE_MAX) {
         esp_err_t ret = hvac_controller_set_mode((hvac_mode_t)mode);
@@ -336,8 +499,7 @@ static void open_mode_picker(lv_event_t *e)
         lv_obj_t *btn = make_button(modal, opts[i].text, x, y, 72, 48,
                                     &lv_font_montserrat_16, NULL,
                                     UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
-        lv_obj_add_event_cb(btn, mode_choice_handler, LV_EVENT_CLICKED,
-                            (void *)(intptr_t)opts[i].mode);
+        button_set_action(btn, mode_choice_handler, (void *)(intptr_t)opts[i].mode);
     }
     /* Cancel occupies the eighth 72x48 cell, preserving the minimum target. */
     (void)make_button(modal, "CANCEL", 244, 84, 72, 48,
@@ -458,7 +620,8 @@ static void fan_auto_handler(lv_event_t *e)
 
 static void add_repeat_handler(lv_obj_t *btn, lv_event_cb_t cb)
 {
-    lv_obj_add_event_cb(btn, cb, LV_EVENT_LONG_PRESSED_REPEAT, NULL);
+    ui_button_context_t *ctx = button_context_find(btn);
+    if (ctx) ctx->repeat_cb = cb;
 }
 
 static bool persist_night_mode(bool night)
@@ -569,7 +732,7 @@ static void save_cal_handler(lv_event_t *e)
 static void make_main_screen(void)
 {
     static const struct { const char *text; lv_event_cb_t handler; } top[] = {
-        {"MODE", NULL}, {"AUTO", auto_handler}, {"DEF", def_handler},
+        {"MODE", open_mode_picker}, {"AUTO", auto_handler}, {"DEF", def_handler},
         {"A/C\nOFF", ac_handler}, {"RECIRC\nOFF", recirc_handler}
     };
     for (size_t i = 0; i < sizeof(top) / sizeof(top[0]); ++i) {
@@ -580,8 +743,7 @@ static void make_main_screen(void)
                                     tap_handler, UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
         if (i == 0) {
             btn_mode = btn;
-            lv_obj_add_event_cb(btn_mode, open_mode_picker, LV_EVENT_SHORT_CLICKED, NULL);
-            lv_obj_add_event_cb(btn_mode, mode_long_press_handler, LV_EVENT_LONG_PRESSED, NULL);
+            button_set_long_press_handler(btn_mode, mode_long_press_handler);
         } else if (i == 1) btn_auto = btn;
         else if (i == 2) btn_def = btn;
         else if (i == 3) btn_ac = btn;
@@ -607,8 +769,8 @@ static void make_main_screen(void)
     btn_temp_up = make_button(tab_main, LV_SYMBOL_PLUS, 252, 72, 64, UI_TEMP_ROW_H,
                               &lv_font_montserrat_22, NULL,
                               UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
-    lv_obj_add_event_cb(btn_temp_down, temp_down_handler, LV_EVENT_SHORT_CLICKED, NULL);
-    lv_obj_add_event_cb(btn_temp_up, temp_up_handler, LV_EVENT_SHORT_CLICKED, NULL);
+    button_set_action(btn_temp_down, temp_down_handler, NULL);
+    button_set_action(btn_temp_up, temp_up_handler, NULL);
     add_repeat_handler(btn_temp_down, temp_down_handler);
     add_repeat_handler(btn_temp_up, temp_up_handler);
     make_label(tab_main, &lbl_target_temp, "22.0°C", 76, 80, 168, 56,
@@ -627,8 +789,8 @@ static void make_main_screen(void)
     btn_fan_up = make_button(tab_main, LV_SYMBOL_PLUS, 260, 192, 56, UI_FAN_ROW_H,
                              &lv_font_montserrat_22, NULL,
                              UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
-    lv_obj_add_event_cb(btn_fan_down, fan_down_handler, LV_EVENT_SHORT_CLICKED, NULL);
-    lv_obj_add_event_cb(btn_fan_up, fan_up_handler, LV_EVENT_SHORT_CLICKED, NULL);
+    button_set_action(btn_fan_down, fan_down_handler, NULL);
+    button_set_action(btn_fan_up, fan_up_handler, NULL);
     add_repeat_handler(btn_fan_down, fan_down_handler);
     add_repeat_handler(btn_fan_up, fan_up_handler);
     btn_fan_auto = make_button(tab_main, "FAN AUTO | 0%", 68, 192, 184, UI_FAN_ROW_H,
@@ -640,7 +802,7 @@ static void make_main_screen(void)
     label_set(&lbl_fan, "FAN AUTO | 0%");
     /* The centre fan label doubles as the one-tap AUTO selector. */
 
-    /* Main-screen gestures are bubbled to the tabview; screen changes are instant. */
+    /* Main-screen gestures bubble to scr_main; page changes are instant. */
     lv_obj_add_flag(tab_main, LV_OBJ_FLAG_GESTURE_BUBBLE);
 }
 
@@ -983,40 +1145,76 @@ void hvac_ui_apply_saved_brightness(void)
     hvac_ui_set_brightness(s_night_mode ? UI_NIGHT_BRIGHTNESS : UI_DAY_BRIGHTNESS);
 }
 
+static void dismiss_message_handler(lv_event_t *e)
+{
+    (void)e;
+    if (msg_box) lv_obj_del(msg_box);
+}
+
+static void show_message(const char *title, const char *message)
+{
+    if (!message || !scr_main) return;
+    if (msg_box) lv_obj_del(msg_box);
+
+    /* Use the same tap-slop dispatcher as every other UI button. LVGL's
+     * built-in message-box close button closes on CLICKED before a later
+     * guard could reject a drag, so message overlays use our own OK control. */
+    msg_box = lv_obj_create(scr_main);
+    lv_obj_set_pos(msg_box, 0, 0);
+    lv_obj_set_size(msg_box, UI_W, UI_H);
+    lv_obj_set_style_bg_color(msg_box, lv_color_hex(UI_COLOR_BG), 0);
+    lv_obj_set_style_bg_opa(msg_box, LV_OPA_70, 0);
+    lv_obj_set_style_border_width(msg_box, 0, 0);
+    lv_obj_set_style_pad_all(msg_box, 0, 0);
+    lv_obj_clear_flag(msg_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(msg_box, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_event_cb(msg_box, msgbox_delete_handler, LV_EVENT_DELETE, NULL);
+
+    lv_obj_t *panel = lv_obj_create(msg_box);
+    lv_obj_set_pos(panel, 16, 48);
+    lv_obj_set_size(panel, 288, 144);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_border_width(panel, 2, 0);
+    lv_obj_set_style_radius(panel, 8, 0);
+    lv_obj_set_style_pad_all(panel, 0, 0);
+    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(panel, LV_OBJ_FLAG_GESTURE_BUBBLE);
+
+    lv_obj_t *heading = lv_label_create(panel);
+    lv_label_set_text(heading, title);
+    lv_obj_set_pos(heading, 12, 8);
+    lv_obj_set_size(heading, 264, 24);
+    lv_obj_set_style_text_font(heading, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(heading, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_add_flag(heading, LV_OBJ_FLAG_GESTURE_BUBBLE);
+
+    lv_obj_t *body = lv_label_create(panel);
+    lv_label_set_text(body, message);
+    lv_obj_set_pos(body, 12, 36);
+    lv_obj_set_size(body, 264, 48);
+    lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(body, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(body, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_add_flag(body, LV_OBJ_FLAG_GESTURE_BUBBLE);
+
+    (void)make_button(panel, "OK", 96, 88, 96, 48,
+                      &lv_font_montserrat_16, dismiss_message_handler,
+                      UI_COLOR_SURFACE_2, UI_COLOR_SURFACE_2);
+}
+
 void hvac_ui_show_error(const char *message)
 {
-    if (!message) return;
-    if (msg_box) {
-        lv_msgbox_close(msg_box);
-        msg_box = NULL;
-    }
-    msg_box = lv_msgbox_create(NULL, "Error", message, NULL, true);
-    lv_obj_set_style_bg_color(msg_box, lv_color_hex(UI_COLOR_BG), 0);
-    lv_obj_set_style_text_color(msg_box, lv_color_hex(UI_COLOR_TEXT), 0);
-    lv_obj_set_style_text_font(msg_box, &lv_font_montserrat_16, 0);
-    lv_obj_center(msg_box);
-    lv_obj_add_event_cb(msg_box, msgbox_delete_handler, LV_EVENT_DELETE, NULL);
+    show_message("Error", message);
 }
 
 void hvac_ui_show_info(const char *message)
 {
-    if (!message) return;
-    if (msg_box) {
-        lv_msgbox_close(msg_box);
-        msg_box = NULL;
-    }
-    msg_box = lv_msgbox_create(NULL, "Info", message, NULL, true);
-    lv_obj_set_style_bg_color(msg_box, lv_color_hex(UI_COLOR_BG), 0);
-    lv_obj_set_style_text_color(msg_box, lv_color_hex(UI_COLOR_TEXT), 0);
-    lv_obj_set_style_text_font(msg_box, &lv_font_montserrat_16, 0);
-    lv_obj_center(msg_box);
-    lv_obj_add_event_cb(msg_box, msgbox_delete_handler, LV_EVENT_DELETE, NULL);
+    show_message("Info", message);
 }
 
 void hvac_ui_hide_message(void)
 {
-    if (msg_box) {
-        lv_msgbox_close(msg_box);
-        msg_box = NULL;
-    }
+    if (msg_box) lv_obj_del(msg_box);
 }

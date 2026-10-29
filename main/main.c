@@ -263,6 +263,8 @@ static esp_err_t init_lvgl(void)
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = lvgl_touch_cb;
     indev_drv.user_data = touch_handle;
+    indev_drv.gesture_limit = 30;
+    indev_drv.gesture_min_velocity = 1;
     lv_indev_drv_register(&indev_drv);
     
     // Create tick timer

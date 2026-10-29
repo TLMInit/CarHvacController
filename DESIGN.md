@@ -64,7 +64,9 @@ Illustrative readings only. The first row shows the controller-reported operatin
 - **Temperature:** the two 64×72 px controls use 22 px symbols and call `hvac_controller_temp_down/up` on `LV_EVENT_SHORT_CLICKED` and `LV_EVENT_LONG_PRESSED_REPEAT` while held. They do not register the release-time `LV_EVENT_CLICKED`, avoiding an extra step after a held repeat. The central Montserrat 44 setpoint is rendered from `target_temp_c` and `temp_unit`; the number and unit use the same 168×56 px label.
 - **Fan:** 56×48 px `−` / `+` controls run their one-shot action only on `LV_EVENT_SHORT_CLICKED` and also support `LV_EVENT_LONG_PRESSED_REPEAT`; release after a repeat does not add a click step. They step through Off, Low, Med-Low, Medium, Med-High, High and clamp at both ends. From AUTO, `−` exits to Off and `+` exits to Low. Tapping the 184×48 px level label sets fan AUTO. The label renders the actual `fan_level` and `blower_speed` percentage.
 - Every click gets LVGL pressed-state feedback. Checked state is updated on the next controller-state render, not from the requested action.
-- Gesture events are registered on `scr_main`, the first ancestor without `LV_OBJ_FLAG_GESTURE_BUBBLE`; child/tabview registration is insufficient because LVGL 8.4 bubbles the gesture past those objects. The handler uses `lv_event_get_indev(e)` for direction and release suppression, and ignores gestures while a modal or message box is open.
+- Tap slop applies to every button and dialog action: `UI_TAP_SLOP` is 10 px independently on X and Y. A press is invalidated as soon as `LV_EVENT_PRESSING`, release, long-press or repeat observes either axis beyond that limit; returning to the origin does not re-enable the press. `SHORT_CLICKED` and `CLICKED` share one per-button dispatcher and one physical tap is consumed only once. Swipes are the only movement gesture; non-swipe drags beyond slop activate nothing.
+- Gesture events are registered on `scr_main`, the first ancestor without `LV_OBJ_FLAG_GESTURE_BUBBLE`; child/tabview registration is insufficient because LVGL 8.4 bubbles the gesture past those objects. `main.c` configures `indev_drv.gesture_limit = 30` and `indev_drv.gesture_min_velocity = 1` to make swipes easier to trigger. The handler reads the event's input device and calls `lv_indev_wait_release()` before returning, including when a modal/message overlay is open.
+- Every touch button, including picker cells, calibration-dialog actions, and message-overlay OK, uses a fixed per-button context through `make_button()`. `LV_EVENT_PRESSED` records the input point; `LV_EVENT_PRESSING`, release dispatch and long-press repeat compare each axis against `UI_TAP_SLOP = 10` px. Exceeding either axis invalidates that press even if the finger returns to the origin. LVGL 8.4 emits `SHORT_CLICKED` followed by `CLICKED` for a tap, so both are routed to one dispatcher and consumed once. A long press suppresses its release-time click; repeat steps stop as soon as the press exceeds slop. The built-in LVGL message-box close button is intentionally replaced with a `make_button()` OK control so message dismissal obeys the same rule.
 
 ### Diagnostics screen
 
@@ -220,7 +222,8 @@ Colour is supplementary rather than the sole on/off or fault signal. Normal and 
 
 - [ ] Run `idf.py build` with ESP-IDF 6.1 and the committed `sdkconfig` (not runnable in the current authoring environment: `idf.py`/`IDF_PATH` are unavailable).
 - [ ] Confirm no compiler warnings about missing prototypes, format strings, LVGL API names or event-callback signatures.
-- [ ] Verify that only SHORT_CLICKED invokes MODE/temperature/fan one-shot actions and that `lv_indev_wait_release()` suppresses release clicks after a gesture.
+- [ ] Verify the common `SHORT_CLICKED`/`CLICKED` dispatcher invokes each button action at most once, drops releases with `abs(dx) > 10 px` or `abs(dy) > 10 px`, and invalidates a press once it crosses the slop boundary.
+- [ ] Verify `main.c` uses `gesture_limit = 30` and `gesture_min_velocity = 1`, and `lv_indev_wait_release()` runs before overlay-related gesture early returns.
 - [ ] Compare the linker map against the baseline to measure the Montserrat 44 flash delta; 80–90 KiB is only a current source-based estimate.
 - [ ] Read the post-init `lv_mem_monitor` log and record total/free/used/fragmentation/largest block.
 - [ ] Record average/max `hvac_ui_update()` duration after several five-second windows, both on Main and Diagnostics.
@@ -240,6 +243,7 @@ Colour is supplementary rather than the sole on/off or fault signal. Normal and 
 - [ ] Valve fault: trigger a known stall and verify the correct bit/name mapping and row highlight.
 - [ ] Calibration safety: tap RESET CAL and cancel; verify no reset occurs. Confirm only on the second explicit action.
 - [ ] Gesture/animation: swipe to Diagnostics and back; verify the tabview content does not natively scroll/snap, page changes are instant, and the release does not trigger the button under the finger.
+- [ ] Tap slop: slow-drag across AUTO and verify nothing happens; perform a fast swipe starting on DEF and verify the page changes without starting defrost; swipe inside the picker and verify no mode is selected and the picker stays open; hold `+` and slide more than 10 px off-origin and verify stepping stops. Repeat with the message-overlay OK button and calibration dialog controls.
 - [ ] Diagnostic responsiveness: observe the UI while valves move. The current `tb6612fng_get_valve_target()` may block on `valve_mutex` for up to 100 ms per valve; attribute any multi-valve stall to the existing driver path pending driver review L-02, not to LVGL layout changes.
 
 ## 9. Photo list when a compatible PC simulator is unavailable
