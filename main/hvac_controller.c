@@ -8,6 +8,12 @@
 #include "hvac_sensors.h"
 #include "tb6612fng_driver.h"
 #include "bts7960_driver.h"
+#include "settings.h"
+#include "sensor_roles.h"
+#include "event_log.h"
+#include "comfort.h"
+#include "cascade.h"
+#include "presets_priv.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
 #include "nvs_flash.h"
@@ -17,6 +23,7 @@
 #include "freertos/semphr.h"
 #include <math.h>
 #include <string.h>
+#include <stdio.h>
 
 #if USE_REMOTE_IO
 #include "remote_io.h"
@@ -31,7 +38,6 @@ static const char *TAG = "HVAC_CTRL";
 #define TEMP_DEADBAND           0.5f        // Temperature deadband (°C)
 #define TEMP_MIN_C              16.0f       // Minimum temperature setting
 #define TEMP_MAX_C              30.0f       // Maximum temperature setting
-#define TEMP_STEP               0.5f        // Temperature adjustment step
 #define NVS_NAMESPACE           "hvac"
 #define NVS_KEY_SETTINGS        "settings"
 #define NVS_KEY_THERMAL_CAL     "thermal_cal"
@@ -45,9 +51,7 @@ static const char *TAG = "HVAC_CTRL";
 #define THERMAL_LEARNING_RATE   0.1f        // Learning rate (0-1)
 
 // A/C compressor control constants
-#define AC_HUMIDITY_THRESHOLD   65.0f       // Auto A/C when humidity > this (%)
-#define AC_DEFOG_HUMIDITY       55.0f       // Target humidity when defogging
-#define AC_HUMIDITY_OFF         58.0f       // Auto A/C releases below this (hysteresis)
+// Humidity on/off thresholds come from SET_HUMIDITY_ON / SET_HUMIDITY_OFF (defaults 65 / 58)
 #define AC_MIN_OFF_MS           10000       // Clutch stays off at least this long
 #define AC_MIN_ON_MS            30000       // Humidity-only clutch stays on at least this long
 #define AC_FREEZE_CUTOUT_C      3.0f        // Duct below this with coolant closed: clutch off
@@ -63,6 +67,10 @@ static const char *TAG = "HVAC_CTRL";
 
 // Without a cabin temperature: moderate heat, fixed fan (S-08)
 #define SENSOR_FALLBACK_COOLANT_PCT  50
+
+#define DEFOG_EXIT_HYSTERESIS_C      2.0f   // Dew-point defog releases this far below its trigger
+#define DEFOG_MIN_WINDSCREEN_PCT     50     // Windscreen valve floor while the defog is active
+#define ECO_FAN_CAP_PCT              BTS7960_FAN_PERCENT_MEDIUM  // ECO preset: AUTO blower cap
 
 /*******************************************************************************
  * Private Data
@@ -145,6 +153,149 @@ static const char* fan_level_names[] = {
     "High",
     "Auto"
 };
+
+/*******************************************************************************
+ * Settings cache (refreshed by hvac_controller_apply_settings() and once a second)
+ ******************************************************************************/
+typedef struct {
+    float hum_on, hum_off, step, default_setpoint;
+    int powerup;
+    bool auto_requests_ac, recirc_fitted, def_restores_ac;
+    int recirc_cancel_min;
+    int fan_min, fan_max, night_cap;
+    bool night;
+    float curve_k;                  // AUTO error slope multiplier
+    uint32_t soft_start_ms;
+    bool hd_on;
+    float hd_temp;
+    int hd_fan;
+    uint32_t hd_max_ms;
+    bool defog_on, defog_uses_ac;
+    float defog_margin, defog_offset;
+    int control_mode;
+    cascade_params_t casc;
+    int unit;
+} ctl_cfg_t;
+
+static ctl_cfg_t cfg;
+static bool cfg_loaded = false;
+
+static comfort_defog_t defog;
+static comfort_heater_delay_t heater_delay;
+static bool heater_delay_pending = false;   // start the delay on the next AUTO cycle
+static cascade_state_t cascade;
+static uint32_t cascade_last_ms = 0;
+static bool ac_mem_valid = false;           // user A/C flag remembered on entering DEF
+static bool ac_mem = false;
+
+// Out-of-range values (e.g. before the settings package is wired) fall back to the default
+static float cfg_f(setting_id_t id, float def, float lo, float hi)
+{
+    float v = settings_get_float(id);
+    return (v >= lo && v <= hi) ? v : def;
+}
+
+static int cfg_i(setting_id_t id, int def, int lo, int hi)
+{
+    int v = (int)settings_get_int(id);
+    return (v >= lo && v <= hi) ? v : def;
+}
+
+static void cfg_refresh(void)   // caller holds state_mutex (or runs before the task starts)
+{
+    ctl_cfg_t n;
+    memset(&n, 0, sizeof(n));
+    n.hum_on = cfg_f(SET_HUMIDITY_ON, 65.0f, 50.0f, 90.0f);
+    n.hum_off = cfg_f(SET_HUMIDITY_OFF, 58.0f, 40.0f, 85.0f);
+    if (n.hum_off >= n.hum_on) {
+        n.hum_off = n.hum_on - 1.0f;
+    }
+    n.step = cfg_f(SET_SETPOINT_STEP, 0.5f, 0.1f, 1.0f);
+    n.default_setpoint = cfg_f(SET_DEFAULT_SETPOINT, 22.0f, TEMP_MIN_C, TEMP_MAX_C);
+    n.powerup = cfg_i(SET_POWER_UP_STATE, SET_POWERUP_RESTORE, SET_POWERUP_RESTORE, SET_POWERUP_OFF);
+    n.auto_requests_ac = settings_get_bool(SET_AUTO_REQUESTS_AC);
+    n.recirc_fitted = settings_get_bool(SET_RECIRC_FITTED);
+    n.def_restores_ac = settings_get_bool(SET_DEF_RESTORES_AC);
+    n.recirc_cancel_min = cfg_i(SET_RECIRC_AUTO_CANCEL_MIN, 0, 0, 60);
+    n.fan_min = cfg_i(SET_FAN_MIN_DUTY, BTS7960_FAN_PERCENT_LOW, 1, 100);
+    n.fan_max = cfg_i(SET_FAN_MAX_DUTY, 100, 30, 100);
+    if (n.fan_max < n.fan_min) {
+        n.fan_max = n.fan_min;
+    }
+    n.night_cap = cfg_i(SET_QUIET_NIGHT_CAP, 0, 0, 100);
+    n.night = settings_get_bool(SET_NIGHT_MODE);
+    switch (cfg_i(SET_AUTO_CURVE, SET_CURVE_NORMAL, SET_CURVE_ECO, SET_CURVE_MAX)) {
+        case SET_CURVE_ECO: n.curve_k = 0.6f; break;
+        case SET_CURVE_MAX: n.curve_k = 1.4f; break;
+        default:            n.curve_k = 1.0f; break;
+    }
+    n.soft_start_ms = (uint32_t)cfg_i(SET_SOFT_START_MS, 500, 0, 3000);
+    n.hd_on = settings_get_bool(SET_HEATER_DELAY);
+    n.hd_temp = cfg_f(SET_HEATER_DELAY_TEMP, 40.0f, 20.0f, 70.0f);
+    n.hd_fan = cfg_i(SET_HEATER_DELAY_FAN, HVAC_FAN_LOW, HVAC_FAN_OFF, HVAC_FAN_HIGH);
+    n.hd_max_ms = (uint32_t)cfg_i(SET_HEATER_DELAY_MAX_MIN, 8, 1, 20) * 60000u;
+    n.defog_on = settings_get_bool(SET_DEFOG);
+    n.defog_margin = cfg_f(SET_DEFOG_MARGIN, 3.0f, 0.0f, 10.0f);
+    n.defog_uses_ac = settings_get_bool(SET_DEFOG_USES_AC);
+    n.defog_offset = cfg_f(SET_DEFOG_GLASS_OFFSET, 2.0f, -5.0f, 10.0f);
+    n.control_mode = cfg_i(SET_CONTROL_MODE, SET_CONTROL_CLASSIC, SET_CONTROL_CLASSIC, SET_CONTROL_CASCADE);
+    n.casc.outer_kp = cfg_f(SET_CASCADE_OUTER_KP, 0.0f, 0.0f, 20.0f);   // zero gain = that term off
+    n.casc.outer_ki = cfg_f(SET_CASCADE_OUTER_KI, 0.0f, 0.0f, 5.0f);
+    n.casc.inner_kp = cfg_f(SET_CASCADE_INNER_KP, 0.0f, 0.0f, 20.0f);
+    n.casc.inner_ki = cfg_f(SET_CASCADE_INNER_KI, 0.0f, 0.0f, 10.0f);
+    n.casc.duct_min_c = cfg_f(SET_DUCT_MIN, 10.0f, 0.0f, 30.0f);
+    n.casc.duct_max_c = cfg_f(SET_DUCT_MAX, 60.0f, 30.0f, 80.0f);
+    n.unit = cfg_i(SET_TEMP_UNIT, SET_UNIT_C, SET_UNIT_C, SET_UNIT_F);
+
+    if (!cfg_loaded || n.control_mode != cfg.control_mode) {
+        cascade_reset(&cascade);
+        if (cfg_loaded) {
+            event_log_add(EVT_INFO, "Control mode: %s", n.control_mode == SET_CONTROL_CASCADE ? "Cascade" : "Classic");
+        }
+    }
+    if (!cfg_loaded || n.unit != cfg.unit) {
+        hvac_state.temp_unit = n.unit == SET_UNIT_F ? TEMP_UNIT_FAHRENHEIT : TEMP_UNIT_CELSIUS;
+    }
+    cfg = n;
+    cfg_loaded = true;
+    hvac_state.control_mode = (uint8_t)n.control_mode;
+}
+
+static bool is_defrost(hvac_mode_t mode)
+{
+    return mode == HVAC_MODE_DEFROST || mode == HVAC_MODE_DEFROST_FOOT;
+}
+
+static uint8_t fan_level_pct(hvac_fan_speed_t level)
+{
+    switch (level) {
+        case HVAC_FAN_LOW:         return BTS7960_FAN_PERCENT_LOW;
+        case HVAC_FAN_MEDIUM_LOW:  return BTS7960_FAN_PERCENT_MEDIUM_LOW;
+        case HVAC_FAN_MEDIUM:      return BTS7960_FAN_PERCENT_MEDIUM;
+        case HVAC_FAN_MEDIUM_HIGH: return BTS7960_FAN_PERCENT_MEDIUM_HIGH;
+        case HVAC_FAN_HIGH:        return BTS7960_FAN_PERCENT_HIGH;
+        case HVAC_FAN_AUTO:        return BTS7960_FAN_PERCENT_AUTO_DEFAULT;
+        default:                   return BTS7960_FAN_PERCENT_OFF;
+    }
+}
+
+/**
+ * @brief Send a blower command through the fan min/max clamp, the quiet-night cap and (AUTO fan
+ * under the ECO preset) the Medium cap, ramped by SET_SOFT_START_MS. Sends only on change.
+ */
+static void blower_command(uint8_t pct, bool auto_fan)
+{
+    if (pct > 0) {
+        if (pct < cfg.fan_min) pct = (uint8_t)cfg.fan_min;
+        if (pct > cfg.fan_max) pct = (uint8_t)cfg.fan_max;
+        if (cfg.night_cap > 0 && cfg.night && pct > cfg.night_cap) pct = (uint8_t)cfg.night_cap;
+        if (auto_fan && hvac_state.preset == HVAC_PRESET_ECO && pct > ECO_FAN_CAP_PCT) pct = ECO_FAN_CAP_PCT;
+    }
+    if (pct != bts7960_get_target_speed()) {
+        bts7960_set_speed_ramp(pct, cfg.soft_start_ms);
+    }
+    hvac_state.blower_speed = pct;
+}
 
 /*******************************************************************************
  * Private Functions
@@ -458,6 +609,36 @@ static void run_temperature_control(void)
     hvac_state.coolant_valve_pos = readings.coolant_valve_pos;
     hvac_state.blower_speed = bts7960_get_target_speed();
 
+    static bool sensor_fallback = false;    // S-08 fallback running (logged once per episode)
+    uint32_t cycle_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+    // Settings cache: re-read once a second as a safety net for a missing apply callback
+    static uint32_t last_cfg_ms = 0;
+    if (cycle_ms - last_cfg_ms >= 1000) {
+        last_cfg_ms = cycle_ms;
+        cfg_refresh();
+    }
+
+    // Recirc auto-cancel (only when a recirc flap is fitted)
+    static bool prev_recirc = false;
+    static uint32_t recirc_since_ms = 0;
+    if (hvac_state.recirculate && !prev_recirc) {
+        recirc_since_ms = cycle_ms;
+    }
+    prev_recirc = hvac_state.recirculate;
+    if (hvac_state.recirculate && cfg.recirc_fitted && cfg.recirc_cancel_min > 0 &&
+        cycle_ms - recirc_since_ms >= (uint32_t)cfg.recirc_cancel_min * 60000u) {
+        hvac_state.recirculate = false;
+        prev_recirc = false;
+        event_log_add(EVT_INFO, "Recirc auto-cancelled after %d min", cfg.recirc_cancel_min);
+        notify_state_change();
+    }
+
+    // Extra sensors and the cabin dew point (informational in every mode)
+    hvac_state.outside_temp_c = sensor_roles_get_temp(SENSOR_ROLE_OUTSIDE);
+    hvac_state.coolant_temp_c = sensor_roles_get_temp(SENSOR_ROLE_COOLANT);
+    hvac_state.dew_point_c = comfort_dew_point_c(hvac_state.cabin_temp_c, hvac_state.cabin_humidity);
+
     // NOT_FOUND in the first seconds after boot means "not read yet", not a fault
     bool boot_grace = (xTaskGetTickCount() * portTICK_PERIOD_MS) < 10000;
     hvac_state.sensor_fault =
@@ -475,7 +656,52 @@ static void run_temperature_control(void)
     
     // Skip control in OFF mode (set_mode(OFF) already stopped everything)
     if (hvac_state.mode == HVAC_MODE_OFF) {
+        defog.active = false;
+        hvac_state.defog_active = false;
+        hvac_state.heater_delay_active = false;
+        hvac_state.duct_target_c = NAN;
+        strcpy(hvac_state.ac_reason, "System OFF");
         return;
+    }
+
+    // Dew-point defog (needs the outside sensor; without it the feature stays inactive)
+    bool defog_was_active = defog.active;
+    if (cfg.defog_on) {
+        comfort_defog_update(&defog, hvac_state.dew_point_c,
+                             comfort_glass_temp_c(hvac_state.outside_temp_c, cfg.defog_offset),
+                             cfg.defog_margin, DEFOG_EXIT_HYSTERESIS_C);
+    } else {
+        defog.active = false;
+    }
+    hvac_state.defog_active = defog.active;
+    if (defog.active != defog_was_active) {
+        ESP_LOGI(TAG, "Dew-point defog %s (dew=%.1f, outside=%.1f)", defog.active ? "ON" : "OFF",
+                 hvac_state.dew_point_c, hvac_state.outside_temp_c);
+    }
+
+    // Heater delay: AUTO mode with automatic fan only (defrost modes are never AUTO)
+    hvac_state.heater_delay_active = false;
+    if (!cfg.hd_on || hvac_state.mode != HVAC_MODE_AUTO) {
+        heater_delay_pending = false;
+        heater_delay.active = false;
+    } else {
+        float heater_c = isnan(hvac_state.coolant_temp_c) ? hvac_state.duct_temp_c : hvac_state.coolant_temp_c;
+        if (heater_delay_pending) {
+            heater_delay_pending = false;
+            comfort_heater_delay_start(&heater_delay, heater_c, cfg.hd_temp, cycle_ms);
+            if (heater_delay.active) {
+                ESP_LOGI(TAG, "Heater delay: fan held until heater >= %.0f C (heater=%.1f)", cfg.hd_temp, heater_c);
+            }
+        } else if (heater_delay.active &&
+                   !comfort_heater_delay_update(&heater_delay, heater_c, cfg.hd_temp, cfg.hd_max_ms, cycle_ms)) {
+            ESP_LOGI(TAG, "Heater delay: released (heater=%.1f)", heater_c);
+        }
+        hvac_state.heater_delay_active = heater_delay.active && hvac_state.fan_level == HVAC_FAN_AUTO;
+    }
+
+    // Manual fan: re-applied through the clamps so night/min/max changes take effect
+    if (hvac_state.fan_level != HVAC_FAN_AUTO) {
+        blower_command(fan_level_pct(hvac_state.fan_level), false);
     }
 
     // No cabin temperature (failed or stale): fixed fallback instead of freezing the last outputs
@@ -484,19 +710,40 @@ static void run_temperature_control(void)
         hvac_state.is_cooling = false;
         hvac_state.temp_reached = false;
         warmup_state.active = false;
+        hvac_state.duct_target_c = NAN;
+        if (!sensor_fallback && !boot_grace) {
+            sensor_fallback = true;
+            event_log_add(EVT_FAULT, "Cabin sensor lost: fallback");
+        }
         want_valve(HVAC_VALVE_COOLANT, SENSOR_FALLBACK_COOLANT_PCT);
         if (hvac_state.fan_level == HVAC_FAN_AUTO) {
-            bts7960_set_speed(BTS7960_FAN_PERCENT_AUTO_DEFAULT);
-            hvac_state.blower_speed = BTS7960_FAN_PERCENT_AUTO_DEFAULT;
+            blower_command(BTS7960_FAN_PERCENT_AUTO_DEFAULT, true);
         }
         goto compressor;   // A/C rules that need no cabin reading (defrost, user request) still apply
     }
 
+    sensor_fallback = false;
     float error = hvac_state.target_temp_c - hvac_state.cabin_temp_c;
     
     // Check if target reached (within deadband)
     hvac_state.temp_reached = (fabsf(error) <= TEMP_DEADBAND);
     
+    // Cascade replaces only the coolant-valve law; heating/cooling flags stay deadband based
+    bool cascade_on = (cfg.control_mode == SET_CONTROL_CASCADE);
+    if (cascade_on) {
+        float dt_s = (cycle_ms - cascade_last_ms) / 1000.0f;
+        if (cascade_last_ms == 0 || dt_s <= 0.0f || dt_s > 1.0f) {
+            dt_s = HVAC_TASK_PERIOD_MS / 1000.0f;   // first step, or the loop was not running
+        }
+        cascade_last_ms = cycle_ms ? cycle_ms : 1;
+        float v = cascade_step(&cascade, &cfg.casc, hvac_state.target_temp_c, hvac_state.cabin_temp_c,
+                               hvac_state.duct_temp_c, dt_s);
+        want_valve(HVAC_VALVE_COOLANT, (uint8_t)(v + 0.5f));
+        hvac_state.duct_target_c = cascade.duct_target_c;
+    } else {
+        hvac_state.duct_target_c = NAN;
+    }
+
     // Determine heating or cooling
     if (error > TEMP_DEADBAND) {
         // Need heating
@@ -506,7 +753,9 @@ static void run_temperature_control(void)
         // Calculate coolant valve position using adaptive gain
         float adaptive_gain = thermal_adapt.adaptive_coolant_gain;
         uint8_t valve_pos = (uint8_t)fminf(100.0f, fabsf(error) * adaptive_gain);
-        want_valve(HVAC_VALVE_COOLANT, valve_pos);
+        if (!cascade_on) {
+            want_valve(HVAC_VALVE_COOLANT, valve_pos);
+        }
         
         if (thermal_adapt.sample_count < 10) {
             ESP_LOGD(TAG, "Heating: error=%.2f°C, gain=%.1f, valve=%d%%, learning=%d samples",
@@ -518,14 +767,18 @@ static void run_temperature_control(void)
         hvac_state.is_cooling = true;
         
         // Close coolant valve for cooling
-        want_valve(HVAC_VALVE_COOLANT, 0);
+        if (!cascade_on) {
+            want_valve(HVAC_VALVE_COOLANT, 0);
+        }
     } else {
         // Temperature reached
         hvac_state.is_heating = false;
         hvac_state.is_cooling = false;
         
         // Maintain minimal coolant flow
-        want_valve(HVAC_VALVE_COOLANT, 10);
+        if (!cascade_on) {
+            want_valve(HVAC_VALVE_COOLANT, 10);
+        }
     }
     
     // Update thermal adaptation learning
@@ -536,7 +789,7 @@ static void run_temperature_control(void)
     if (hvac_state.fan_level == HVAC_FAN_AUTO) {
         // Compute a continuous blower speed between LOW and 100% based on temperature error
         float abs_error = fabsf(error);
-        float min_speed = (float)BTS7960_FAN_PERCENT_LOW;  // same as manual LOW
+        float min_speed = (float)cfg.fan_min;  // default 30 = manual LOW
         float auto_speed_f;
 
         if (abs_error <= 0.5f) {
@@ -552,10 +805,14 @@ static void run_temperature_control(void)
             if (t > 1.0f) t = 1.0f;
             auto_speed_f = min_speed + t * (100.0f - min_speed);
         }
+        // Curve strength scales the slope above the minimum (NORMAL = 1.0 = unchanged)
+        auto_speed_f = fminf(100.0f, min_speed + (auto_speed_f - min_speed) * cfg.curve_k);
 
         uint8_t auto_speed = (uint8_t)(auto_speed_f + 0.5f); // round to nearest
-        bts7960_set_speed(auto_speed);
-        hvac_state.blower_speed = auto_speed;
+        if (hvac_state.heater_delay_active) {
+            auto_speed = fan_level_pct((hvac_fan_speed_t)cfg.hd_fan);   // heater still cold: hold low
+        }
+        blower_command(auto_speed, true);
     }
     
     // Auto mode adjustments
@@ -622,9 +879,8 @@ static void run_temperature_control(void)
             want_valve(HVAC_VALVE_CENTER_2, 30);
             
             // Override fan to high speed during warmup (if in AUTO fan mode)
-            if (hvac_state.fan_level == HVAC_FAN_AUTO) {
-                bts7960_set_speed(BTS7960_FAN_PERCENT_HIGH);
-                hvac_state.blower_speed = BTS7960_FAN_PERCENT_HIGH;
+            if (hvac_state.fan_level == HVAC_FAN_AUTO && !hvac_state.heater_delay_active) {
+                blower_command(BTS7960_FAN_PERCENT_HIGH, true);
             }
             
             // Log warmup progress periodically
@@ -666,6 +922,19 @@ static void run_temperature_control(void)
     }
     
 compressor:
+    // Dew-point defog: windscreen valve to at least 50 % after the mode rules; on release a
+    // manual mode gets its own windscreen value back (AUTO sets it every cycle)
+    if (defog.active) {
+        int16_t ws = cycle_targets[HVAC_VALVE_WINDSCREEN] >= 0
+                     ? cycle_targets[HVAC_VALVE_WINDSCREEN]
+                     : tb6612fng_get_valve_target(HVAC_VALVE_WINDSCREEN);
+        if (ws < DEFOG_MIN_WINDSCREEN_PCT) {
+            want_valve(HVAC_VALVE_WINDSCREEN, DEFOG_MIN_WINDSCREEN_PCT);
+        }
+    } else if (defog_was_active && hvac_state.mode != HVAC_MODE_AUTO) {
+        want_valve(HVAC_VALVE_WINDSCREEN, is_defrost(hvac_state.mode) ? 100 : 0);
+    }
+
     // =========================================================================
     // A/C Compressor Control
     // =========================================================================
@@ -704,9 +973,9 @@ compressor:
     
     // Auto mode: Run A/C when humidity is high (proactive defogging), with hysteresis
     static bool humidity_high = false;
-    if (isnan(hvac_state.cabin_humidity) || hvac_state.cabin_humidity < AC_HUMIDITY_OFF) {
+    if (isnan(hvac_state.cabin_humidity) || hvac_state.cabin_humidity < cfg.hum_off) {
         humidity_high = false;
-    } else if (hvac_state.cabin_humidity > AC_HUMIDITY_THRESHOLD) {
+    } else if (hvac_state.cabin_humidity > cfg.hum_on) {
         humidity_high = true;
     }
     bool humidity_request = (hvac_state.mode == HVAC_MODE_AUTO && humidity_high);
@@ -715,13 +984,26 @@ compressor:
         ac_reason = "High humidity";
     }
 
+    // Dew-point defog and AUTO cooling ask for the compressor; the coolant valve keeps following
+    // the heating law meanwhile (reheat), nothing here closes it
+    bool defog_request = defog.active && cfg.defog_uses_ac;
+    if (defog_request) {
+        should_run_ac = true;
+        ac_reason = "Dew-point defog";
+    }
+    bool auto_cool_request = cfg.auto_requests_ac && hvac_state.mode == HVAC_MODE_AUTO && hvac_state.is_cooling;
+    if (auto_cool_request) {
+        should_run_ac = true;
+        ac_reason = "AUTO cooling";
+    }
+
     // User-enabled A/C: Run if user toggled A/C on (for cooling or manual dehumidification)
     bool user_request = (hvac_state.ac_enabled && hvac_state.mode != HVAC_MODE_OFF);
     if (user_request) {
         should_run_ac = true;
         ac_reason = "User request";
     }
-    bool other_request = user_request || is_defrost_mode ||
+    bool other_request = user_request || is_defrost_mode || defog_request || auto_cool_request ||
                          (hvac_state.mode == HVAC_MODE_AUTO && warmup_state.active);
 
     // Interlocks: override every request immediately, regardless of the minimum on-time
@@ -748,7 +1030,7 @@ compressor:
         }
         if (freeze_lock) {
             interlock = true;
-            ac_reason = "Interlock: duct below 3 C (freeze)";
+            ac_reason = "Interlock: duct freeze (<3 C)";
         }
     }
     // The minimum on-time is only for the humidity rule, the one request that comes and
@@ -783,6 +1065,9 @@ compressor:
     
     // Apply A/C compressor state
     set_ac_compressor(should_run_ac);
+    if (strcmp(hvac_state.ac_reason, ac_reason) != 0) {
+        snprintf(hvac_state.ac_reason, sizeof(hvac_state.ac_reason), "%s", ac_reason);
+    }
 
     apply_cycle_targets();
 }
@@ -812,7 +1097,16 @@ esp_err_t hvac_controller_init(void)
     hvac_state.cabin_humidity = NAN;
     hvac_state.duct_temp_c = NAN;
     hvac_state.ac_compressor_on = false;
-    
+    hvac_state.preset = HVAC_PRESET_NONE;
+    hvac_state.outside_temp_c = NAN;
+    hvac_state.coolant_temp_c = NAN;
+    hvac_state.dew_point_c = NAN;
+    hvac_state.duct_target_c = NAN;
+    strcpy(hvac_state.ac_reason, "System OFF");
+    cfg_loaded = false;
+    cfg_refresh();
+    hvac_state.target_temp_c = cfg.default_setpoint;
+
     // Initialize A/C compressor relay GPIO
     esp_err_t ret = init_ac_compressor_gpio();
     if (ret != ESP_OK) {
@@ -857,66 +1151,118 @@ bool hvac_controller_get_state(hvac_state_t *state)
     return false;
 }
 
+// *_locked: caller holds state_mutex; they never touch the active preset (the public
+// wrappers clear it, apply_preset keeps it)
+static void set_mode_locked(hvac_mode_t mode)
+{
+    hvac_mode_t old_mode = hvac_state.mode;
+    hvac_state.mode = mode;
+
+    // DEF forces the compressor: remember the user A/C flag on entry, restore it on leaving
+    if (is_defrost(mode) && !is_defrost(old_mode)) {
+        ac_mem = hvac_state.ac_enabled;
+        ac_mem_valid = true;
+    } else if (!is_defrost(mode) && is_defrost(old_mode)) {
+        if (ac_mem_valid && cfg.def_restores_ac) {
+            hvac_state.ac_enabled = ac_mem;
+        }
+        ac_mem_valid = false;
+    }
+
+    if (old_mode == HVAC_MODE_OFF || mode == HVAC_MODE_OFF) {
+        cascade_reset(&cascade);
+    }
+    heater_delay.active = false;
+    heater_delay_pending = (mode == HVAC_MODE_AUTO && old_mode != HVAC_MODE_AUTO);
+
+    // Reset warmup state when leaving AUTO mode or entering AUTO fresh
+    if (old_mode == HVAC_MODE_AUTO && mode != HVAC_MODE_AUTO) {
+        // Leaving AUTO - reset warmup
+        warmup_state.active = false;
+        ESP_LOGI(TAG, "Left AUTO mode, warmup reset");
+    } else if (mode == HVAC_MODE_AUTO && old_mode != HVAC_MODE_AUTO) {
+        // Entering AUTO - reset warmup so it can detect cold start
+        warmup_state.active = false;
+        warmup_state.start_time_ms = 0;
+        warmup_state.initial_cabin_temp = NAN;
+        warmup_state.initial_humidity = NAN;
+        // AUTO climate starts with the automatic fan; the fan slider switches it back to manual
+        hvac_state.fan_level = HVAC_FAN_AUTO;
+        ESP_LOGI(TAG, "Entered AUTO mode, warmup state reset, fan AUTO");
+    }
+
+    if (mode == HVAC_MODE_OFF) {
+        // Turn off everything
+        bts7960_stop();
+        tb6612fng_stop_all_valves();
+        set_ac_compressor(false);  // Turn off A/C when system is OFF
+        hvac_state.blower_speed = 0;
+        warmup_state.active = false;  // Also reset warmup
+    } else {
+        // Enable motor drivers
+        tb6612fng_enable_all();
+        bts7960_enable();
+
+        // A mode change is the user retry for valves latched after repeated stalls
+        for (int v = 0; v < HVAC_VALVE_MAX; v++) {
+            tb6612fng_clear_stall((hvac_valve_id_t)v);
+        }
+
+        // Set valve positions for mode
+        update_valve_positions(mode);
+
+        // Set fan if not already set
+        if (hvac_state.fan_level == HVAC_FAN_OFF) {
+            hvac_state.fan_level = HVAC_FAN_MEDIUM;
+            blower_command(BTS7960_FAN_PERCENT_MEDIUM, false);
+        }
+    }
+
+    ESP_LOGI(TAG, "Mode set to: %s", mode_names[mode]);
+    notify_state_change();
+}
+
+static void set_fan_locked(hvac_fan_speed_t level)
+{
+    hvac_state.fan_level = level;
+    if (level != HVAC_FAN_AUTO) {
+        blower_command(fan_level_pct(level), false);
+    }
+    ESP_LOGI(TAG, "Fan level set to: %s", fan_level_names[level]);
+    notify_state_change();
+}
+
+static void set_target_locked(float temp_c)
+{
+    hvac_state.target_temp_c = temp_c;
+    ESP_LOGI(TAG, "Target temperature set to: %.1f°C", temp_c);
+    notify_state_change();
+}
+
+static void set_ac_locked(bool enabled)
+{
+    hvac_state.ac_enabled = enabled;
+    ESP_LOGI(TAG, "A/C %s", enabled ? "enabled" : "disabled");
+    notify_state_change();
+}
+
+// A user change of mode/setpoint/fan/A/C ends the active preset
+static void user_changed(void)
+{
+    hvac_state.preset = HVAC_PRESET_NONE;
+}
+
 esp_err_t hvac_controller_set_mode(hvac_mode_t mode)
 {
     if (mode >= HVAC_MODE_MAX) {
         return ESP_ERR_INVALID_ARG;
     }
-    
-    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        hvac_mode_t old_mode = hvac_state.mode;
-        hvac_state.mode = mode;
-        
-        // Reset warmup state when leaving AUTO mode or entering AUTO fresh
-        if (old_mode == HVAC_MODE_AUTO && mode != HVAC_MODE_AUTO) {
-            // Leaving AUTO - reset warmup
-            warmup_state.active = false;
-            ESP_LOGI(TAG, "Left AUTO mode, warmup reset");
-        } else if (mode == HVAC_MODE_AUTO && old_mode != HVAC_MODE_AUTO) {
-            // Entering AUTO - reset warmup so it can detect cold start
-            warmup_state.active = false;
-            warmup_state.start_time_ms = 0;
-            warmup_state.initial_cabin_temp = NAN;
-            warmup_state.initial_humidity = NAN;
-            // AUTO climate starts with the automatic fan; the fan slider switches it back to manual
-            hvac_state.fan_level = HVAC_FAN_AUTO;
-            ESP_LOGI(TAG, "Entered AUTO mode, warmup state reset, fan AUTO");
-        }
-        
-        if (mode == HVAC_MODE_OFF) {
-            // Turn off everything
-            bts7960_stop();
-            tb6612fng_stop_all_valves();
-            set_ac_compressor(false);  // Turn off A/C when system is OFF
-            hvac_state.blower_speed = 0;
-            warmup_state.active = false;  // Also reset warmup
-        } else {
-            // Enable motor drivers
-            tb6612fng_enable_all();
-            bts7960_enable();
-
-            // A mode change is the user's retry for valves latched after repeated stalls
-            for (int v = 0; v < HVAC_VALVE_MAX; v++) {
-                tb6612fng_clear_stall((hvac_valve_id_t)v);
-            }
-            
-            // Set valve positions for mode
-            update_valve_positions(mode);
-            
-            // Set fan if not already set
-            if (hvac_state.fan_level == HVAC_FAN_OFF) {
-                hvac_state.fan_level = HVAC_FAN_MEDIUM;
-                bts7960_set_fan_level(HVAC_FAN_MEDIUM);
-            }
-        }
-        
-        ESP_LOGI(TAG, "Mode set to: %s", mode_names[mode]);
-        notify_state_change();
-        xSemaphoreGive(state_mutex);
-    } else {
+    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
     }
-    
+    user_changed();
+    set_mode_locked(mode);
+    xSemaphoreGive(state_mutex);
     return ESP_OK;
 }
 
@@ -935,22 +1281,12 @@ esp_err_t hvac_controller_set_fan_level(hvac_fan_speed_t level)
     if (level >= HVAC_FAN_MAX) {
         return ESP_ERR_INVALID_ARG;
     }
-    
-    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        hvac_state.fan_level = level;
-        
-        if (level != HVAC_FAN_AUTO) {
-            bts7960_set_fan_level(level);
-            hvac_state.blower_speed = bts7960_get_target_speed();
-        }
-        
-        ESP_LOGI(TAG, "Fan level set to: %s", fan_level_names[level]);
-        notify_state_change();
-        xSemaphoreGive(state_mutex);
-    } else {
+    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
     }
-    
+    user_changed();
+    set_fan_locked(level);
+    xSemaphoreGive(state_mutex);
     return ESP_OK;
 }
 
@@ -966,19 +1302,15 @@ hvac_fan_speed_t hvac_controller_get_fan_level(void)
 
 esp_err_t hvac_controller_set_target_temp(float temp_c)
 {
-    if (temp_c < TEMP_MIN_C || temp_c > TEMP_MAX_C) {
+    if (!(temp_c >= TEMP_MIN_C && temp_c <= TEMP_MAX_C)) {
         return ESP_ERR_INVALID_ARG;
     }
-    
-    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        hvac_state.target_temp_c = temp_c;
-        ESP_LOGI(TAG, "Target temperature set to: %.1f°C", temp_c);
-        notify_state_change();
-        xSemaphoreGive(state_mutex);
-    } else {
+    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
     }
-    
+    user_changed();
+    set_target_locked(temp_c);
+    xSemaphoreGive(state_mutex);
     return ESP_OK;
 }
 
@@ -992,36 +1324,35 @@ float hvac_controller_get_target_temp(void)
     return temp;
 }
 
-void hvac_controller_temp_up(void)
+static void temp_step(float direction)
 {
     if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        float new_temp = hvac_state.target_temp_c + TEMP_STEP;
-        if (new_temp <= TEMP_MAX_C) {
+        float new_temp = roundf((hvac_state.target_temp_c + direction * cfg.step) * 100.0f) / 100.0f;
+        if (new_temp >= TEMP_MIN_C - 0.001f && new_temp <= TEMP_MAX_C + 0.001f) {
             hvac_state.target_temp_c = new_temp;
+            user_changed();
             notify_state_change();
         }
         xSemaphoreGive(state_mutex);
     }
 }
 
+void hvac_controller_temp_up(void)
+{
+    temp_step(1.0f);
+}
+
 void hvac_controller_temp_down(void)
 {
-    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        float new_temp = hvac_state.target_temp_c - TEMP_STEP;
-        if (new_temp >= TEMP_MIN_C) {
-            hvac_state.target_temp_c = new_temp;
-            notify_state_change();
-        }
-        xSemaphoreGive(state_mutex);
-    }
+    temp_step(-1.0f);
 }
 
 void hvac_controller_set_ac(bool enabled)
 {
     if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        hvac_state.ac_enabled = enabled;
-        ESP_LOGI(TAG, "A/C %s", enabled ? "enabled" : "disabled");
-        notify_state_change();
+        user_changed();
+        ac_mem_valid = false;   // a choice made inside DEF stands; nothing to restore
+        set_ac_locked(enabled);
         xSemaphoreGive(state_mutex);
     }
 }
@@ -1136,10 +1467,14 @@ void hvac_controller_off(void)
 void hvac_controller_quick_defrost(void)
 {
     ESP_LOGI(TAG, "Quick defrost activated");
-    hvac_controller_set_mode(HVAC_MODE_DEFROST);
-    hvac_controller_set_fan_level(HVAC_FAN_HIGH);
-    hvac_controller_set_ac(true);  // A/C helps dehumidify
-    
+    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        user_changed();
+        set_mode_locked(HVAC_MODE_DEFROST);   // remembers the A/C flag from before
+        set_fan_locked(HVAC_FAN_HIGH);
+        set_ac_locked(true);                  // A/C helps dehumidify; restored when DEF is left
+        xSemaphoreGive(state_mutex);
+    }
+
     // Open coolant valve fully for max heat
     tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, 100);
 }
@@ -1154,6 +1489,55 @@ void hvac_controller_quick_cool(void)
     
     // Close coolant valve
     tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, 0);
+}
+
+esp_err_t hvac_controller_apply_preset(hvac_preset_t preset)
+{
+    if (preset >= HVAC_PRESET_COUNT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    const preset_def_t *d = preset_def(preset);
+    if (d != NULL) {
+        hvac_state.preset = preset;   // before the fan command: ECO caps the AUTO blower
+        set_mode_locked(d->mode);
+        if (d->setpoint_c > 0.0f) {
+            set_target_locked(d->setpoint_c);
+        }
+        set_fan_locked(d->fan);
+        set_ac_locked(d->ac);   // after the mode, so DEF keeps the A/C flag from before the preset
+        if (d->recirc_on && cfg.recirc_fitted) {
+            hvac_state.recirculate = true;
+        }
+        event_log_add(EVT_INFO, "Preset: %s", hvac_controller_preset_name(preset));
+    }
+    hvac_state.preset = preset;
+    notify_state_change();
+    xSemaphoreGive(state_mutex);
+    return ESP_OK;
+}
+
+hvac_preset_t hvac_controller_get_preset(void)
+{
+    hvac_preset_t p = HVAC_PRESET_NONE;
+    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        p = hvac_state.preset;
+        xSemaphoreGive(state_mutex);
+    }
+    return p;
+}
+
+void hvac_controller_apply_settings(void)
+{
+    if (state_mutex != NULL && xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        cfg_refresh();
+        if (hvac_state.mode != HVAC_MODE_OFF && hvac_state.fan_level != HVAC_FAN_AUTO) {
+            blower_command(fan_level_pct(hvac_state.fan_level), false);
+        }
+        xSemaphoreGive(state_mutex);
+    }
 }
 
 void hvac_controller_register_callback(hvac_state_callback_t callback, void *user_data)
@@ -1273,15 +1657,19 @@ esp_err_t hvac_controller_load_settings(void)
 
 void hvac_controller_restore_settings(void)
 {
-    if (have_saved_settings) {
+    hvac_controller_apply_settings();
+    // The temperature unit follows SET_TEMP_UNIT, not the value saved with the climate state
+    if (cfg.powerup == SET_POWERUP_RESTORE && have_saved_settings) {
         hvac_controller_set_target_temp(saved_settings.target_temp_c);
-        hvac_controller_set_temp_unit(saved_settings.temp_unit);
         hvac_controller_set_ac(saved_settings.ac_enabled);
         hvac_controller_set_recirculate(saved_settings.recirculate);
         hvac_controller_set_mode(saved_settings.mode);
         hvac_controller_set_fan_level(saved_settings.fan_level);
     } else {
-        hvac_controller_set_mode(HVAC_MODE_AUTO);
+        hvac_controller_set_target_temp(cfg.default_setpoint);
+        if (cfg.powerup != SET_POWERUP_OFF) {
+            hvac_controller_set_mode(HVAC_MODE_AUTO);
+        }
     }
     settings_dirty_ms = 0;  // what we just applied is what NVS holds
 }
