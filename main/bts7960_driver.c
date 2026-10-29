@@ -291,6 +291,14 @@ esp_err_t bts7960_set_fan_level(hvac_fan_speed_t fan_level)
     return bts7960_set_speed_ramp(speed, DEFAULT_RAMP_TIME_MS);
 }
 
+void bts7960_refresh(void)
+{
+    if (xSemaphoreTake(blower_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        set_pwm_duty(blower_state.current_speed);
+        xSemaphoreGive(blower_mutex);
+    }
+}
+
 void bts7960_get_state(blower_state_t *state)
 {
     if (state == NULL) {

@@ -117,6 +117,11 @@ void bts7960_emergency_stop(void);
 esp_err_t bts7960_set_fan_level(hvac_fan_speed_t fan_level);
 
 /**
+ * @brief Re-send the current duty to the node (restores it after a node reset)
+ */
+void bts7960_refresh(void);
+
+/**
  * @brief Get blower state
  * @param state Pointer to state structure
  */

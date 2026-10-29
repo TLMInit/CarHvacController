@@ -133,16 +133,23 @@ static const char* fan_level_names[] = {
  * @brief Set A/C compressor relay state
  * @param on true to turn on compressor, false to turn off
  */
+static bool ac_relay_on = false;    // Relay level last acknowledged by the node
+
+static int ac_relay_level(bool on)
+{
+    return on ? (AC_RELAY_ACTIVE_HIGH ? 1 : 0) : (AC_RELAY_ACTIVE_HIGH ? 0 : 1);
+}
+
 static void set_ac_compressor(bool on)
 {
-    static bool last_state = false;
-    
+    bool last_state = ac_relay_on;
+
     if (on == last_state) {
         return;  // No change needed
     }
-    
+
 #if USE_REMOTE_IO
-    int level = on ? (AC_RELAY_ACTIVE_HIGH ? 1 : 0) : (AC_RELAY_ACTIVE_HIGH ? 0 : 1);
+    int level = ac_relay_level(on);
     esp_err_t ret = remote_gpio_set_level(AC_RELAY_PIN, level);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set A/C relay: %s", esp_err_to_name(ret));
@@ -152,9 +159,28 @@ static void set_ac_compressor(bool on)
     gpio_set_level(AC_RELAY_PIN, on ? (AC_RELAY_ACTIVE_HIGH ? 1 : 0) : (AC_RELAY_ACTIVE_HIGH ? 0 : 1));
 #endif
     
-    last_state = on;
+    ac_relay_on = on;
     hvac_state.ac_compressor_on = on;
     ESP_LOGI(TAG, "A/C compressor %s", on ? "ON" : "OFF");
+}
+
+/**
+ * @brief Re-send relay level and blower duty once a second.
+ * They are otherwise only sent on change; after a node reset or link-watchdog trip
+ * (all outputs off) the node would stay off while the UI shows them running.
+ */
+static void reassert_outputs(void)
+{
+#if USE_REMOTE_IO
+    static uint32_t last_ms = 0;
+    uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    if (now_ms - last_ms < 1000) {
+        return;
+    }
+    last_ms = now_ms;
+    remote_gpio_set_level(AC_RELAY_PIN, ac_relay_level(ac_relay_on));
+    bts7960_refresh();
+#endif
 }
 
 /**
@@ -1034,6 +1060,7 @@ void hvac_controller_task(void *pvParameters)
             run_temperature_control();
             xSemaphoreGive(state_mutex);
         }
+        reassert_outputs();
         
         vTaskDelay(pdMS_TO_TICKS(HVAC_TASK_PERIOD_MS));
     }
