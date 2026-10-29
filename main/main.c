@@ -365,6 +365,7 @@ void app_main(void)
         if (remote_io_reset_node() == ESP_OK && remote_io_wait_ready(3000) == ESP_OK) {
             ESP_LOGI(TAG, "IO Node back after reset");
         } else {
+            io_node_ready = false;
             ESP_LOGW(TAG, "IO Node did not come back after reset, continuing anyway...");
         }
         remote_io_poll_node();
