@@ -289,6 +289,12 @@ esp_err_t hvac_controller_save_settings(void);
 esp_err_t hvac_controller_load_settings(void);
 
 /**
+ * @brief Apply the settings loaded at init through the normal setters
+ * (commands blower and valves); AUTO at 22 °C when nothing was saved
+ */
+void hvac_controller_restore_settings(void);
+
+/**
  * @brief Get mode name string
  * @param mode HVAC mode
  * @return Mode name string

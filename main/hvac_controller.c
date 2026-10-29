@@ -73,6 +73,19 @@ static TaskHandle_t controller_task_handle = NULL;
 static hvac_state_callback_t state_callback = NULL;
 static void *callback_user_data = NULL;
 
+// Settings persistence: loaded at init, applied by hvac_controller_restore_settings();
+// changes are written to NVS 5 s after the last one
+static hvac_settings_t saved_settings;
+static bool have_saved_settings = false;
+static uint32_t settings_dirty_ms = 0;  // 0 = nothing to save
+#define SETTINGS_SAVE_DELAY_MS  5000
+
+static void mark_settings_dirty(void)
+{
+    uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    settings_dirty_ms = now_ms ? now_ms : 1;
+}
+
 // Cold-start warmup state (for AUTO mode)
 typedef struct {
     bool active;                 // Warmup phase is active
@@ -223,8 +236,10 @@ static esp_err_t init_ac_compressor_gpio(void)
 #endif
 }
 
+// Called by every setter of a persisted setting
 static void notify_state_change(void)
 {
+    mark_settings_dirty();
     if (state_callback != NULL) {
         state_callback(&hvac_state, callback_user_data);
     }
@@ -888,9 +903,6 @@ esp_err_t hvac_controller_set_mode(hvac_mode_t mode)
         ESP_LOGI(TAG, "Mode set to: %s", mode_names[mode]);
         notify_state_change();
         xSemaphoreGive(state_mutex);
-        
-        // Save settings to NVS
-        hvac_controller_save_settings();
     } else {
         return ESP_ERR_TIMEOUT;
     }
@@ -953,9 +965,6 @@ esp_err_t hvac_controller_set_target_temp(float temp_c)
         ESP_LOGI(TAG, "Target temperature set to: %.1f°C", temp_c);
         notify_state_change();
         xSemaphoreGive(state_mutex);
-        
-        // Save settings to NVS
-        hvac_controller_save_settings();
     } else {
         return ESP_ERR_TIMEOUT;
     }
@@ -1155,6 +1164,13 @@ void hvac_controller_task(void *pvParameters)
             xSemaphoreGive(state_mutex);
         }
         reassert_outputs();
+
+        // One NVS write per burst of changes (e.g. holding temp +), 5 s after the last one
+        if (settings_dirty_ms != 0 &&
+            xTaskGetTickCount() * portTICK_PERIOD_MS - settings_dirty_ms >= SETTINGS_SAVE_DELAY_MS) {
+            settings_dirty_ms = 0;
+            hvac_controller_save_settings();
+        }
         
         vTaskDelay(pdMS_TO_TICKS(HVAC_TASK_PERIOD_MS));
     }
@@ -1225,24 +1241,39 @@ esp_err_t hvac_controller_load_settings(void)
     hvac_settings_t settings;
     size_t size = sizeof(settings);
     ret = nvs_get_blob(nvs_handle, NVS_KEY_SETTINGS, &settings, &size);
-    
+
     nvs_close(nvs_handle);
-    
+
     if (ret == ESP_OK && size == sizeof(settings)) {
-        if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            hvac_state.target_temp_c = settings.target_temp_c;
-            hvac_state.temp_unit = settings.temp_unit;
-            hvac_state.mode = settings.mode;
-            hvac_state.fan_level = settings.fan_level;
-            hvac_state.ac_enabled = settings.ac_enabled;
-            hvac_state.recirculate = settings.recirculate;
-            xSemaphoreGive(state_mutex);
+        if (settings.mode >= HVAC_MODE_MAX || settings.fan_level >= HVAC_FAN_MAX ||
+            settings.temp_unit > TEMP_UNIT_FAHRENHEIT || !(settings.target_temp_c >= TEMP_MIN_C) ||
+            !(settings.target_temp_c <= TEMP_MAX_C)) {
+            ESP_LOGW(TAG, "Saved settings out of range, using defaults");
+            return ESP_ERR_INVALID_STATE;
         }
+        // Applied by hvac_controller_restore_settings() through the setters
+        saved_settings = settings;
+        have_saved_settings = true;
         ESP_LOGI(TAG, "Settings loaded: mode=%s, fan=%s, target=%.1f°C",
                  mode_names[settings.mode], fan_level_names[settings.fan_level], settings.target_temp_c);
     }
-    
+
     return ret;
+}
+
+void hvac_controller_restore_settings(void)
+{
+    if (have_saved_settings) {
+        hvac_controller_set_target_temp(saved_settings.target_temp_c);
+        hvac_controller_set_temp_unit(saved_settings.temp_unit);
+        hvac_controller_set_ac(saved_settings.ac_enabled);
+        hvac_controller_set_recirculate(saved_settings.recirculate);
+        hvac_controller_set_mode(saved_settings.mode);
+        hvac_controller_set_fan_level(saved_settings.fan_level);
+    } else {
+        hvac_controller_set_mode(HVAC_MODE_AUTO);
+    }
+    settings_dirty_ms = 0;  // what we just applied is what NVS holds
 }
 
 const char* hvac_controller_get_mode_name(hvac_mode_t mode)

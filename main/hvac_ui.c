@@ -673,7 +673,8 @@ esp_err_t hvac_ui_init(void)
 
 void hvac_ui_update(void)
 {
-    static hvac_state_t last_state = {0};
+    // Impossible values so the first update draws mode and fan whatever was restored
+    static hvac_state_t last_state = { .mode = HVAC_MODE_MAX, .fan_level = HVAC_FAN_MAX };
     hvac_state_t state;
     
     hvac_controller_get_state(&state);

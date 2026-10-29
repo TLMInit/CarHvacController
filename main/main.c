@@ -421,8 +421,8 @@ void app_main(void)
         xSemaphoreGiveRecursive(lvgl_mutex);
     }
     
-    // Set initial mode to AUTO (UI shows AUTO selected, so match it)
-    hvac_controller_set_mode(HVAC_MODE_AUTO);
+    // Restore the saved mode, fan and setpoint (AUTO when nothing is saved)
+    hvac_controller_restore_settings();
     
     // Turn on backlight AFTER display and UI are ready (prevents flash)
     ESP_LOGI(TAG, "Turning on display backlight...");
