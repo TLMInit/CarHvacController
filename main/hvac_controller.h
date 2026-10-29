@@ -113,8 +113,9 @@ void hvac_controller_deinit(void);
 /**
  * @brief Get current HVAC state
  * @param state Pointer to state structure
+ * @return false if the controller held the state for 100 ms (state left untouched)
  */
-void hvac_controller_get_state(hvac_state_t *state);
+bool hvac_controller_get_state(hvac_state_t *state);
 
 /** * @brief Get thermal adaptation status
  * 

@@ -94,6 +94,7 @@ static lv_obj_t *msg_box = NULL;
 // Fault tracking
 static bool last_sensor_fault = false;
 static bool last_valve_fault = false;
+static uint32_t ui_busy_count = 0;      // Updates skipped because the controller held its state
 
 /*******************************************************************************
  * Private Functions - Event Handlers
@@ -676,8 +677,20 @@ void hvac_ui_update(void)
     // Impossible values so the first update draws mode and fan whatever was restored
     static hvac_state_t last_state = { .mode = HVAC_MODE_MAX, .fan_level = HVAC_FAN_MAX };
     hvac_state_t state;
-    
-    hvac_controller_get_state(&state);
+
+    if (!hvac_controller_get_state(&state)) {
+        // The controller holds its state while it talks to the node; drawing an
+        // unfilled struct showed all zeros for a moment. Keep the last picture.
+        static uint32_t last_log_ms = 0;
+        uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        ui_busy_count++;
+        if (now_ms - last_log_ms >= 1000) {
+            last_log_ms = now_ms;
+            ESP_LOGW(TAG, "Controller busy for 100 ms: kept last screen (%lu times since boot)",
+                     (unsigned long)ui_busy_count);
+        }
+        return;
+    }
     
     char buf[128];
     

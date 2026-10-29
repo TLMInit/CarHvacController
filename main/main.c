@@ -460,17 +460,17 @@ void app_main(void)
             last_print = now;
             
             hvac_state_t state;
-            hvac_controller_get_state(&state);
-            
-            ESP_LOGI(TAG, "Status: Mode=%s, Fan=%s, Target=%.1f°C, Cabin=%.1f°C (%.0f%%RH)",
-                     hvac_controller_get_mode_name(state.mode),
-                     hvac_controller_get_fan_level_name(state.fan_level),
-                     state.target_temp_c,
-                     state.cabin_temp_c,
-                     state.cabin_humidity);
-            
-            if (!isnan(state.duct_temp_c)) {
-                ESP_LOGI(TAG, "Duct: %.1f°C", state.duct_temp_c);
+            if (hvac_controller_get_state(&state)) {   // skipped this time if the controller is busy
+                ESP_LOGI(TAG, "Status: Mode=%s, Fan=%s, Target=%.1f°C, Cabin=%.1f°C (%.0f%%RH)",
+                         hvac_controller_get_mode_name(state.mode),
+                         hvac_controller_get_fan_level_name(state.fan_level),
+                         state.target_temp_c,
+                         state.cabin_temp_c,
+                         state.cabin_humidity);
+
+                if (!isnan(state.duct_temp_c)) {
+                    ESP_LOGI(TAG, "Duct: %.1f°C", state.duct_temp_c);
+                }
             }
         }
         

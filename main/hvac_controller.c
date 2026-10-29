@@ -835,16 +835,18 @@ void hvac_controller_deinit(void)
     }
 }
 
-void hvac_controller_get_state(hvac_state_t *state)
+bool hvac_controller_get_state(hvac_state_t *state)
 {
     if (state == NULL) {
-        return;
+        return false;
     }
-    
+
     if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         memcpy(state, &hvac_state, sizeof(hvac_state_t));
         xSemaphoreGive(state_mutex);
+        return true;
     }
+    return false;
 }
 
 esp_err_t hvac_controller_set_mode(hvac_mode_t mode)
