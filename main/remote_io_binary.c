@@ -42,7 +42,6 @@ static const char *TAG = "REMOTE_IO";
 #define UART_TX_BUF_SIZE        256     // UART TX buffer
 #define UART_EVENT_QUEUE_SIZE   16      // UART event queue depth
 #define CMD_TIMEOUT_MS          200     // Response timeout (ADS needs ~5-10ms)
-#define DS18B20_TIMEOUT_MS      1000    // Longer timeout for temperature conversion
 #define FRAME_TIMEOUT_MS        20      // Timeout to reset frame receiver state
 #define LINK_LOCK_TIMEOUT_MS    1000    // Max wait for another task's command to finish
 
@@ -315,7 +314,7 @@ esp_err_t remote_io_init(int uart_num, int tx_pin, int rx_pin, int baud_rate)
     return ESP_OK;
 }
 
-bool remote_io_ping(void)
+static bool remote_io_ping(void)
 {
     uint8_t resp_type;
     esp_err_t ret = send_command_binary(MSG_PING, MSG_PONG, NULL, 0, &resp_type, NULL, NULL, CMD_TIMEOUT_MS);
@@ -659,20 +658,6 @@ esp_err_t remote_io_wait_ready(int timeout_ms)
     return ESP_ERR_TIMEOUT;
 }
 
-void remote_io_flush(void)
-{
-    if (!s_initialized) return;
-    
-    // Flush is handled internally by the IO task before each command
-    // No direct UART access needed from other cores
-    ESP_LOGD(TAG, "Flush requested (handled by IO task)");
-}
-
-esp_err_t remote_io_reset(void)
-{
-    return send_command_binary(MSG_RESET, MSG_OK, NULL, 0, NULL, NULL, NULL, CMD_TIMEOUT_MS);
-}
-
 void remote_io_get_stats(uint32_t *tx_frames, uint32_t *rx_frames,
                          uint32_t *crc_errors, uint32_t *timeouts)
 {
@@ -680,11 +665,6 @@ void remote_io_get_stats(uint32_t *tx_frames, uint32_t *rx_frames,
     if (rx_frames) *rx_frames = s_rx_frames;
     if (crc_errors) *crc_errors = s_crc_errors;
     if (timeouts) *timeouts = s_timeouts;
-}
-
-bool remote_io_is_initialized(void)
-{
-    return s_initialized;
 }
 
 bool remote_io_is_connected(void)
@@ -696,26 +676,6 @@ bool remote_io_is_connected(void)
 esp_err_t remote_io_reset_node(void)
 {
     return send_command_binary(MSG_RESET, MSG_OK, NULL, 0, NULL, NULL, NULL, CMD_TIMEOUT_MS);
-}
-
-esp_err_t remote_io_stop_all_pwm(void)
-{
-    // Stop PWM by setting all potential channels to 0
-    // This is a safety function after controller reset
-    // Could be enhanced with a bulk STOP_ALL message
-    return ESP_OK;  // No-op for now
-}
-
-esp_err_t remote_io_reinit(void)
-{
-    // Re-initialize communication state
-    // Flush is now handled internally by IO task
-    if (!s_initialized) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    
-    ESP_LOGI(TAG, "Reinit requested");
-    return ESP_OK;
 }
 
 #endif // USE_REMOTE_IO

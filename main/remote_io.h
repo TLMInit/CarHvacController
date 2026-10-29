@@ -35,17 +35,6 @@ esp_err_t remote_io_init(int uart_num, int tx_pin, int rx_pin, int baud_rate);
  */
 esp_err_t remote_io_wait_ready(int timeout_ms);
 
-/**
- * @brief Flush UART buffers and clear IO Node command state
- */
-void remote_io_flush(void);
-
-/**
- * @brief Reinitialize UART driver completely
- * @return ESP_OK on success
- */
-esp_err_t remote_io_reinit(void);
-
 /** True when a CRC-valid response has arrived within the last 3 seconds. */
 bool remote_io_is_connected(void);
 
@@ -206,12 +195,6 @@ esp_err_t remote_ads1115_read(int bus_num, uint8_t i2c_addr, uint8_t channel, in
  * This will restart the IO Node entirely
  */
 esp_err_t remote_io_reset_node(void);
-
-/**
- * @brief Stop all PWM outputs on IO Node
- * Used to ensure clean state after Controller reset
- */
-esp_err_t remote_io_stop_all_pwm(void);
 
 /**
  * @brief Ask the node for its VERSION string (version, uptime, reset reason).
