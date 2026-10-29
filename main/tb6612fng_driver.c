@@ -156,6 +156,7 @@ static volatile bool valve_feedback_fault[HVAC_VALVE_MAX] = {false}; // Position
 static uint32_t valve_move_start_ms[HVAC_VALVE_MAX];        // Start of the current move in one direction
 static uint8_t valve_stall_count[HVAC_VALVE_MAX];           // Stalls since the last successful arrival
 static uint32_t valve_retry_at_ms[HVAC_VALVE_MAX];          // When a stalled valve may retry (0 = latched)
+static bool valve_stop_requested[HVAC_VALVE_MAX];           // Set by tb6612fng_stop_valve(), applied by the valve task
 
 // Per-valve calibration state (for background calibration)
 typedef enum {
@@ -428,16 +429,18 @@ void tb6612fng_stop_valve(hvac_valve_id_t valve_id)
         return;
     }
     
-    const motor_config_t *config = &motor_configs[valve_id];
-    set_motor_direction(valve_id, config, TB6612_DIR_BRAKE, valve_states[valve_id].position);
-    set_motor_speed(config, 0);
-    
-    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        valve_states[valve_id].is_moving = false;
+    // Only the valve task writes motor outputs; it brakes this valve on its next pass.
+    // Sending here as well let its own commands interleave with ours on the link.
+    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
         valve_states[valve_id].stalled = false;
         valve_states[valve_id].target_position = valve_states[valve_id].position;
         valve_states[valve_id].last_motion_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        valve_stall_count[valve_id] = 0;
+        valve_retry_at_ms[valve_id] = 0;
+        valve_stop_requested[valve_id] = true;
         xSemaphoreGive(valve_mutex);
+    } else {
+        ESP_LOGE(TAG, "V%d: stop request FAILED - mutex timeout", valve_id);
     }
 }
 
@@ -476,13 +479,26 @@ void tb6612fng_valve_task(void *pvParameters)
                     continue;
                 }
                 
+                valve_state_t *state = &valve_states[i];
+                const motor_config_t *config = &motor_configs[i];
+
+                // Stop requested (e.g. mode OFF): brake now; a running calibration is abandoned
+                if (valve_stop_requested[i]) {
+                    valve_stop_requested[i] = false;
+                    set_motor_direction((hvac_valve_id_t)i, config, TB6612_DIR_BRAKE, state->position);
+                    set_motor_speed(config, 0);
+                    state->is_moving = false;
+                    if (valve_calibrating[i]) {
+                        ESP_LOGW(TAG, "V%d: Calibration aborted - stop requested", i);
+                        valve_calib_progress[i].state = CALIB_STATE_FAILED;
+                    }
+                    continue;
+                }
+
                 // Skip this valve if it's currently calibrating
                 if (valve_calibrating[i]) {
                     continue;
                 }
-
-                valve_state_t *state = &valve_states[i];
-                const motor_config_t *config = &motor_configs[i];
 
                 // No trustworthy position: stop and hold until reads succeed again
                 if (valve_feedback_fault[i]) {
