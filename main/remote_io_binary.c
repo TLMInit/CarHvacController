@@ -592,7 +592,9 @@ esp_err_t remote_io_poll_node(void)
     uint32_t uptime = up ? (uint32_t)strtoul(up + 4, NULL, 10) : 0;
 
     if (!s_node_seen) {
-        ESP_LOGI(TAG, "IO node: %s", text);
+        // Each display boot resets the node (S-04), so up=0 rst=SW here is expected;
+        // restarts are counted only after this first contact
+        ESP_LOGI(TAG, "IO node (first contact since display boot): %s", text);
     } else if (up && uptime < s_node_uptime_s) {
         s_node_resets++;
         ESP_LOGW(TAG, "IO NODE RESTARTED: uptime %lu s -> %lu s, reset reason %s (%lu since boot)",
@@ -617,19 +619,21 @@ void remote_io_get_node_info(const char **version, uint32_t *uptime_s, uint32_t 
 
 esp_err_t remote_io_wait_ready(int timeout_ms)
 {
-    // Ping the IO Node until it responds
-    int elapsed = 0;
+    // Ping the IO Node until it responds. The bound is wall time: a failed ping
+    // itself takes ~204 ms, so counting 100 ms per attempt made "3000" about 9 s.
+    uint32_t start_ms = get_time_ms();
     int attempts = 0;
-    while (elapsed < timeout_ms) {
+    do {
         attempts++;
         if (remote_io_ping()) {
-            ESP_LOGI(TAG, "IO Node responded after %d attempts (%d ms)", attempts, elapsed);
+            ESP_LOGI(TAG, "IO Node responded after %d attempts (%lu ms)", attempts,
+                     (unsigned long)(get_time_ms() - start_ms));
             return ESP_OK;
         }
         vTaskDelay(pdMS_TO_TICKS(100));
-        elapsed += 100;
-    }
-    ESP_LOGW(TAG, "IO Node not responding after %d attempts", attempts);
+    } while (get_time_ms() - start_ms < (uint32_t)timeout_ms);
+    ESP_LOGW(TAG, "IO Node not responding after %d attempts (%lu ms)", attempts,
+             (unsigned long)(get_time_ms() - start_ms));
     return ESP_ERR_TIMEOUT;
 }
 
