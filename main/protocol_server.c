@@ -94,11 +94,13 @@ static const char *reset_reason_name(void)
     }
 }
 
-/* Map an esp_err_t from a hardware call onto the protocol's error codes. */
-static cobs_error_t map_err(esp_err_t err, cobs_error_t fallback)
+/* Map an esp_err_t from a hardware call onto the protocol's error codes.
+ * invalid_arg: what ESP_ERR_INVALID_ARG means for this command (a pin for GPIO/PWM,
+ * an argument for I2C, ADS and 1-Wire). */
+static cobs_error_t map_err(esp_err_t err, cobs_error_t fallback, cobs_error_t invalid_arg)
 {
     switch (err) {
-    case ESP_ERR_INVALID_ARG:   return ERR_INVALID_PIN;
+    case ESP_ERR_INVALID_ARG:   return invalid_arg;
     case ESP_ERR_INVALID_SIZE:  return ERR_INVALID_ARGS;
     case ESP_ERR_TIMEOUT:       return ERR_TIMEOUT;
     case ESP_ERR_NOT_FOUND:     return ERR_TIMEOUT;        /* no DS18B20 presence pulse */
@@ -138,14 +140,14 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
     case MSG_GPIO_MODE:
         if (len != 2) { send_error(ERR_INVALID_ARGS); return; }
         err = io_gpio_mode(p[0], p[1]);
-        if (err != ESP_OK) { send_error(map_err(err, ERR_INVALID_ARGS)); return; }
+        if (err != ESP_OK) { send_error(map_err(err, ERR_INVALID_ARGS, ERR_INVALID_PIN)); return; }
         send_ok();
         return;
 
     case MSG_GPIO_SET:
         if (len != 2) { send_error(ERR_INVALID_ARGS); return; }
         err = io_gpio_set(p[0], p[1]);
-        if (err != ESP_OK) { send_error(map_err(err, ERR_INVALID_ARGS)); return; }
+        if (err != ESP_OK) { send_error(map_err(err, ERR_INVALID_ARGS, ERR_INVALID_PIN)); return; }
         send_ok();
         return;
 
@@ -153,7 +155,7 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
         if (len != 1) { send_error(ERR_INVALID_ARGS); return; }
         int level = 0;
         err = io_gpio_get(p[0], &level);
-        if (err != ESP_OK) { send_error(map_err(err, ERR_INVALID_ARGS)); return; }
+        if (err != ESP_OK) { send_error(map_err(err, ERR_INVALID_ARGS, ERR_INVALID_PIN)); return; }
         uint8_t resp[2] = { p[0], (uint8_t)level };
         send_frame(MSG_GPIO_VALUE, resp, 2);
         return;
@@ -162,14 +164,14 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
     case MSG_PWM_INIT:
         if (len != 2) { send_error(ERR_INVALID_ARGS); return; }
         err = io_pwm_init(p[0], p[1]);
-        if (err != ESP_OK) { send_error(map_err(err, ERR_INVALID_ARGS)); return; }
+        if (err != ESP_OK) { send_error(map_err(err, ERR_INVALID_ARGS, ERR_INVALID_PIN)); return; }
         send_ok();
         return;
 
     case MSG_PWM_SET:
         if (len != 2) { send_error(ERR_INVALID_ARGS); return; }
         err = io_pwm_set(p[0], p[1]);
-        if (err != ESP_OK) { send_error(map_err(err, ERR_INVALID_ARGS)); return; }
+        if (err != ESP_OK) { send_error(map_err(err, ERR_INVALID_ARGS, ERR_INVALID_PIN)); return; }
         send_ok();
         return;
 
@@ -177,7 +179,7 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
         /* addr, reg, len, data[len] */
         if (len < 3 || len != (size_t)3 + p[2]) { send_error(ERR_INVALID_ARGS); return; }
         err = io_i2c_write(p[0], p[1], &p[3], p[2]);
-        if (err != ESP_OK) { send_error(map_err(err, ERR_I2C_FAIL)); return; }
+        if (err != ESP_OK) { send_error(map_err(err, ERR_I2C_FAIL, ERR_INVALID_ARGS)); return; }
         send_ok();
         return;
     }
@@ -190,7 +192,7 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
         if (n == 0 || n > 58) { send_error(ERR_INVALID_ARGS); return; }
         uint8_t resp[COBS_MAX_PAYLOAD_SIZE];
         err = io_i2c_read(p[0], p[1], &resp[1], n);
-        if (err != ESP_OK) { send_error(map_err(err, ERR_I2C_FAIL)); return; }
+        if (err != ESP_OK) { send_error(map_err(err, ERR_I2C_FAIL, ERR_INVALID_ARGS)); return; }
         resp[0] = n;
         send_frame(MSG_I2C_DATA, resp, (size_t)n + 1);
         return;
@@ -201,7 +203,7 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
         if (len != 2) { send_error(ERR_INVALID_ARGS); return; }
         int16_t value = 0;
         err = io_ads1115_read(p[0], p[1], &value);
-        if (err != ESP_OK) { send_error(map_err(err, ERR_I2C_FAIL)); return; }
+        if (err != ESP_OK) { send_error(map_err(err, ERR_I2C_FAIL, ERR_INVALID_ARGS)); return; }
         uint8_t resp[3] = { p[1], (uint8_t)((uint16_t)value >> 8), (uint8_t)((uint16_t)value & 0xFF) };
         send_frame(MSG_ADS_VALUE, resp, 3);
         return;
@@ -210,7 +212,7 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
     case MSG_DS18B20_START:
         if (len != 0 && len != 8) { send_error(ERR_INVALID_ARGS); return; }
         err = io_ds18b20_start(len == 8 ? p : NULL);
-        if (err != ESP_OK) { send_error(map_err(err, ERR_TIMEOUT)); return; }
+        if (err != ESP_OK) { send_error(map_err(err, ERR_TIMEOUT, ERR_INVALID_ARGS)); return; }
         send_ok();
         return;
 
@@ -218,7 +220,7 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
         if (len != 0 && len != 8) { send_error(ERR_INVALID_ARGS); return; }
         int16_t t = 0;
         err = io_ds18b20_read(len == 8 ? p : NULL, &t);
-        if (err != ESP_OK) { send_error(map_err(err, ERR_TIMEOUT)); return; }
+        if (err != ESP_OK) { send_error(map_err(err, ERR_TIMEOUT, ERR_INVALID_ARGS)); return; }
         uint8_t resp[2] = { (uint8_t)((uint16_t)t >> 8), (uint8_t)((uint16_t)t & 0xFF) };
         send_frame(MSG_TEMP_VALUE, resp, 2);
         return;
