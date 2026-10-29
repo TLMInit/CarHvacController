@@ -47,6 +47,11 @@ static const char *TAG = "HVAC_CTRL";
 // A/C compressor control constants
 #define AC_HUMIDITY_THRESHOLD   65.0f       // Auto A/C when humidity > this (%)
 #define AC_DEFOG_HUMIDITY       55.0f       // Target humidity when defogging
+#define AC_HUMIDITY_OFF         58.0f       // Auto A/C releases below this (hysteresis)
+#define AC_MIN_OFF_MS           10000       // Clutch stays off at least this long
+#define AC_MIN_ON_MS            30000       // Clutch stays on at least this long (unless interlocked)
+#define AC_FREEZE_CUTOUT_C      3.0f        // Duct below this with coolant closed: clutch off
+#define AC_FREEZE_CUTIN_C       6.0f        // ...until duct is back above this
 
 // Cold-start warmup constants (AUTO mode initial defrost phase)
 #define WARMUP_COLD_CABIN_THRESHOLD  15.0f  // Below this temp = cold start (°C)
@@ -137,6 +142,7 @@ static const char* fan_level_names[] = {
  * @param on true to turn on compressor, false to turn off
  */
 static bool ac_relay_on = false;    // Relay level last acknowledged by the node
+static uint32_t ac_changed_ms = 0;  // When the relay last changed (minimum on/off times)
 
 static int ac_relay_level(bool on)
 {
@@ -163,6 +169,7 @@ static void set_ac_compressor(bool on)
 #endif
     
     ac_relay_on = on;
+    ac_changed_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     hvac_state.ac_compressor_on = on;
     ESP_LOGI(TAG, "A/C compressor %s", on ? "ON" : "OFF");
 }
@@ -680,26 +687,65 @@ compressor:
         want_valve(HVAC_VALVE_COOLANT, 100);
     }
     
-    // Auto mode: Run A/C when humidity is high (proactive defogging)
-    if (hvac_state.mode == HVAC_MODE_AUTO && 
-        !isnan(hvac_state.cabin_humidity) && 
-        hvac_state.cabin_humidity > AC_HUMIDITY_THRESHOLD) {
+    // Auto mode: Run A/C when humidity is high (proactive defogging), with hysteresis
+    static bool humidity_high = false;
+    if (isnan(hvac_state.cabin_humidity) || hvac_state.cabin_humidity < AC_HUMIDITY_OFF) {
+        humidity_high = false;
+    } else if (hvac_state.cabin_humidity > AC_HUMIDITY_THRESHOLD) {
+        humidity_high = true;
+    }
+    if (hvac_state.mode == HVAC_MODE_AUTO && humidity_high) {
         should_run_ac = true;
         ac_reason = "High humidity";
     }
-    
+
     // User-enabled A/C: Run if user toggled A/C on (for cooling or manual dehumidification)
     if (hvac_state.ac_enabled && hvac_state.mode != HVAC_MODE_OFF) {
         should_run_ac = true;
         ac_reason = "User request";
     }
-    
-    // Don't run A/C if system is OFF
+
+    // Interlocks: override every request immediately, regardless of the minimum on-time
+    bool interlock = false;
     if (hvac_state.mode == HVAC_MODE_OFF) {
-        should_run_ac = false;
+        interlock = true;
         ac_reason = "System OFF";
+    } else if (bts7960_get_speed() < BTS7960_FAN_PERCENT_LOW) {
+        // No airflow over the evaporator: it ices up
+        interlock = true;
+        ac_reason = "Interlock: blower below LOW";
+    } else {
+        // Crude freeze protection: duct air near 0 C while the heater adds no heat
+        static bool freeze_lock = false;
+        int16_t coolant_target = cycle_targets[HVAC_VALVE_COOLANT] >= 0
+                                 ? cycle_targets[HVAC_VALVE_COOLANT]
+                                 : tb6612fng_get_valve_target(HVAC_VALVE_COOLANT);
+        if (!isnan(hvac_state.duct_temp_c)) {
+            if (hvac_state.duct_temp_c < AC_FREEZE_CUTOUT_C && coolant_target <= 5) {
+                freeze_lock = true;
+            } else if (hvac_state.duct_temp_c > AC_FREEZE_CUTIN_C) {
+                freeze_lock = false;
+            }
+        }
+        if (freeze_lock) {
+            interlock = true;
+            ac_reason = "Interlock: duct below 3 C (freeze)";
+        }
     }
-    
+    if (interlock) {
+        should_run_ac = false;
+    } else {
+        // Clutch cycle limits: no restart within 10 s of stopping, no stop within 30 s of starting
+        uint32_t since_change = xTaskGetTickCount() * portTICK_PERIOD_MS - ac_changed_ms;
+        if (should_run_ac && !ac_relay_on && since_change < AC_MIN_OFF_MS) {
+            should_run_ac = false;
+            ac_reason = "Minimum off-time";
+        } else if (!should_run_ac && ac_relay_on && since_change < AC_MIN_ON_MS) {
+            should_run_ac = true;
+            ac_reason = "Minimum on-time";
+        }
+    }
+
     // Log A/C request change with reason
     static bool last_ac_request = false;
     if (should_run_ac != last_ac_request) {
