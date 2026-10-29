@@ -58,11 +58,14 @@
 #define NODE_DEFAULT_PWM_KHZ    20      /* used when PWM_SET arrives for a pin that never saw PWM_INIT */
 
 /* ---- GPIO numbers the link may touch -------------------------------------
- * Everything else is refused with ERR_INVALID_PIN: strapping pins (0, 3, 45, 46),
- * USB (19, 20), flash/PSRAM (26-37), console (43, 44), the link itself (2, 21)
- * and the pins owned by I2C and 1-Wire (7, 8, 9).
+ * Exactly the carrier's outputs: the boot output pins and the boot PWM pins above.
+ * Everything else is refused with ERR_INVALID_PIN, including strapping pins
+ * (0, 3, 45, 46), USB (19, 20), flash/PSRAM (26-37), console (43, 44), the link
+ * itself (2, 21), the I2C and 1-Wire pins (7, 8, 9) and unused pins (1, 10, 11).
+ * On the DevKitC-1 the RGB LED data line is GPIO48 (v1.0) or GPIO38 (v1.1):
+ * check the board revision before reading anything into LED flicker.
  */
-#define NODE_ALLOWED_PINS       { 1, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17, 18, \
+#define NODE_ALLOWED_PINS       { 4, 5, 6, 12, 13, 14, 15, 16, 17, 18, \
                                   38, 39, 40, 41, 42, 47, 48 }
 
 #endif /* NODE_CONFIG_H */
