@@ -43,3 +43,6 @@ __pycache__/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# IO node firmware is its own repository
+/CarHvacIoNode/
