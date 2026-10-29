@@ -49,7 +49,7 @@ static const char *TAG = "HVAC_CTRL";
 #define AC_DEFOG_HUMIDITY       55.0f       // Target humidity when defogging
 #define AC_HUMIDITY_OFF         58.0f       // Auto A/C releases below this (hysteresis)
 #define AC_MIN_OFF_MS           10000       // Clutch stays off at least this long
-#define AC_MIN_ON_MS            30000       // Clutch stays on at least this long (unless interlocked)
+#define AC_MIN_ON_MS            30000       // Humidity-only clutch stays on at least this long
 #define AC_FREEZE_CUTOUT_C      3.0f        // Duct below this with coolant closed: clutch off
 #define AC_FREEZE_CUTIN_C       6.0f        // ...until duct is back above this
 
@@ -709,16 +709,20 @@ compressor:
     } else if (hvac_state.cabin_humidity > AC_HUMIDITY_THRESHOLD) {
         humidity_high = true;
     }
-    if (hvac_state.mode == HVAC_MODE_AUTO && humidity_high) {
+    bool humidity_request = (hvac_state.mode == HVAC_MODE_AUTO && humidity_high);
+    if (humidity_request) {
         should_run_ac = true;
         ac_reason = "High humidity";
     }
 
     // User-enabled A/C: Run if user toggled A/C on (for cooling or manual dehumidification)
-    if (hvac_state.ac_enabled && hvac_state.mode != HVAC_MODE_OFF) {
+    bool user_request = (hvac_state.ac_enabled && hvac_state.mode != HVAC_MODE_OFF);
+    if (user_request) {
         should_run_ac = true;
         ac_reason = "User request";
     }
+    bool other_request = user_request || is_defrost_mode ||
+                         (hvac_state.mode == HVAC_MODE_AUTO && warmup_state.active);
 
     // Interlocks: override every request immediately, regardless of the minimum on-time
     bool interlock = false;
@@ -747,19 +751,23 @@ compressor:
             ac_reason = "Interlock: duct below 3 C (freeze)";
         }
     }
+    // The minimum on-time is only for the humidity rule, the one request that comes and
+    // goes by itself; a user A/C-off, a mode change or an interlock drops the clutch at once.
+    static bool on_for_humidity_only = false;
     if (interlock) {
         should_run_ac = false;
     } else {
-        // Clutch cycle limits: no restart within 10 s of stopping, no stop within 30 s of starting
+        // Clutch cycle limits: no restart within 10 s of stopping, no humidity stop within 30 s of starting
         uint32_t since_change = xTaskGetTickCount() * portTICK_PERIOD_MS - ac_changed_ms;
         if (should_run_ac && !ac_relay_on && since_change < AC_MIN_OFF_MS) {
             should_run_ac = false;
             ac_reason = "Minimum off-time";
-        } else if (!should_run_ac && ac_relay_on && since_change < AC_MIN_ON_MS) {
+        } else if (!should_run_ac && ac_relay_on && on_for_humidity_only && since_change < AC_MIN_ON_MS) {
             should_run_ac = true;
-            ac_reason = "Minimum on-time";
+            ac_reason = "Minimum on-time (humidity)";
         }
     }
+    on_for_humidity_only = should_run_ac && !other_request && (humidity_request || on_for_humidity_only);
 
     // Log A/C request change with reason
     static bool last_ac_request = false;
