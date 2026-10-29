@@ -103,6 +103,33 @@ static uint32_t s_update_calls;
 static uint32_t s_update_total_us;
 static uint32_t s_update_max_us;
 
+/* hvac_controller_get_state() is void and leaves its output untouched if its
+ * state mutex times out. Always seed the destination from this last snapshot
+ * so a timeout cannot turn an uninitialised stack struct into UI state. */
+static hvac_state_t s_last_good_state;
+static bool s_last_good_state_initialized;
+
+static void get_state_cached(hvac_state_t *state)
+{
+    if (!state) return;
+    if (s_last_good_state_initialized) {
+        *state = s_last_good_state;
+    } else {
+        /* Safe display defaults if even the first mutex acquisition times out. */
+        memset(state, 0, sizeof(*state));
+        state->mode = HVAC_MODE_OFF;
+        state->fan_level = HVAC_FAN_AUTO;
+        state->temp_unit = TEMP_UNIT_CELSIUS;
+        state->target_temp_c = NAN;
+        state->cabin_temp_c = NAN;
+        state->cabin_humidity = NAN;
+        state->duct_temp_c = NAN;
+    }
+    hvac_controller_get_state(state);
+    s_last_good_state = *state;
+    s_last_good_state_initialized = true;
+}
+
 static const hvac_valve_id_t s_valves[HVAC_VALVE_MAX] = {
     HVAC_VALVE_CENTER_1, HVAC_VALVE_CENTER_2, HVAC_VALVE_FOOT,
     HVAC_VALVE_WINDSCREEN, HVAC_VALVE_COOLANT
@@ -249,6 +276,9 @@ static void gesture_handler(lv_event_t *e)
     } else if (lv_tabview_get_tab_act(tabview) == 1 && dir == LV_DIR_RIGHT) {
         enter_main();
     }
+    /* A drag/gesture must not release as a click on the object under the finger. */
+    lv_indev_t *indev = lv_indev_get_act();
+    if (indev) lv_indev_wait_release(indev);
     (void)e;
 }
 
@@ -305,7 +335,7 @@ static void open_mode_picker(lv_event_t *e)
     }
     /* Cancel occupies the eighth 72x48 cell, preserving the minimum target. */
     (void)make_button(modal, "CANCEL", 244, 84, 72, 48,
-                      &lv_font_montserrat_14, cancel_modal_handler,
+                      &lv_font_montserrat_16, cancel_modal_handler,
                       UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
 }
 
@@ -332,7 +362,7 @@ static void ac_handler(lv_event_t *e)
 {
     hvac_state_t state;
     (void)e;
-    hvac_controller_get_state(&state);
+    get_state_cached(&state);
     hvac_controller_set_ac(!state.ac_enabled);
 }
 
@@ -340,7 +370,7 @@ static void recirc_handler(lv_event_t *e)
 {
     hvac_state_t state;
     (void)e;
-    hvac_controller_get_state(&state);
+    get_state_cached(&state);
     hvac_controller_set_recirculate(!state.recirculate);
 }
 
@@ -402,7 +432,7 @@ static void fan_down_handler(lv_event_t *e)
 {
     hvac_state_t state;
     (void)e;
-    hvac_controller_get_state(&state);
+    get_state_cached(&state);
     (void)hvac_controller_set_fan_level((hvac_fan_speed_t)fan_step(state.fan_level, -1));
 }
 
@@ -410,7 +440,7 @@ static void fan_up_handler(lv_event_t *e)
 {
     hvac_state_t state;
     (void)e;
-    hvac_controller_get_state(&state);
+    get_state_cached(&state);
     (void)hvac_controller_set_fan_level((hvac_fan_speed_t)fan_step(state.fan_level, +1));
 }
 
@@ -533,15 +563,18 @@ static void save_cal_handler(lv_event_t *e)
 static void make_main_screen(void)
 {
     static const struct { const char *text; lv_event_cb_t handler; } top[] = {
-        {"MODE", open_mode_picker}, {"AUTO", auto_handler}, {"DEF", def_handler},
+        {"MODE", NULL}, {"AUTO", auto_handler}, {"DEF", def_handler},
         {"A/C\nOFF", ac_handler}, {"RECIRC\nOFF", recirc_handler}
     };
     for (size_t i = 0; i < sizeof(top) / sizeof(top[0]); ++i) {
-        lv_obj_t *btn = make_button(tab_main, top[i].text, 4 + (lv_coord_t)i * 64, 0,
+        /* MODE tap is SHORT_CLICKED-only; a long press goes to diagnostics. */
+        lv_event_cb_t tap_handler = top[i].handler;
+        lv_obj_t *btn = make_button(tab_main, top[i].text, 4 + (lv_coord_t)i * 64, 24,
                                     56, UI_MAIN_TOP_H, &lv_font_montserrat_16,
-                                    top[i].handler, UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
+                                    tap_handler, UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
         if (i == 0) {
             btn_mode = btn;
+            lv_obj_add_event_cb(btn_mode, open_mode_picker, LV_EVENT_SHORT_CLICKED, NULL);
             lv_obj_add_event_cb(btn_mode, mode_long_press_handler, LV_EVENT_LONG_PRESSED, NULL);
         } else if (i == 1) btn_auto = btn;
         else if (i == 2) btn_def = btn;
@@ -557,21 +590,23 @@ static void make_main_screen(void)
     lbl_recirc_button.text[0] = '\0';
     label_set(&lbl_recirc_button, "RECIRC\nOFF");
 
-    make_label(tab_main, &lbl_operating, "OFF | READY", 4, 48, 196, UI_MAIN_STATUS_H,
+    make_label(tab_main, &lbl_operating, "OFF | READY", 4, 0, 196, UI_MAIN_STATUS_H,
                &lv_font_montserrat_16, UI_COLOR_TEXT, LV_TEXT_ALIGN_LEFT);
-    make_label(tab_main, &lbl_fault_badge, "", 204, 48, 112, UI_MAIN_STATUS_H,
+    make_label(tab_main, &lbl_fault_badge, "", 204, 0, 112, UI_MAIN_STATUS_H,
                &lv_font_montserrat_16, UI_COLOR_FAULT, LV_TEXT_ALIGN_RIGHT);
 
     btn_temp_down = make_button(tab_main, LV_SYMBOL_MINUS, 4, 72, 64, UI_TEMP_ROW_H,
-                                &lv_font_montserrat_22, temp_down_handler,
+                                &lv_font_montserrat_22, NULL,
                                 UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
     btn_temp_up = make_button(tab_main, LV_SYMBOL_PLUS, 252, 72, 64, UI_TEMP_ROW_H,
-                              &lv_font_montserrat_22, temp_up_handler,
+                              &lv_font_montserrat_22, NULL,
                               UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
+    lv_obj_add_event_cb(btn_temp_down, temp_down_handler, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(btn_temp_up, temp_up_handler, LV_EVENT_SHORT_CLICKED, NULL);
     add_repeat_handler(btn_temp_down, temp_down_handler);
     add_repeat_handler(btn_temp_up, temp_up_handler);
-    make_label(tab_main, &lbl_target_temp, "22.0°C", 76, 90, 168, 40,
-               &lv_font_montserrat_28, UI_COLOR_TEXT, LV_TEXT_ALIGN_CENTER);
+    make_label(tab_main, &lbl_target_temp, "22.0°C", 76, 80, 168, 56,
+               &lv_font_montserrat_44, UI_COLOR_TEXT, LV_TEXT_ALIGN_CENTER);
 
     make_label(tab_main, &lbl_cabin_temp, "CABIN --.-°C", 4, 144, 140, UI_INFO_ROW_H,
                &lv_font_montserrat_16, UI_COLOR_TEXT, LV_TEXT_ALIGN_LEFT);
@@ -581,11 +616,13 @@ static void make_main_screen(void)
                &lv_font_montserrat_16, UI_COLOR_TEXT, LV_TEXT_ALIGN_RIGHT);
 
     btn_fan_down = make_button(tab_main, LV_SYMBOL_MINUS, 4, 192, 56, UI_FAN_ROW_H,
-                               &lv_font_montserrat_22, fan_down_handler,
+                               &lv_font_montserrat_22, NULL,
                                UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
     btn_fan_up = make_button(tab_main, LV_SYMBOL_PLUS, 260, 192, 56, UI_FAN_ROW_H,
-                             &lv_font_montserrat_22, fan_up_handler,
+                             &lv_font_montserrat_22, NULL,
                              UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
+    lv_obj_add_event_cb(btn_fan_down, fan_down_handler, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(btn_fan_up, fan_up_handler, LV_EVENT_SHORT_CLICKED, NULL);
     add_repeat_handler(btn_fan_down, fan_down_handler);
     add_repeat_handler(btn_fan_up, fan_up_handler);
     btn_fan_auto = make_button(tab_main, "FAN AUTO | 0%", 68, 192, 184, UI_FAN_ROW_H,
@@ -799,6 +836,8 @@ esp_err_t hvac_ui_init(void)
 {
     ESP_LOGI(TAG, "Initializing OEM-minimal HVAC UI");
     load_night_mode();
+    hvac_state_t initial_state;
+    get_state_cached(&initial_state);
 
     scr_main = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_main, lv_color_hex(UI_COLOR_BG), 0);
@@ -814,7 +853,7 @@ esp_err_t hvac_ui_init(void)
     lv_obj_set_style_border_width(tabview, 0, 0);
     lv_obj_set_style_pad_all(tabview, 0, 0);
     lv_obj_set_scrollbar_mode(tabview, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_clear_flag(tabview, LV_OBJ_FLAG_SCROLLABLE); /* gesture handler switches pages instantly */
+    lv_obj_clear_flag(tabview, LV_OBJ_FLAG_SCROLLABLE);
     tab_main = lv_tabview_add_tab(tabview, "Main");
     tab_debug = lv_tabview_add_tab(tabview, "Diagnostics");
     for (size_t i = 0; i < 2; ++i) {
@@ -825,6 +864,9 @@ esp_err_t hvac_ui_init(void)
         lv_obj_clear_flag(tab, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(tab, LV_OBJ_FLAG_GESTURE_BUBBLE);
     }
+    /* The tabview's content object owns horizontal scrolling/snapping in LVGL 8.4.
+     * Clear its scrollable flag after tab creation so swipes reach gesture_handler. */
+    lv_obj_clear_flag(lv_tabview_get_content(tabview), LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(tabview, gesture_handler, LV_EVENT_GESTURE, NULL);
 
     make_main_screen();
@@ -840,7 +882,7 @@ esp_err_t hvac_ui_init(void)
              (unsigned long)mem.total_size, (unsigned long)mem.free_size,
              (unsigned)mem.used_pct, (unsigned)mem.frag_pct,
              (unsigned long)mem.free_biggest_size);
-    ESP_LOGI(TAG, "UI ready; font set read from sdkconfig includes Montserrat 28; night=%s",
+    ESP_LOGI(TAG, "UI ready; Montserrat 44 setpoint font enabled; night=%s",
              s_night_mode ? "yes" : "no");
     return ESP_OK;
 }
@@ -849,7 +891,7 @@ void hvac_ui_update(void)
 {
     const uint64_t started_us = esp_timer_get_time();
     hvac_state_t state;
-    hvac_controller_get_state(&state);
+    get_state_cached(&state);
 #if USE_REMOTE_IO
     const bool link_ok = remote_io_is_connected();
 #else

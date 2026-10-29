@@ -32,20 +32,20 @@ The ZIP did not contain its original `.git` directory or upstream commit history
 
 ### Main screen, 320×240
 
-Five top-row targets are **56×48 px**, separated by **8 px**; 4 px remains at each horizontal edge. Main-screen labels use at least 16 px Montserrat. A/C and RECIRC use a two-line label with an explicit `ON`/`OFF` line, so state is not conveyed by colour alone. RECIRC uses tighter letter spacing to fit at 16 px within its fixed-width target.
+The status/fault row is deliberately at the top, above the control row, so the fault badge is not wedged between two rows of buttons. Five control targets are **56×48 px**, separated by **8 px**, with 4 px at each horizontal edge. Main-screen labels use at least 16 px Montserrat. A/C and RECIRC use a two-line label with an explicit `ON`/`OFF` line, so state is not conveyed by colour alone. RECIRC uses tighter letter spacing to fit at 16 px within its fixed-width target.
 
 ```text
 x=0                 160                320
 ┌──────────────────────────────────────────┐ y=0
+│ AUTO | HEATING              [ ! SENSOR ] │ 24 px status/fault row
+├──────────────────────────────────────────┤ y=24
 │[ MODE ] [ AUTO ] [ DEF ]  [A/C]  [RECIRC]│
-│                           ON      OFF    │ 48 px
-├──────────────────────────────────────────┤ y=48
-│ AUTO | HEATING                [ SENSOR ] │ 24 px
+│                           ON      OFF    │ 48 px control row
 ├───────┬────────────────────────┬─────────┤ y=72
 │       │                        │         │
 │ [ − ] │       22.0°C           │  [ + ]  │ 72 px
-│ 64×72 │     Montserrat 28      │ 64×72   │
-│       │                        │         │
+│ 64×72 │    Montserrat 44       │ 64×72   │
+│       │   value + unit together│         │
 ├───────┴────────────────────────┴─────────┤ y=144
 │ CABIN 21.5°C     RH 46%       COMP ON     │ 48 px
 ├───────────┬────────────────────┬─────────┤ y=192
@@ -54,15 +54,15 @@ x=0                 160                320
 └──────────────────────────────────────────┘ y=240
 ```
 
-Illustrative readings only. The active header values come from the controller state. The fault badge occupies the right side of the status row and shows `LINK LOST`, `SENSOR`, `VALVE`, or `FAULT`; the diagnostic explanation gives the full details. It does not rely on colour alone.
+Illustrative readings only. The first row shows the controller-reported operating mode/thermal status on the left and the fault badge on the right (`LINK LOST`, `SENSOR`, `VALVE`, or `FAULT`). Its position gives faults priority and makes the status row visible before the control row. The displayed temperature including `°C`/`°F` stays on one 44 px label, at x=76, y=80, width 168 and height 56.
 
-- **MODE:** tap opens the airflow picker; long-press opens diagnostics. A horizontal swipe left also opens diagnostics. Swipe right on diagnostics returns to Main.
+- **MODE:** a short tap (`LV_EVENT_SHORT_CLICKED`) opens the airflow picker; a long-press opens diagnostics. The long-press cannot also invoke the picker on release. A horizontal swipe left opens diagnostics and swipe right returns to Main; the gesture handler calls `lv_indev_wait_release()` to suppress an accidental click on release.
 - **AUTO:** one tap calls `hvac_controller_set_mode(HVAC_MODE_AUTO)`.
 - **DEF:** one tap calls `hvac_controller_quick_defrost()`; it does not pretend to control a rear-window defroster.
 - **A/C:** the tile renders `A/C` with a second-line `ON`/`OFF` from `ac_enabled`. `COMP ON/OFF` separately reflects `ac_compressor_on`.
 - **RECIRC:** the tile renders `RECIRC` with a second-line `ON`/`OFF` from `recirculate`.
-- **Temperature:** the two 64×72 px controls use 22 px symbols and call `hvac_controller_temp_down/up` on tap and `LV_EVENT_LONG_PRESSED_REPEAT` while held. The central Montserrat 28 setpoint is rendered from `target_temp_c` and `temp_unit` and remains the largest element.
-- **Fan:** 56×48 px `−` / `+` controls support tap and `LV_EVENT_LONG_PRESSED_REPEAT`. They step through Off, Low, Med-Low, Medium, Med-High, High and clamp at both ends. From AUTO, `−` exits to Off and `+` exits to Low. Tapping the 184×48 px level label sets fan AUTO. The label renders the actual `fan_level` and `blower_speed` percentage.
+- **Temperature:** the two 64×72 px controls use 22 px symbols and call `hvac_controller_temp_down/up` on `LV_EVENT_SHORT_CLICKED` and `LV_EVENT_LONG_PRESSED_REPEAT` while held. They do not register the release-time `LV_EVENT_CLICKED`, avoiding an extra step after a held repeat. The central Montserrat 44 setpoint is rendered from `target_temp_c` and `temp_unit`; the number and unit use the same 168×56 px label.
+- **Fan:** 56×48 px `−` / `+` controls run their one-shot action only on `LV_EVENT_SHORT_CLICKED` and also support `LV_EVENT_LONG_PRESSED_REPEAT`; release after a repeat does not add a click step. They step through Off, Low, Med-Low, Medium, Med-High, High and clamp at both ends. From AUTO, `−` exits to Off and `+` exits to Low. Tapping the 184×48 px level label sets fan AUTO. The label renders the actual `fan_level` and `blower_speed` percentage.
 - Every click gets LVGL pressed-state feedback. Checked state is updated on the next controller-state render, not from the requested action.
 
 ### Diagnostics screen
@@ -99,7 +99,7 @@ The `DAY/NIGHT` target is 100×48 px. It switches the backlight through the exis
 
 ### Airflow picker
 
-The mode picker uses a 72×48 px, 8 px-gap, 4-column grid. All seven controller modes are available plus Cancel. Compact labels `F+F` and `D+F` mean Face+Foot and Defrost+Foot. `MODE` remains the one-tap entry point; `AUTO` and `DEF` are direct actions on the main screen.
+The mode picker uses a 72×48 px, 8 px-gap, 4-column grid. All seven controller modes and Cancel use Montserrat 16. Compact labels `F+F` and `D+F` mean Face+Foot and Defrost+Foot. `MODE` remains the one-tap entry point; `AUTO` and `DEF` are direct actions on the main screen.
 
 ```text
 ┌──────────────────────────────────────────┐
@@ -193,7 +193,7 @@ The current controller/sensor state has no sensor-reading timestamp or age field
 | Heating | `#FF9A52` | Reported heating indicator |
 | Cooling | `#65C8F2` | Reported cooling indicator |
 
-Fonts were verified against **`sdkconfig`**, not `sdkconfig.defaults`. Montserrat 12, 14, 16, 18, 20, 22, 24, 26 and 28 are enabled there; Montserrat 28 was already used by the old setpoint. Main-screen text is 16 px minimum and the setpoint is Montserrat 28. No new fonts or glyph assets are enabled by this change, so there is no incremental font-table flash cost expected. `sdkconfig.defaults` is unchanged.
+Fonts were verified against **`sdkconfig`** and then updated in both `sdkconfig` and `sdkconfig.defaults`. The setpoint now uses `lv_font_montserrat_44`; Montserrat 44 is explicitly enabled in both files. Main-screen labels remain at least 16 px. Montserrat 44's generated source contains 78,670 bytes of glyph bitmap literals before glyph descriptors, kerning tables and alignment, so expect roughly **80–90 KiB additional flash** as a source-based estimate. A linker map file is not available in this environment, so this is not an observed flash delta.
 
 Colour is supplementary rather than the sole on/off or fault signal. Normal and checked buttons have different fills/borders, with labels unchanged or displaying explicit status text.
 
@@ -201,10 +201,10 @@ Colour is supplementary rather than the sole on/off or fault signal. Normal and 
 
 - `CONFIG_LV_MEM_SIZE_KILOBYTES=128`; the existing two full-frame buffers remain in PSRAM and `disp_drv.full_refresh = 1` remains untouched.
 - Approximately 60 retained LVGL objects are expected across the two screens and controls, plus modal objects allocated only when opened. The incremental LVGL heap cost is an estimate only; it is not reported as measured.
-- The update path uses persistent per-label buffers and `lv_label_set_text_static()`. It compares text and colour values before touching widgets, and only runs extended diagnostics refresh when the diagnostics tab is active (750 ms interval). The periodic `hvac_ui_update()` path uses fixed stack buffers and no explicit heap allocation.
-- Page changes use `lv_tabview_set_act(..., LV_ANIM_OFF)` and native tabview scrolling is disabled; swipe gestures are converted into an immediate page change to avoid a slide animation on a full-refresh display.
-- `lv_mem_monitor()` logs total/free/used/fragmentation/largest block immediately after UI initialization. `hvac_ui_update()` logs average and maximum function duration over five-second windows.
-- The source archive contains a prior Windows-generated `build/` output, but this environment has no ESP-IDF `idf.py` installation or ESP32-S3 toolchain. A new build and runtime measurements could not be executed here; the code's new log messages are instrumentation, not measured results.
+- The update path uses persistent per-label buffers and `lv_label_set_text_static()`. It compares text and colour values before touching widgets, and only runs extended diagnostics refresh when the diagnostics tab is active (750 ms interval). The periodic `hvac_ui_update()` path uses fixed stack buffers and no explicit heap allocation. All state reads in `hvac_ui.c` use a static last-good `hvac_state_t` snapshot: the local destination is seeded from that snapshot before the void getter, then saved back afterward, so the getter's mutex-timeout path cannot expose uninitialised stack data.
+- Page changes use `lv_tabview_set_act(..., LV_ANIM_OFF)`. Both the tabview and `lv_tabview_get_content(tabview)` have `LV_OBJ_FLAG_SCROLLABLE` cleared; in LVGL 8.4 the content object owns the native horizontal scroll/snap behavior. Swipe gestures are converted into an immediate page change, and `lv_indev_wait_release()` prevents the touch release from activating a button underneath the gesture.
+- `lv_mem_monitor()` logs total/free/used/fragmentation/largest block immediately after UI initialization. `hvac_ui_update()` logs average and maximum function duration over five-second windows. These timings may spike on Diagnostics while the valve task holds `valve_mutex` during valve motion: `tb6612fng_get_valve_target()` can wait up to 100 ms per valve (five serial calls can therefore stall the UI path for as much as 500 ms). This is existing TB6612 driver behavior, not a UI rendering defect; review item L-02 is expected to remove that driver-side blocking.
+- No usable build output or ESP-IDF toolchain is available in this environment: `idf.py build` exits 127 because `idf.py` is not installed and `IDF_PATH` is unset. A new build and runtime measurements could not be executed here; the code's log messages are instrumentation, not measured results.
 
 ## 7. API and integration changes
 
@@ -217,8 +217,10 @@ Colour is supplementary rather than the sole on/off or fault signal. Normal and 
 
 ### Automated/source checks
 
-- [ ] Run `idf.py build` with ESP-IDF 6.1 and the committed `sdkconfig`.
+- [ ] Run `idf.py build` with ESP-IDF 6.1 and the committed `sdkconfig` (not runnable in the current authoring environment: `idf.py`/`IDF_PATH` are unavailable).
 - [ ] Confirm no compiler warnings about missing prototypes, format strings, LVGL API names or event-callback signatures.
+- [ ] Verify that only SHORT_CLICKED invokes MODE/temperature/fan one-shot actions and that `lv_indev_wait_release()` suppresses release clicks after a gesture.
+- [ ] Compare the linker map against the baseline to measure the Montserrat 44 flash delta; 80–90 KiB is only a current source-based estimate.
 - [ ] Read the post-init `lv_mem_monitor` log and record total/free/used/fragmentation/largest block.
 - [ ] Record average/max `hvac_ui_update()` duration after several five-second windows, both on Main and Diagnostics.
 - [ ] Verify changes only touch the value that changed; monitor invalidation/redraw frequency while values are steady.
@@ -236,7 +238,8 @@ Colour is supplementary rather than the sole on/off or fault signal. Normal and 
 - [ ] Link fault: disconnect the remote IO UART/node and verify LINK LOST within the connection freshness window; reconnect and verify recovery.
 - [ ] Valve fault: trigger a known stall and verify the correct bit/name mapping and row highlight.
 - [ ] Calibration safety: tap RESET CAL and cancel; verify no reset occurs. Confirm only on the second explicit action.
-- [ ] Gesture/animation: swipe to Diagnostics and back; verify page changes are instant and no native slide animation occurs.
+- [ ] Gesture/animation: swipe to Diagnostics and back; verify the tabview content does not natively scroll/snap, page changes are instant, and the release does not trigger the button under the finger.
+- [ ] Diagnostic responsiveness: observe the UI while valves move. The current `tb6612fng_get_valve_target()` may block on `valve_mutex` for up to 100 ms per valve; attribute any multi-valve stall to the existing driver path pending driver review L-02, not to LVGL layout changes.
 
 ## 9. Photo list when a compatible PC simulator is unavailable
 

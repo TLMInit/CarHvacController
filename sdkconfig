@@ -4054,7 +4054,7 @@ CONFIG_LV_FONT_MONTSERRAT_28=y
 # default:
 # CONFIG_LV_FONT_MONTSERRAT_42 is not set
 # default:
-# CONFIG_LV_FONT_MONTSERRAT_44 is not set
+CONFIG_LV_FONT_MONTSERRAT_44=y
 # default:
 # CONFIG_LV_FONT_MONTSERRAT_46 is not set
 # default:
