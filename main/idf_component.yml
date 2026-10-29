@@ -1,0 +1,4 @@
+dependencies:
+  idf: ">=5.2"
+  # RMT-based 1-Wire bus for the DS18B20 duct sensor (same component the display repo uses)
+  espressif/onewire_bus: "^1.0.0"
