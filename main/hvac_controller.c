@@ -395,8 +395,31 @@ static void update_valve_positions(hvac_mode_t mode)
     hvac_state.windscreen_valve_pos = windscreen;
 }
 
+// Valve targets decided in this control cycle (-1 = no request). Rules write in order,
+// later ones override earlier ones; the result is applied once at the end of the cycle,
+// so a valve never gets two different targets 100 ms apart.
+static int16_t cycle_targets[HVAC_VALVE_MAX];
+
+static void want_valve(hvac_valve_id_t valve, uint8_t position)
+{
+    cycle_targets[valve] = position;
+}
+
+static void apply_cycle_targets(void)
+{
+    for (int v = 0; v < HVAC_VALVE_MAX; v++) {
+        if (cycle_targets[v] >= 0) {
+            tb6612fng_set_valve_position((hvac_valve_id_t)v, (uint8_t)cycle_targets[v]);
+        }
+    }
+}
+
 static void run_temperature_control(void)
 {
+    for (int v = 0; v < HVAC_VALVE_MAX; v++) {
+        cycle_targets[v] = -1;
+    }
+
     // Get current sensor readings
     hvac_sensor_readings_t readings;
     hvac_sensors_get_all(&readings);
@@ -439,7 +462,7 @@ static void run_temperature_control(void)
         hvac_state.is_cooling = false;
         hvac_state.temp_reached = false;
         warmup_state.active = false;
-        tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, SENSOR_FALLBACK_COOLANT_PCT);
+        want_valve(HVAC_VALVE_COOLANT, SENSOR_FALLBACK_COOLANT_PCT);
         if (hvac_state.fan_level == HVAC_FAN_AUTO) {
             bts7960_set_speed(BTS7960_FAN_PERCENT_AUTO_DEFAULT);
             hvac_state.blower_speed = BTS7960_FAN_PERCENT_AUTO_DEFAULT;
@@ -461,7 +484,7 @@ static void run_temperature_control(void)
         // Calculate coolant valve position using adaptive gain
         float adaptive_gain = thermal_adapt.adaptive_coolant_gain;
         uint8_t valve_pos = (uint8_t)fminf(100.0f, fabsf(error) * adaptive_gain);
-        tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, valve_pos);
+        want_valve(HVAC_VALVE_COOLANT, valve_pos);
         
         if (thermal_adapt.sample_count < 10) {
             ESP_LOGD(TAG, "Heating: error=%.2f°C, gain=%.1f, valve=%d%%, learning=%d samples",
@@ -473,14 +496,14 @@ static void run_temperature_control(void)
         hvac_state.is_cooling = true;
         
         // Close coolant valve for cooling
-        tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, 0);
+        want_valve(HVAC_VALVE_COOLANT, 0);
     } else {
         // Temperature reached
         hvac_state.is_heating = false;
         hvac_state.is_cooling = false;
         
         // Maintain minimal coolant flow
-        tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, 10);
+        want_valve(HVAC_VALVE_COOLANT, 10);
     }
     
     // Update thermal adaptation learning
@@ -568,13 +591,13 @@ static void run_temperature_control(void)
             // Full heat + windscreen focus + A/C for dehumidification
             
             // Full heat output
-            tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, 100);
+            want_valve(HVAC_VALVE_COOLANT, 100);
             
             // Air distribution: prioritize windscreen, some to feet for comfort
-            tb6612fng_set_valve_position(HVAC_VALVE_WINDSCREEN, 100);
-            tb6612fng_set_valve_position(HVAC_VALVE_FOOT, 70);
-            tb6612fng_set_valve_position(HVAC_VALVE_CENTER_1, 30);
-            tb6612fng_set_valve_position(HVAC_VALVE_CENTER_2, 30);
+            want_valve(HVAC_VALVE_WINDSCREEN, 100);
+            want_valve(HVAC_VALVE_FOOT, 70);
+            want_valve(HVAC_VALVE_CENTER_1, 30);
+            want_valve(HVAC_VALVE_CENTER_2, 30);
             
             // Override fan to high speed during warmup (if in AUTO fan mode)
             if (hvac_state.fan_level == HVAC_FAN_AUTO) {
@@ -595,27 +618,27 @@ static void run_temperature_control(void)
             // Adjust air distribution based on conditions
             if (hvac_state.is_heating && hvac_state.cabin_temp_c < 18.0f) {
                 // Cold cabin - more to feet
-                tb6612fng_set_valve_position(HVAC_VALVE_CENTER_1, 30);
-                tb6612fng_set_valve_position(HVAC_VALVE_CENTER_2, 30);
-                tb6612fng_set_valve_position(HVAC_VALVE_FOOT, 100);
-                tb6612fng_set_valve_position(HVAC_VALVE_WINDSCREEN, 30);
+                want_valve(HVAC_VALVE_CENTER_1, 30);
+                want_valve(HVAC_VALVE_CENTER_2, 30);
+                want_valve(HVAC_VALVE_FOOT, 100);
+                want_valve(HVAC_VALVE_WINDSCREEN, 30);
             } else if (hvac_state.is_cooling) {
                 // Cooling - more to face
-                tb6612fng_set_valve_position(HVAC_VALVE_CENTER_1, 100);
-                tb6612fng_set_valve_position(HVAC_VALVE_CENTER_2, 100);
-                tb6612fng_set_valve_position(HVAC_VALVE_FOOT, 30);
-                tb6612fng_set_valve_position(HVAC_VALVE_WINDSCREEN, 0);
+                want_valve(HVAC_VALVE_CENTER_1, 100);
+                want_valve(HVAC_VALVE_CENTER_2, 100);
+                want_valve(HVAC_VALVE_FOOT, 30);
+                want_valve(HVAC_VALVE_WINDSCREEN, 0);
             } else {
                 // Temperature reached - balanced distribution
-                tb6612fng_set_valve_position(HVAC_VALVE_CENTER_1, 50);
-                tb6612fng_set_valve_position(HVAC_VALVE_CENTER_2, 50);
-                tb6612fng_set_valve_position(HVAC_VALVE_FOOT, 50);
-                tb6612fng_set_valve_position(HVAC_VALVE_WINDSCREEN, 0);
+                want_valve(HVAC_VALVE_CENTER_1, 50);
+                want_valve(HVAC_VALVE_CENTER_2, 50);
+                want_valve(HVAC_VALVE_FOOT, 50);
+                want_valve(HVAC_VALVE_WINDSCREEN, 0);
             }
             
             // Auto defrost if high humidity (even after warmup)
             if (hvac_state.cabin_humidity > 70.0f) {
-                tb6612fng_set_valve_position(HVAC_VALVE_WINDSCREEN, 50);
+                want_valve(HVAC_VALVE_WINDSCREEN, 50);
             }
         }
     }
@@ -654,7 +677,7 @@ compressor:
         should_run_ac = true;
         ac_reason = "DEFROST mode";
         // Also ensure coolant valve is fully open for maximum heat during defrost
-        tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, 100);
+        want_valve(HVAC_VALVE_COOLANT, 100);
     }
     
     // Auto mode: Run A/C when humidity is high (proactive defogging)
@@ -691,6 +714,8 @@ compressor:
     
     // Apply A/C compressor state
     set_ac_compressor(should_run_ac);
+
+    apply_cycle_targets();
 }
 
 /*******************************************************************************
