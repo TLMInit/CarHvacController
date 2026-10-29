@@ -1119,8 +1119,15 @@ Console lines are shown as `TAG: text`. "Within N s" counts from the action. Tic
       background calibration` line.
     - [ ] The main screen comes up with the `IO node offline` box. Dismiss it: it returns
       within 30 s.
-    - [ ] Power the node: the box closes within ~3 s. The valves stay uncalibrated until the
-      next display reboot.
+    - [ ] Power the node: the box closes within ~3 s, and `V<n>: position feedback back -
+      control resumes` appears for each valve.
+    - [ ] **No calibration starts**: no `Starting background calibration` or `Rotation
+      complete` line. A node that appears after boot needs a display reboot to calibrate (S-09
+      remainder, Phase 3). Until then the butterfly valves run on the default calibration
+      (centre 50 %, range 0-100 %), as after a failed calibration. Expect coarse positions.
+    - [ ] Reset the display with the node powered: `IO Node connected!`, the boot reset, then
+      `Starting valve auto-calibration...` and `V<n>: Rotation complete` for each butterfly
+      valve.
 13. **Node alone, with `tools/ionode_cli.py` on a PC** (display link cable unplugged).
     - [ ] `version` prints `ionode 2.0 (…) up=<s> rst=POWERON`.
     - [ ] `gpio-set 1 1` → `ERROR invalid pin` (N-09).
