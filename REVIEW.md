@@ -49,7 +49,7 @@ Display hashes are in this repo; node hashes (marked *node*) are in `CarHvacIoNo
 | S-06 | Use-after-free in the link queue | 1 | **done** 957b16a |
 | S-07 | A/C without blower interlock | 1 (via C-01) | **done** via C-01 936b1bc |
 | S-08 | Controller steers on frozen sensor value | 1 | **done** 3b6ca2f |
-| S-09 | Calibration runs blind with node absent | — | partly: calibration now gives up when feedback is lost (b9840e9); re-calibrating when the node appears later is open |
+| S-09 | Calibration runs blind with node absent | 1 | calibration gives up on lost feedback (b9840e9), is skipped when the node never answered at boot (17d2878), UI shows "IO node offline" (30e556d); calibrating when the node appears later is open |
 | S-10 | Two tasks commanding one motor | 1 | **done** 9e2e069 |
 | S-11 | Trailing-zero bug | 2b | held |
 | L-01 | Fixed tick waits per round trip | 2a | authorised |
@@ -1062,7 +1062,10 @@ Console lines are shown as `TAG: text`. "Within N s" counts from the action. Tic
      valve held`, and the same for V1 to V4.
    - [ ] Node, after 3 s: `LINK: No frames for 3000 ms: outputs forced to safe state`;
      the blower stops and the relay drops.
+   - [ ] Display, within 3 s: the box `IO node offline: valves, blower and A/C are not
+     controlled…` appears, with no sensor or valve fault box on top of it.
    - Reconnect the wire.
+   - [ ] The offline box closes by itself.
    - [ ] Display: `Link recovered after N timed-out command(s)` and
      `V0..V4: position feedback back - control resumes`.
    - [ ] Node: `Link restored`.
@@ -1109,7 +1112,16 @@ Console lines are shown as `TAG: text`. "Within N s" counts from the action. Tic
     - Note any `HVAC_UI: Controller busy for 100 ms: kept last screen (n …)` lines, and the
       `UI busy`, `timeout` and `restarts` counts on the debug tab, and send them in. They
       say which mechanism it was.
-12. **Node alone, with `tools/ionode_cli.py` on a PC** (display link cable unplugged).
+12. **Display booting without the node (S-09).** Unplug the node's power and reset the display.
+    - [ ] Display: `IO Node not responding after N attempts (30xx ms)`, then
+      `IO Node not responding, continuing anyway...`. Boot continues within ~3.5 s.
+    - [ ] `IO Node absent at boot: valve calibration SKIPPED …`, and no `V<n>: Starting
+      background calibration` line.
+    - [ ] The main screen comes up with the `IO node offline` box. Dismiss it: it returns
+      within 30 s.
+    - [ ] Power the node: the box closes within ~3 s. The valves stay uncalibrated until the
+      next display reboot.
+13. **Node alone, with `tools/ionode_cli.py` on a PC** (display link cable unplugged).
     - [ ] `version` prints `ionode 2.0 (…) up=<s> rst=POWERON`.
     - [ ] `gpio-set 1 1` → `ERROR invalid pin` (N-09).
     - [ ] `ads 0x48 5` → `ERROR invalid arguments` (N-05).
