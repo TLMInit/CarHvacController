@@ -122,6 +122,17 @@ void tb6612fng_update_feedback(hvac_valve_id_t valve_id, uint8_t position);
 bool tb6612fng_valve_is_stalled(hvac_valve_id_t valve_id);
 
 /**
+ * @brief Mark a valve's position feedback lost (true) or back (false).
+ * While lost, the valve's motor is stopped and the valve is not moved.
+ */
+void tb6612fng_set_feedback_fault(hvac_valve_id_t valve_id, bool fault);
+
+/**
+ * @brief True if the valve is stalled or its position feedback is lost
+ */
+bool tb6612fng_valve_has_fault(hvac_valve_id_t valve_id);
+
+/**
  * @brief Clear stall flag for a valve
  * @param valve_id Valve identifier
  */

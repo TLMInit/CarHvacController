@@ -388,7 +388,7 @@ static void run_temperature_control(void)
 
     uint8_t fault_mask = 0;
     for (int valve = 0; valve < HVAC_VALVE_MAX; valve++) {
-        if (tb6612fng_valve_is_stalled((hvac_valve_id_t)valve)) {
+        if (tb6612fng_valve_has_fault((hvac_valve_id_t)valve)) {
             fault_mask |= (1u << valve);
         }
     }

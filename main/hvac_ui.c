@@ -779,7 +779,7 @@ void hvac_ui_update(void)
         hvac_ui_hide_message();
     }
     if (state.valve_fault && !last_valve_fault && !state.sensor_fault) {
-        hvac_ui_show_error("Valve stall detected. Inspect actuators.");
+        hvac_ui_show_error("Valve fault: stalled or lost position feedback. Inspect actuators.");
     } else if (!state.valve_fault && last_valve_fault && !state.sensor_fault) {
         hvac_ui_hide_message();
     }

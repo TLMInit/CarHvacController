@@ -491,53 +491,38 @@ static void read_remote_temperature_sensors(void)
 }
 #endif
 
+#define VALVE_FEEDBACK_FAIL_LIMIT   3   // consecutive failed/good reads to declare feedback lost/back
+
 static void read_valve_positions(void)
 {
-    // Read all valve positions from ADS1115 modules (5 valves total)
-    uint8_t positions[5];
-    
-    // Read center valve 1 position (ADS1115 #1, channel 0)
-    if (ads1115_read_valve_position(ADS1115_CH_CENTER_VALVE_1_POS, &positions[0]) != ESP_OK) {
-        positions[0] = 0;
-    }
-    
-    // Read center valve 2 position (ADS1115 #1, channel 1)
-    if (ads1115_read_valve_position(ADS1115_CH_CENTER_VALVE_2_POS, &positions[1]) != ESP_OK) {
-        positions[1] = 0;
-    }
-    
-    // Read foot valve position (ADS1115 #1, channel 2)
-    if (ads1115_read_valve_position(ADS1115_CH_FOOT_VALVE_POS, &positions[2]) != ESP_OK) {
-        positions[2] = 0;
-    }
-    
-    // Read windscreen valve position (ADS1115 #1, channel 3)
-    if (ads1115_read_valve_position(ADS1115_CH_WINDSCREEN_VALVE_POS, &positions[3]) != ESP_OK) {
-        positions[3] = 0;
-    }
-    
-    // Read coolant valve position (ADS1115 #2, channel 0)
-    if (ads1115_read_valve_position(ADS1115_CH_COOLANT_VALVE_POS, &positions[4]) != ESP_OK) {
-        positions[4] = 0;
-    }
-    
-    // Store valve positions with mutex protection
-    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        for (int i = 0; i < 5; i++) {
-            valve_positions[i] = positions[i];
-        }
-        xSemaphoreGive(valve_mutex);
-    }
+    // ADS channel per valve, indexed by hvac_valve_id_t
+    static const ads1115_channel_t channels[HVAC_VALVE_MAX] = {
+        ADS1115_CH_CENTER_VALVE_1_POS, ADS1115_CH_CENTER_VALVE_2_POS, ADS1115_CH_FOOT_VALVE_POS,
+        ADS1115_CH_WINDSCREEN_VALVE_POS, ADS1115_CH_COOLANT_VALVE_POS,
+    };
+    static uint8_t fail_streak[HVAC_VALVE_MAX];
+    static uint8_t ok_streak[HVAC_VALVE_MAX];
 
-    // Update TB6612 driver feedback for each valve
-    tb6612fng_update_feedback(HVAC_VALVE_CENTER_1, positions[0]);
-    tb6612fng_update_feedback(HVAC_VALVE_CENTER_2, positions[1]);
-    tb6612fng_update_feedback(HVAC_VALVE_FOOT, positions[2]);
-    tb6612fng_update_feedback(HVAC_VALVE_WINDSCREEN, positions[3]);
-    tb6612fng_update_feedback(HVAC_VALVE_COOLANT, positions[4]);
-    
-    ESP_LOGD(TAG, "Valve positions - C1: %d%%, C2: %d%%, Foot: %d%%, WS: %d%%, Cool: %d%%",
-             positions[0], positions[1], positions[2], positions[3], positions[4]);
+    for (int i = 0; i < HVAC_VALVE_MAX; i++) {
+        uint8_t pos;
+        if (ads1115_read_valve_position(channels[i], &pos) != ESP_OK) {
+            // Keep the last good value: a lost reply is not "position 0"
+            ok_streak[i] = 0;
+            if (fail_streak[i] < VALVE_FEEDBACK_FAIL_LIMIT && ++fail_streak[i] == VALVE_FEEDBACK_FAIL_LIMIT) {
+                tb6612fng_set_feedback_fault((hvac_valve_id_t)i, true);
+            }
+            continue;
+        }
+        fail_streak[i] = 0;
+        if (ok_streak[i] < VALVE_FEEDBACK_FAIL_LIMIT && ++ok_streak[i] == VALVE_FEEDBACK_FAIL_LIMIT) {
+            tb6612fng_set_feedback_fault((hvac_valve_id_t)i, false);
+        }
+        if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            valve_positions[i] = pos;
+            xSemaphoreGive(valve_mutex);
+        }
+        tb6612fng_update_feedback((hvac_valve_id_t)i, pos);
+    }
 }
 
 /*******************************************************************************

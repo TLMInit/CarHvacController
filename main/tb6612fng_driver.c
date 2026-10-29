@@ -149,6 +149,7 @@ static bool valve_filter_init[HVAC_VALVE_MAX] = {false};
 static tb6612_direction_t last_motor_dir[HVAC_VALVE_MAX] = {TB6612_DIR_STOP};  // Track last direction for logging
 static int8_t valve_target_adc_side[HVAC_VALVE_MAX] = {0};  // Latched V-shape side: +1=upper, -1=lower, 0=undecided
 static volatile bool valve_calibrating[HVAC_VALVE_MAX] = {false};  // Per-valve calibration flag
+static volatile bool valve_feedback_fault[HVAC_VALVE_MAX] = {false}; // Position reads failing: hold the valve
 
 // Per-valve calibration state (for background calibration)
 typedef enum {
@@ -470,9 +471,19 @@ void tb6612fng_valve_task(void *pvParameters)
                 if (valve_calibrating[i]) {
                     continue;
                 }
-                
+
                 valve_state_t *state = &valve_states[i];
                 const motor_config_t *config = &motor_configs[i];
+
+                // No trustworthy position: stop and hold until reads succeed again
+                if (valve_feedback_fault[i]) {
+                    if (state->is_moving) {
+                        set_motor_direction((hvac_valve_id_t)i, config, TB6612_DIR_BRAKE, state->position);
+                        set_motor_speed(config, 0);
+                        state->is_moving = false;
+                    }
+                    continue;
+                }
                 
                 // Get current ADC reading
                 uint8_t adc_pos = valve_adc_pos[i];
@@ -871,7 +882,13 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
     uint8_t current_adc = valve_adc_pos[valve_id];
     uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     uint32_t elapsed = now_ms - prog->phase_start_ms;
-    
+
+    // Without position feedback min/max would be garbage: give up (the FAILED case stops the motor)
+    if (valve_feedback_fault[valve_id] && prog->state != CALIB_STATE_FAILED) {
+        ESP_LOGW(TAG, "V%d: Calibration aborted - position feedback lost", valve_id);
+        prog->state = CALIB_STATE_FAILED;
+    }
+
     switch (prog->state) {
         case CALIB_STATE_SEEKING_MARKER: {
             // Check timeout
@@ -1664,6 +1681,25 @@ void tb6612fng_update_feedback(hvac_valve_id_t valve_id, uint8_t position)
         ESP_LOGD(TAG, "Valve %d feedback: raw=%u%% filtered=%u%% target=%u%%", 
                  valve_id, position, filtered_position, target);
     }
+}
+
+void tb6612fng_set_feedback_fault(hvac_valve_id_t valve_id, bool fault)
+{
+    if (valve_id >= HVAC_VALVE_MAX || valve_feedback_fault[valve_id] == fault) {
+        return;
+    }
+    valve_feedback_fault[valve_id] = fault;
+    if (fault) {
+        ESP_LOGW(TAG, "V%d: position feedback LOST - motor stopped, valve held", valve_id);
+    } else {
+        ESP_LOGW(TAG, "V%d: position feedback back - control resumes", valve_id);
+    }
+}
+
+bool tb6612fng_valve_has_fault(hvac_valve_id_t valve_id)
+{
+    return valve_id < HVAC_VALVE_MAX &&
+           (valve_feedback_fault[valve_id] || tb6612fng_valve_is_stalled(valve_id));
 }
 
 bool tb6612fng_valve_is_stalled(hvac_valve_id_t valve_id)
