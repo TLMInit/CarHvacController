@@ -28,5 +28,16 @@ Decisions taken without stopping, per the brief. Newest at the bottom of each se
 - `PROTOCOL_VERSION` 1 -> 2. `HELLO_RESP` = proto(1), caps(1), version string. `OTA_ACK` = state(1), bytes u32 BE. New error codes 9-11 for OTA. Big-endian, like the existing temperature reply.
 - Pad handling: the node pads only until it has seen HELLO (per boot). The display's decoder no longer strips (S-11) but tolerates one trailing pad byte when the CRC fails without it, for the window before HELLO and for 2.1 nodes.
 
+- Correction found during WP-B/WP-C: with this CRC (init 0xFFFF, no final XOR) a padded reply `M|crc_hi|00|00` also passes the CRC check, so "retry without the pad when the CRC fails" never fires. Rule used instead (display, `strip_pad()` in `remote_io_binary.c`): while padding is possible (before a protocol-2 HELLO_RESP, for a protocol-1 node, and after any reset or link recovery until the next HELLO) a reply whose CRC field is 0x0000 and whose one-byte-shorter form also checks out loses one trailing byte. Cost: 1 genuine reply in 65536 mis-stripped, only in that window. After HELLO nothing is stripped. The node's `ionode_cli.py` uses the same rule.
+
+## Wave 1 merge notes (rc1)
+- WP-A: settings are written 2 s after the last change (one write per burst); a power cut inside that window loses that change. A key set back to its default is erased, so a future default change reaches users who never touched it.
+- Lead change after WP-A: the empty AP password no longer expands to a value derived from the softAP MAC (the BSSID broadcasts it). A random 10-character password is drawn once with the hardware RNG and kept in `hvac_cfg/ap_pass_gen`; factory reset draws a new one. It is shown on the settings page (owner answer 2).
+- WP-D: a butterfly valve whose pot rests in the dead zone at boot fails the stored-record check and recalibrates that boot; its position is unknown there anyway. A valve without any position reading stays held (no timeout), as in 2.0 without feedback. Coolant valve: recalibrate/learn return NOT_SUPPORTED (linear, direction setting only).
+- WP-E: `quick_cool` still switches recirc on as in 2.0; recirc has no effect when `SET_RECIRC_FITTED` is off and the button is hidden (WP-F). A quiet-night cap below 30 % lets the A/C interlock drop the compressor. The AUTO fan now goes through the soft-start ramp with change-only sends. Cascade default gains are first guesses (toy-model check only): tune on the car.
+- WP-H: the self-test runs once per boot after calibration; a link that is down in that window reports the blower FAIL until the next boot.
+- WP-C: p95 RTT is computed from six 10 s histograms (100 µs buckets to 2 ms, 1 ms to 30 ms) instead of a sample ring (would be ~24 KB). Unassigned ROMs are read too, at most 4/s, so the role page can show which sensor is which. Commanded resets (boot, OTA, node reboot) do not count as node restarts.
+- Merge order kept: A → D, E, H → rc1. B and C wait for F (rc2), as the brief orders.
+
 ## Models
 - Strongest available model (Opus) for WP-A, WP-B, WP-C, WP-G, WP-H; faster model (Sonnet) for WP-D, WP-E, WP-F, WP-T. WP-A is not named in the brief; it is the framework every package depends on, so it gets the stronger model.
