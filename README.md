@@ -54,7 +54,7 @@ GPIO21, adapter RX ← node GPIO2, GND ↔ GND. `pip install pyserial`, then:
 
 ```
 python tools/ionode_cli.py -p COM8 ping           # PONG
-python tools/ionode_cli.py -p COM8 version        # ionode 2.0 (...)
+python tools/ionode_cli.py -p COM8 version        # ionode 2.0 (<git describe>) up=<s> rst=<reason>
 python tools/ionode_cli.py -p COM8 stress 200     # round trip; expect ~1 ms median
 python tools/ionode_cli.py -p COM8 ads-all        # 8 pot readings, raw / mV / %
 python tools/ionode_cli.py -p COM8 ds18b20        # duct temperature
@@ -100,19 +100,31 @@ at most 63 bytes. The node answers every command with exactly one frame.
 
 Errors come back as `0x81` with one code byte: 1 invalid command, 2 invalid
 arguments, 3 invalid pin, 4 I2C failure, 5 timeout or no device, 6 CRC mismatch.
-Pins not in the allow-list in `node_config.h` (strapping, USB, flash, console, the
-link and the bus pins) are refused with code 3.
+Only the carrier's outputs are on the allow-list in `node_config.h` (valve direction
+and PWM pins, blower PWM, relay); every other pin is refused with code 3.
 
 ### Behaviour worth knowing
 
 - **Boot state.** All valve direction pins and the relay are driven low and all six
   PWM channels set to duty 0 before the link task starts. The display never sends
   GPIO_MODE or PWM_INIT for the valve drivers, so the node must come up ready.
+  Between power-on and this point (~300 ms: bootloader and app start) the pins float.
+  The TB6612 inputs have internal pull-downs; whether the BTS7960 module and the relay
+  driver do is not yet measured, so assume they do not.
 - **GPIO_SET on an unconfigured pin** makes it an output; **PWM_SET on a pin without
   PWM_INIT** attaches a 20 kHz channel. Both exist for the same reason.
 - **Link watchdog.** After 3 s without a valid frame (only once a frame has been
-  seen), every PWM goes to 0 and every output pin low; the display re-commands
-  everything when it returns. `LINK_WATCHDOG_MS` in `node_config.h`, 0 disables it.
+  seen), every PWM goes to 0 and every output pin low. `LINK_WATCHDOG_MS` in
+  `node_config.h`, 0 disables it. The check runs from an esp_timer, so it still fires
+  if the link task hangs; the task watchdog then restarts the node (5 s, panic on).
+  When the link returns, the display (from its Phase 1 build on) re-sends the relay and
+  blower every second and the direction and duty of any valve it is moving; an idle
+  valve stays stopped, which is what it was.
+- **RGB LED.** The DevKitC-1's on-board LED is on GPIO48 (board v1.0, blower PWM) or
+  GPIO38 (v1.1, foot valve AIN1). Read the revision off the silkscreen before trusting
+  either pin's behaviour on a scope.
+- **I2C recovery.** After 3 bus errors in a row the node resets the I2C bus, and
+  re-creates it if the reset fails.
 - **Corrupt frames** are dropped without a reply; the display's 200 ms timeout
   handles it. `LINK_REPLY_ON_CRC_ERROR 1` answers with error 6 instead.
 
