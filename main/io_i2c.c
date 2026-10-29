@@ -23,6 +23,9 @@ typedef struct {
 static i2c_master_bus_handle_t s_bus;
 static dev_entry_t s_devs[NODE_I2C_MAX_DEVICES];
 static int s_dev_count;
+static int s_fail_streak;       /* consecutive bus-level failures, see track() */
+
+#define I2C_FAILS_BEFORE_RESET  3   /* the display's BME280 probe can NACK twice per cycle */
 
 /* ADS1115 register map and config bits */
 #define ADS_REG_CONVERSION      0x00
@@ -58,8 +61,46 @@ esp_err_t io_i2c_init(void)
     return ESP_OK;
 }
 
+/* A device reset mid-transfer can leave SDA held low; every later read then
+ * fails, which the display sees as lost valve feedback. Clock it free, or
+ * rebuild the bus if that does not help. */
+static void recover_bus(void)
+{
+    ESP_LOGW(TAG, "%d I2C errors in a row: resetting the bus", I2C_FAILS_BEFORE_RESET);
+    if (s_bus != NULL && i2c_master_bus_reset(s_bus) == ESP_OK) {
+        return;
+    }
+    ESP_LOGE(TAG, "Bus reset failed: re-creating the I2C bus");
+    for (int i = 0; i < s_dev_count; i++) {
+        i2c_master_bus_rm_device(s_devs[i].dev);
+    }
+    s_dev_count = 0;
+    if (s_bus != NULL) {
+        i2c_del_master_bus(s_bus);
+        s_bus = NULL;
+    }
+    io_i2c_init();
+}
+
+/* Count bus-level failures; argument and size errors are not the bus's fault. */
+static esp_err_t track(esp_err_t err)
+{
+    if (err == ESP_OK) {
+        s_fail_streak = 0;
+    } else if (err != ESP_ERR_INVALID_ARG && err != ESP_ERR_INVALID_SIZE && err != ESP_ERR_NO_MEM) {
+        if (++s_fail_streak >= I2C_FAILS_BEFORE_RESET) {
+            s_fail_streak = 0;
+            recover_bus();
+        }
+    }
+    return err;
+}
+
 static esp_err_t get_device(uint8_t addr, i2c_master_dev_handle_t *dev)
 {
+    if (s_bus == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
     for (int i = 0; i < s_dev_count; i++) {
         if (s_devs[i].addr == addr) {
             *dev = s_devs[i].dev;
@@ -99,7 +140,7 @@ esp_err_t io_i2c_write(uint8_t addr, uint8_t reg, const uint8_t *data, size_t le
     if (len > 0) {
         memcpy(&buf[1], data, len);
     }
-    return i2c_master_transmit(dev, buf, len + 1, NODE_I2C_TIMEOUT_MS);
+    return track(i2c_master_transmit(dev, buf, len + 1, NODE_I2C_TIMEOUT_MS));
 }
 
 esp_err_t io_i2c_read(uint8_t addr, uint8_t reg, uint8_t *data, size_t len)
@@ -112,14 +153,11 @@ esp_err_t io_i2c_read(uint8_t addr, uint8_t reg, uint8_t *data, size_t len)
     if (err != ESP_OK) {
         return err;
     }
-    return i2c_master_transmit_receive(dev, &reg, 1, data, len, NODE_I2C_TIMEOUT_MS);
+    return track(i2c_master_transmit_receive(dev, &reg, 1, data, len, NODE_I2C_TIMEOUT_MS));
 }
 
-esp_err_t io_ads1115_read(uint8_t addr, uint8_t channel, int16_t *value)
+static esp_err_t ads1115_read(uint8_t addr, uint8_t channel, int16_t *value)
 {
-    if (channel > 3 || value == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
     i2c_master_dev_handle_t dev;
     esp_err_t err = get_device(addr, &dev);
     if (err != ESP_OK) {
@@ -163,4 +201,12 @@ esp_err_t io_ads1115_read(uint8_t addr, uint8_t channel, int16_t *value)
     }
     *value = (int16_t)(((uint16_t)rb[0] << 8) | rb[1]);
     return ESP_OK;
+}
+
+esp_err_t io_ads1115_read(uint8_t addr, uint8_t channel, int16_t *value)
+{
+    if (channel > 3 || value == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return track(ads1115_read(addr, channel, value));
 }
