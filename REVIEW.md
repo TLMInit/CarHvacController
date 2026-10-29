@@ -44,7 +44,7 @@ Display hashes are in this repo; node hashes (marked *node*) are in `CarHvacIoNo
 | S-01 | Failed position read fed to the loop as 0 | 1 | **done** b9840e9 |
 | S-02 | Stall detection disabled | 1 | **done** 6f7c36c |
 | S-03 | Motor run time unbounded while link stays up | 1 (step 1), 2b (lease) | step 1 **done** 82feebd (10 s, see commit); step 2 held |
-| S-04 | Display reboot does not stop running motors | 1 | **done** 4f29e75 |
+| S-04 | Display reboot does not stop running motors | 1 | **done** 4f29e75, c254ecf |
 | S-05 | Blower and relay never re-commanded | 1 | **done** 0d0bb86 |
 | S-06 | Use-after-free in the link queue | 1 | **done** 957b16a |
 | S-07 | A/C without blower interlock | 1 (via C-01) | **done** via C-01 936b1bc |
@@ -58,7 +58,7 @@ Display hashes are in this repo; node hashes (marked *node*) are in `CarHvacIoNo
 | L-04 | Replies not matched to command | 2a | authorised |
 | L-05 | Dead or misleading link API | 2a (stats getter in 1) | stats getter declared 99ca320; rest authorised (2a) |
 | L-06 / L-07 | Bulk read, full-state exchange | 2b | held |
-| C-01 | A/C interlocks | 1 | **done** 936b1bc |
+| C-01 | A/C interlocks | 1 | **done** 936b1bc, b434e5b |
 | C-02 | Valve targets flap within a cycle | 1 | **done** e4c4acf |
 | C-03 | Valve positioning resolution and units | 3 | held |
 | C-04 | Calibration at every boot | 3 | held |
@@ -1127,3 +1127,18 @@ Car (after the bench passes): one cold start below 15 °C cabin in AUTO. Expect:
 
 Rollback: flash `../releases/v1.0-baseline/` with the offsets in its `flasher_args.json`.
 The node has no earlier build to go back to.
+- **P1-10 The node restarts once per display boot, by design (S-04).** The node's own
+  uptime and its `rst=SW` therefore reset whenever the display boots. The display counts a
+  node restart only after its first contact since its own boot, and that first contact is
+  logged as `IO node (first contact since display boot): … up=0 rst=SW`. So the boot reset
+  never produces an `IO NODE RESTARTED` line, and the debug tab's `restarts` stays 0 through
+  a display reboot. Any `IO NODE RESTARTED` line, and every non-zero `restarts`, is therefore
+  a node reset the display did not ask for. Anything that watches the node from the outside
+  (its own console, `ionode_cli.py version`) sees one restart per display boot with
+  `rst=SW`; that is expected.
+- **P1-11 `remote_io_wait_ready(3000)` really waited ~9.1 s** (30 attempts × ~304 ms; each
+  failed ping takes ~204 ms but was counted as 0). It is now bounded by wall time
+  (`c254ecf`).
+- **P1-12 C-01's 30 s minimum on-time held any clutch.** A user A/C-off, leaving DEFROST
+  and the end of the warm-up all waited up to 30 s. It now holds only a clutch that is on
+  for the humidity rule alone (`b434e5b`).
