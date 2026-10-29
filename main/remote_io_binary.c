@@ -61,6 +61,8 @@ static uint32_t s_tx_frames = 0;
 static uint32_t s_rx_frames = 0;
 static uint32_t s_crc_errors = 0;
 static uint32_t s_timeouts = 0;
+static volatile uint32_t s_last_reply_ms = 0;   // last valid frame from the node; 0 = never
+#define LINK_OK_WINDOW_MS       3000            // same as the node's link watchdog
 
 // IO node identity from its VERSION reply
 static char s_node_version[COBS_MAX_PAYLOAD_SIZE] = "?";
@@ -148,6 +150,7 @@ static esp_err_t execute_command_internal(uint8_t cmd, const uint8_t *payload, s
                     
                     if (cobs_parse_frame(rx_frame, rx_frame_len, &msg_type, data, sizeof(data), &data_len)) {
                         s_rx_frames++;
+                        s_last_reply_ms = now_ms ? now_ms : 1;   // the node is alive (even for an ERROR reply)
                         ESP_LOGD(TAG, "Got response: type=0x%02X, len=%d", msg_type, data_len);
                         
                         // Return response
@@ -651,7 +654,13 @@ esp_err_t remote_io_reset(void)
     return send_command_binary(MSG_RESET, NULL, 0, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
-void remote_io_get_stats(uint32_t *tx_frames, uint32_t *rx_frames, 
+bool remote_io_link_ok(void)
+{
+    uint32_t last = s_last_reply_ms;
+    return last != 0 && get_time_ms() - last < LINK_OK_WINDOW_MS;
+}
+
+void remote_io_get_stats(uint32_t *tx_frames, uint32_t *rx_frames,
                          uint32_t *crc_errors, uint32_t *timeouts)
 {
     if (tx_frames) *tx_frames = s_tx_frames;

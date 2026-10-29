@@ -792,14 +792,38 @@ void hvac_ui_update(void)
     snprintf(buf, sizeof(buf), "%d%%", state.coolant_valve_pos);
     lv_label_set_text(lbl_coolant_valve_pos, buf);
 
-    if (state.sensor_fault && !last_sensor_fault) {
+    bool node_offline = false;
+#if USE_REMOTE_IO
+    // Without the node nothing is controlled: say so, and again every 30 s if dismissed.
+    // Sensor and valve faults are consequences then, so their pop-ups wait.
+    static bool last_node_offline = false;
+    static uint32_t offline_shown_ms = 0;
+    uint32_t ui_now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    node_offline = !remote_io_link_ok();
+    if (node_offline) {
+        if (!last_node_offline || (msg_box == NULL && ui_now_ms - offline_shown_ms >= 30000)) {
+            hvac_ui_show_error("IO node offline: valves, blower and A/C are not controlled. "
+                               "Check the link cable and node power.");
+            offline_shown_ms = ui_now_ms;
+        }
+        last_sensor_fault = state.sensor_fault;
+        last_valve_fault = state.valve_fault;
+    } else if (last_node_offline) {
+        hvac_ui_hide_message();
+        last_sensor_fault = false;      // a fault that outlasts the outage pops up now
+        last_valve_fault = false;
+    }
+    last_node_offline = node_offline;
+#endif
+
+    if (!node_offline && state.sensor_fault && !last_sensor_fault) {
         hvac_ui_show_error("Sensor fault detected. Check sensor wiring.");
-    } else if (!state.sensor_fault && last_sensor_fault) {
+    } else if (!node_offline && !state.sensor_fault && last_sensor_fault) {
         hvac_ui_hide_message();
     }
-    if (state.valve_fault && !last_valve_fault && !state.sensor_fault) {
+    if (!node_offline && state.valve_fault && !last_valve_fault && !state.sensor_fault) {
         hvac_ui_show_error("Valve fault: stalled or lost position feedback. Inspect actuators.");
-    } else if (!state.valve_fault && last_valve_fault && !state.sensor_fault) {
+    } else if (!node_offline && !state.valve_fault && last_valve_fault && !state.sensor_fault) {
         hvac_ui_hide_message();
     }
     last_sensor_fault = state.sensor_fault;

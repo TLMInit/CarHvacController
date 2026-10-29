@@ -11,6 +11,7 @@
 
 #include "esp_err.h"
 #include <stdint.h>
+#include <stdbool.h>
 #include <stddef.h>
 
 #ifndef REMOTE_IO_LOG_ENABLE
@@ -215,6 +216,11 @@ esp_err_t remote_io_poll_node(void);
  * @brief Last node info from remote_io_poll_node(); version is "?" until the first answer
  */
 void remote_io_get_node_info(const char **version, uint32_t *uptime_s, uint32_t *resets);
+
+/**
+ * @brief True if the node answered within the last 3 s (false until its first answer)
+ */
+bool remote_io_link_ok(void);
 
 /**
  * @brief Link counters since boot
