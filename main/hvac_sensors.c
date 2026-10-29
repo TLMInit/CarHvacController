@@ -393,10 +393,34 @@ static bool plausible_temp(hvac_sensor_id_t id, float t, float lo, float hi)
     return false;
 }
 
+// Non-blocking, called about once a second: collects the conversion started on the
+// previous call (12-bit needs 750 ms) and starts the next. The blocking read waited
+// 750 ms inside every sensor cycle, so valve feedback ran at ~1.1 Hz instead of 10 Hz.
+#define DS18B20_CONVERSION_MS   750
+
 static void read_remote_ds18b20_duct(void)
 {
-    float temperature;
-    esp_err_t ret = remote_onewire_read_ds18b20(DS18B20_ONEWIRE_PIN, NULL, &temperature);
+    static bool converting = false;
+    static uint32_t started_ms = 0;
+    float temperature = NAN;
+    esp_err_t ret = ESP_OK;
+
+    if (converting && get_time_ms() - started_ms < DS18B20_CONVERSION_MS) {
+        return;     // called early; the result is not ready yet
+    }
+    bool had_conversion = converting;
+    if (had_conversion) {
+        ret = remote_ds18b20_read_temp(NULL, &temperature);
+    }
+    esp_err_t start = remote_ds18b20_start_conversion(NULL);
+    converting = (start == ESP_OK);
+    started_ms = get_time_ms();
+    if (!had_conversion) {
+        if (start == ESP_OK) {
+            return;     // first result arrives on the next call
+        }
+        ret = start;
+    }
     bool grace = (get_time_ms() < 5000);
 
     if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -831,12 +855,12 @@ bool hvac_sensors_all_healthy(void)
 void hvac_sensors_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Sensor reading task started");
-    
-    // Counter for temperature reads during calibration
-    // Read temperatures every ~500ms (20 x 25ms intervals)
-    uint8_t calib_temp_counter = 0;
-    const uint8_t CALIB_TEMP_READ_INTERVAL = 20;
-    
+
+    // Valve positions every loop (100 ms, 25 ms while calibrating); temperatures by the
+    // clock, not by counting loops, so their cadence no longer depends on the mode
+    uint32_t last_temps_ms = 0;
+    const uint32_t TEMP_READ_INTERVAL_MS = 1000;
+
     uint32_t last_node_poll_ms = get_time_ms();
     esp_task_wdt_add(NULL);
 
@@ -849,29 +873,20 @@ void hvac_sensors_task(void *pvParameters)
             remote_io_poll_node();
         }
 #endif
-        if (calibration_mode) {
-            // During calibration, read valve positions at high frequency
-            read_valve_positions();
-            
-            // But also read temperatures periodically so UI updates
-            calib_temp_counter++;
-            if (calib_temp_counter >= CALIB_TEMP_READ_INTERVAL) {
-                calib_temp_counter = 0;
+        read_valve_positions();
+
+        if (get_time_ms() - last_temps_ms >= TEMP_READ_INTERVAL_MS) {
+            last_temps_ms = get_time_ms();
 #if USE_REMOTE_IO
-                read_remote_temperature_sensors();
+            read_remote_temperature_sensors();
 #else
-                read_sht30();
-                read_ds18b20_coolant();
-                read_ds18b20_duct();
+            read_sht30();
+            read_ds18b20_coolant();
+            read_ds18b20_duct();
 #endif
-            }
-            
-            vTaskDelay(pdMS_TO_TICKS(CALIB_SENSOR_INTERVAL_MS));
-        } else {
-            calib_temp_counter = 0;  // Reset counter when not calibrating
-            hvac_sensors_read_all();
-            vTaskDelay(pdMS_TO_TICKS(sensor_interval_ms));
         }
+
+        vTaskDelay(pdMS_TO_TICKS(calibration_mode ? CALIB_SENSOR_INTERVAL_MS : sensor_interval_ms));
     }
 }
 
