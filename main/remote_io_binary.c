@@ -63,6 +63,7 @@ static uint32_t s_crc_errors = 0;
 static uint32_t s_timeouts = 0;
 static volatile uint32_t s_last_response_ms;
 static volatile bool s_has_response;
+static uint32_t s_mismatches = 0;   // valid replies of the wrong type (late replies), discarded
 
 // IO node identity from its VERSION reply
 static char s_node_version[COBS_MAX_PAYLOAD_SIZE] = "?";
@@ -99,8 +100,8 @@ static const char *cmd_name(uint8_t cmd)
     }
 }
 
-// Send one command and wait for its reply; caller holds s_link_mutex
-static esp_err_t execute_command_internal(uint8_t cmd, const uint8_t *payload, size_t payload_len,
+// Send one command and wait for its reply of type `expect` (or MSG_ERROR); caller holds s_link_mutex
+static esp_err_t execute_command_internal(uint8_t cmd, uint8_t expect, const uint8_t *payload, size_t payload_len,
                                           uint8_t *resp_type, uint8_t *resp_data, size_t *resp_len,
                                           size_t resp_max_len, int timeout_ms)
 {
@@ -156,7 +157,16 @@ static esp_err_t execute_command_internal(uint8_t cmd, const uint8_t *payload, s
                         s_last_response_ms = get_time_ms();
                         s_has_response = true;
                         ESP_LOGD(TAG, "Got response: type=0x%02X, len=%d", msg_type, data_len);
-                        
+
+                        if (msg_type != expect && msg_type != MSG_ERROR) {
+                            // A late reply to an earlier command, not ours: keep waiting
+                            s_mismatches++;
+                            ESP_LOGW(TAG, "Reply 0x%02X to %s discarded (expected 0x%02X, %lu so far)",
+                                     msg_type, cmd_name(cmd), expect, (unsigned long)s_mismatches);
+                            cobs_receiver_reset(&s_receiver);
+                            continue;
+                        }
+
                         // Return response
                         if (resp_type) *resp_type = msg_type;
                         if (resp_data && resp_len) {
@@ -214,7 +224,7 @@ static void log_link_result(uint8_t cmd, const uint8_t *payload, size_t payload_
 
 // Send a binary command frame and wait for response (called from any task).
 // Runs in the caller's context under s_link_mutex, so no pointer outlives its call.
-static esp_err_t send_command_binary(uint8_t cmd, const uint8_t *payload, size_t payload_len,
+static esp_err_t send_command_binary(uint8_t cmd, uint8_t expect, const uint8_t *payload, size_t payload_len,
                                      uint8_t *resp_type, uint8_t *resp_data, size_t *resp_len,
                                      int timeout_ms)
 {
@@ -230,7 +240,7 @@ static esp_err_t send_command_binary(uint8_t cmd, const uint8_t *payload, size_t
         return ESP_ERR_TIMEOUT;
     }
     uint32_t t1 = get_time_ms();
-    esp_err_t result = execute_command_internal(cmd, payload, payload_len, resp_type, resp_data,
+    esp_err_t result = execute_command_internal(cmd, expect, payload, payload_len, resp_type, resp_data,
                                                 resp_len, resp_len ? *resp_len : 0, timeout_ms);
     log_link_result(cmd, payload, payload_len, result, t1 - t0, get_time_ms() - t1);
     xSemaphoreGive(s_link_mutex);
@@ -308,7 +318,7 @@ esp_err_t remote_io_init(int uart_num, int tx_pin, int rx_pin, int baud_rate)
 bool remote_io_ping(void)
 {
     uint8_t resp_type;
-    esp_err_t ret = send_command_binary(MSG_PING, NULL, 0, &resp_type, NULL, NULL, CMD_TIMEOUT_MS);
+    esp_err_t ret = send_command_binary(MSG_PING, MSG_PONG, NULL, 0, &resp_type, NULL, NULL, CMD_TIMEOUT_MS);
     if (ret != ESP_OK) {
         ESP_LOGD(TAG, "Ping failed: %s", esp_err_to_name(ret));
     }
@@ -322,13 +332,13 @@ bool remote_io_ping(void)
 esp_err_t remote_gpio_set_mode(int pin, remote_gpio_mode_t mode)
 {
     uint8_t payload[2] = { (uint8_t)pin, (uint8_t)mode };
-    return send_command_binary(MSG_GPIO_MODE, payload, 2, NULL, NULL, NULL, CMD_TIMEOUT_MS);
+    return send_command_binary(MSG_GPIO_MODE, MSG_OK, payload, 2, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
 esp_err_t remote_gpio_set_level(int pin, int level)
 {
     uint8_t payload[2] = { (uint8_t)pin, (uint8_t)(level ? 1 : 0) };
-    return send_command_binary(MSG_GPIO_SET, payload, 2, NULL, NULL, NULL, CMD_TIMEOUT_MS);
+    return send_command_binary(MSG_GPIO_SET, MSG_OK, payload, 2, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
 esp_err_t remote_gpio_get_level(int pin, int *level)
@@ -338,7 +348,7 @@ esp_err_t remote_gpio_get_level(int pin, int *level)
     uint8_t resp_data[2];
     size_t resp_len = sizeof(resp_data);
     
-    esp_err_t ret = send_command_binary(MSG_GPIO_GET, payload, 1, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
+    esp_err_t ret = send_command_binary(MSG_GPIO_GET, MSG_GPIO_VALUE, payload, 1, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
     
     if (ret == ESP_OK && resp_type == MSG_GPIO_VALUE && resp_len >= 2) {
         if (level) *level = resp_data[1];  // [pin, level]
@@ -357,14 +367,14 @@ esp_err_t remote_pwm_configure(int pin, int freq_hz, int resolution_bits)
     uint8_t freq_khz = (uint8_t)(freq_hz / 1000);
     if (freq_khz == 0) freq_khz = 1;
     uint8_t payload[2] = { (uint8_t)pin, freq_khz };
-    return send_command_binary(MSG_PWM_INIT, payload, 2, NULL, NULL, NULL, CMD_TIMEOUT_MS);
+    return send_command_binary(MSG_PWM_INIT, MSG_OK, payload, 2, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
 esp_err_t remote_pwm_set_duty(int pin, int duty)
 {
     uint8_t payload[2] = { (uint8_t)pin, (uint8_t)duty };
     ESP_LOGD(TAG, "PWM pin=%d duty=%d", pin, duty);
-    return send_command_binary(MSG_PWM_SET, payload, 2, NULL, NULL, NULL, CMD_TIMEOUT_MS);
+    return send_command_binary(MSG_PWM_SET, MSG_OK, payload, 2, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
 esp_err_t remote_pwm_stop(int pin)
@@ -409,7 +419,7 @@ esp_err_t remote_i2c_write(int bus_num, uint8_t addr, const uint8_t *data, size_
         memcpy(&payload[3], &data[1], len - 1);
     }
     
-    return send_command_binary(MSG_I2C_WRITE, payload, 3 + len - 1, NULL, NULL, NULL, CMD_TIMEOUT_MS);
+    return send_command_binary(MSG_I2C_WRITE, MSG_OK, payload, 3 + len - 1, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
 esp_err_t remote_i2c_read(int bus_num, uint8_t addr, uint8_t *data, size_t len)
@@ -423,7 +433,7 @@ esp_err_t remote_i2c_read(int bus_num, uint8_t addr, uint8_t *data, size_t len)
     uint8_t resp_data[COBS_MAX_PAYLOAD_SIZE];
     size_t resp_len = sizeof(resp_data);
     
-    esp_err_t ret = send_command_binary(MSG_I2C_READ, payload, 3, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
+    esp_err_t ret = send_command_binary(MSG_I2C_READ, MSG_I2C_DATA, payload, 3, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
     
     if (ret == ESP_OK && resp_type == MSG_I2C_DATA && resp_len >= 1) {
         size_t data_len = resp_data[0];
@@ -450,7 +460,7 @@ esp_err_t remote_i2c_write_read(int bus_num, uint8_t addr,
     uint8_t resp_data[COBS_MAX_PAYLOAD_SIZE];
     size_t resp_len = sizeof(resp_data);
     
-    esp_err_t ret = send_command_binary(MSG_I2C_READ, payload, 3, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
+    esp_err_t ret = send_command_binary(MSG_I2C_READ, MSG_I2C_DATA, payload, 3, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
     
     if (ret == ESP_OK && resp_type == MSG_I2C_DATA && resp_len >= 1) {
         size_t data_len = resp_data[0];
@@ -486,12 +496,17 @@ esp_err_t remote_ads1115_read_bulk(int bus_num, uint8_t i2c_addr,
         uint8_t resp_data[3];
         size_t resp_len = sizeof(resp_data);
         
-        esp_err_t ret = send_command_binary(MSG_ADS_READ, payload, 2, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
+        esp_err_t ret = send_command_binary(MSG_ADS_READ, MSG_ADS_VALUE, payload, 2, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
         
         if (ret != ESP_OK || resp_type != MSG_ADS_VALUE || resp_len < 3) {
             return ret == ESP_OK ? ESP_FAIL : ret;
         }
-        
+        if (resp_data[0] != channels[i]) {
+            // Another channel's value would be fed to the wrong valve
+            ESP_LOGW(TAG, "ADS reply for channel %d, asked for %d: discarded", resp_data[0], channels[i]);
+            return ESP_ERR_INVALID_RESPONSE;
+        }
+
         values[i] = (int16_t)((resp_data[1] << 8) | resp_data[2]);
     }
     
@@ -531,7 +546,7 @@ esp_err_t remote_ds18b20_start_conversion(const uint8_t *rom_code)
     // If a ROM is provided, include it so the IO node can Match ROM; otherwise Skip ROM
     const uint8_t *payload = rom_code;
     size_t payload_len = (rom_code != NULL) ? 8 : 0;
-    return send_command_binary(MSG_DS18B20_START, payload, payload_len, NULL, NULL, NULL, CMD_TIMEOUT_MS);
+    return send_command_binary(MSG_DS18B20_START, MSG_OK, payload, payload_len, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
 /**
@@ -547,7 +562,7 @@ esp_err_t remote_ds18b20_read_temp(const uint8_t *rom_code, float *temperature_c
     const uint8_t *payload = rom_code;
     size_t payload_len = (rom_code != NULL) ? 8 : 0;
     
-    esp_err_t ret = send_command_binary(MSG_DS18B20_READ, payload, payload_len, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
+    esp_err_t ret = send_command_binary(MSG_DS18B20_READ, MSG_TEMP_VALUE, payload, payload_len, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
     
     if (ret == ESP_OK && resp_type == MSG_TEMP_VALUE && resp_len >= 2) {
         int16_t temp_x100 = (int16_t)((resp_data[0] << 8) | resp_data[1]);
@@ -586,7 +601,7 @@ esp_err_t remote_io_poll_node(void)
     uint8_t data[COBS_MAX_PAYLOAD_SIZE];
     size_t resp_len = sizeof(data) - 1;
 
-    esp_err_t ret = send_command_binary(MSG_VERSION, NULL, 0, &resp_type, data, &resp_len, CMD_TIMEOUT_MS);
+    esp_err_t ret = send_command_binary(MSG_VERSION, MSG_VERSION_RESP, NULL, 0, &resp_type, data, &resp_len, CMD_TIMEOUT_MS);
     if (ret != ESP_OK || resp_type != MSG_VERSION_RESP) {
         return ret == ESP_OK ? ESP_FAIL : ret;
     }
@@ -655,7 +670,7 @@ void remote_io_flush(void)
 
 esp_err_t remote_io_reset(void)
 {
-    return send_command_binary(MSG_RESET, NULL, 0, NULL, NULL, NULL, CMD_TIMEOUT_MS);
+    return send_command_binary(MSG_RESET, MSG_OK, NULL, 0, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
 void remote_io_get_stats(uint32_t *tx_frames, uint32_t *rx_frames,
@@ -680,7 +695,7 @@ bool remote_io_is_connected(void)
 
 esp_err_t remote_io_reset_node(void)
 {
-    return send_command_binary(MSG_RESET, NULL, 0, NULL, NULL, NULL, CMD_TIMEOUT_MS);
+    return send_command_binary(MSG_RESET, MSG_OK, NULL, 0, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
 esp_err_t remote_io_stop_all_pwm(void)
