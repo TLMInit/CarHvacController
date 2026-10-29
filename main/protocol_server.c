@@ -75,6 +75,21 @@ static void send_error(cobs_error_t code)
     send_frame(MSG_ERROR, &c, 1);
 }
 
+static const char *reset_reason_name(void)
+{
+    switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:   return "POWERON";
+    case ESP_RST_EXT:       return "EXT";
+    case ESP_RST_SW:        return "SW";
+    case ESP_RST_PANIC:     return "PANIC";
+    case ESP_RST_INT_WDT:   return "INT_WDT";
+    case ESP_RST_TASK_WDT:  return "TASK_WDT";
+    case ESP_RST_WDT:       return "WDT";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT";
+    default:                return "OTHER";
+    }
+}
+
 /* Map an esp_err_t from a hardware call onto the protocol's error codes. */
 static cobs_error_t map_err(esp_err_t err, cobs_error_t fallback)
 {
@@ -103,9 +118,15 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
         return;
 
     case MSG_VERSION: {
+        /* Uptime and reset reason let the display tell a node reset (e.g. brown-out
+         * on blower inrush) from a lost reply. Worst case is 58 bytes + NUL. */
         char v[COBS_MAX_PAYLOAD_SIZE - 1];
-        int n = snprintf(v, sizeof(v), "%s (%.24s)", NODE_VERSION_STRING,
-                         esp_app_get_description()->version);
+        int n = snprintf(v, sizeof(v), "%s (%.20s) up=%lu rst=%s", NODE_VERSION_STRING,
+                         esp_app_get_description()->version,
+                         (unsigned long)(esp_timer_get_time() / 1000000), reset_reason_name());
+        if (n >= (int)sizeof(v)) {
+            n = sizeof(v) - 1;
+        }
         send_frame(MSG_VERSION_RESP, (const uint8_t *)v, (size_t)n + 1);
         return;
     }
