@@ -357,6 +357,14 @@ void app_main(void)
         ESP_LOGW(TAG, "IO Node not responding, continuing anyway...");
     } else {
         ESP_LOGI(TAG, "IO Node connected!");
+        // After a display reboot the node may still be driving the outputs we last
+        // commanded; its RESET puts every valve, the blower and the relay off first.
+        ESP_LOGI(TAG, "Resetting IO Node to its safe boot state...");
+        if (remote_io_reset_node() == ESP_OK && remote_io_wait_ready(3000) == ESP_OK) {
+            ESP_LOGI(TAG, "IO Node back after reset");
+        } else {
+            ESP_LOGW(TAG, "IO Node did not come back after reset, continuing anyway...");
+        }
         remote_io_poll_node();
     }
 #else
