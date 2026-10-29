@@ -625,17 +625,33 @@ esp_err_t hvac_sensors_read_all(void)
     return ESP_FAIL;
 }
 
+#define SENSOR_STALE_MS 5000    // A reading older than this is no reading
+
+// Status with staleness applied; caller holds sensor_mutex
+static sensor_status_t fresh_status(hvac_sensor_id_t id)
+{
+    const sensor_data_t *s = &sensor_data[id];
+    if (s->status == SENSOR_STATUS_OK && get_time_ms() - s->last_update_ms > SENSOR_STALE_MS) {
+        return SENSOR_STATUS_TIMEOUT;
+    }
+    return s->status;
+}
+
+// Value only while the sensor is OK and fresh, else NAN; caller holds sensor_mutex
+static float fresh_value(hvac_sensor_id_t id)
+{
+    return fresh_status(id) == SENSOR_STATUS_OK ? sensor_data[id].value : NAN;
+}
+
 float hvac_sensors_get_value(hvac_sensor_id_t sensor_id)
 {
     if (sensor_id >= SENSOR_MAX) {
         return NAN;
     }
-    
+
     float value = NAN;
     if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        if (sensor_data[sensor_id].status == SENSOR_STATUS_OK) {
-            value = sensor_data[sensor_id].value;
-        }
+        value = fresh_value(sensor_id);
         xSemaphoreGive(sensor_mutex);
     }
     return value;
@@ -661,13 +677,19 @@ void hvac_sensors_get_all(hvac_sensor_readings_t *readings)
         return;
     }
     
+    // A failed or stale sensor reads as NAN, not as its last good value
+    readings->cabin_temp_c = NAN;
+    readings->cabin_humidity = NAN;
+    readings->duct_temp_c = NAN;
+    readings->cabin_status = SENSOR_STATUS_TIMEOUT;
+    readings->duct_status = SENSOR_STATUS_TIMEOUT;
     if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        readings->cabin_temp_c = sensor_data[SENSOR_CABIN_TEMP].value;
-        readings->cabin_humidity = sensor_data[SENSOR_CABIN_HUMIDITY].value;
-        readings->duct_temp_c = sensor_data[SENSOR_DUCT_TEMP].value;
-        
-        readings->cabin_status = sensor_data[SENSOR_CABIN_TEMP].status;
-        readings->duct_status = sensor_data[SENSOR_DUCT_TEMP].status;
+        readings->cabin_temp_c = fresh_value(SENSOR_CABIN_TEMP);
+        readings->cabin_humidity = fresh_value(SENSOR_CABIN_HUMIDITY);
+        readings->duct_temp_c = fresh_value(SENSOR_DUCT_TEMP);
+
+        readings->cabin_status = fresh_status(SENSOR_CABIN_TEMP);
+        readings->duct_status = fresh_status(SENSOR_DUCT_TEMP);
         xSemaphoreGive(sensor_mutex);
     }
     

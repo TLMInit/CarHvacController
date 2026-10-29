@@ -56,6 +56,9 @@ static const char *TAG = "HVAC_CTRL";
 #define WARMUP_EXIT_HUMIDITY         60.0f  // Exit warmup when humidity drops below this (%)
 #define WARMUP_DUCT_TEMP_READY       40.0f  // Heater core warm when duct > this (°C)
 
+// Without a cabin temperature: moderate heat, fixed fan (S-08)
+#define SENSOR_FALLBACK_COOLANT_PCT  50
+
 /*******************************************************************************
  * Private Data
  ******************************************************************************/
@@ -422,11 +425,25 @@ static void run_temperature_control(void)
     hvac_state.valve_fault_mask = fault_mask;
     hvac_state.valve_fault = (fault_mask != 0);
     
-    // Skip control if in OFF mode or cabin temp invalid
-    if (hvac_state.mode == HVAC_MODE_OFF || isnan(hvac_state.cabin_temp_c)) {
+    // Skip control in OFF mode (set_mode(OFF) already stopped everything)
+    if (hvac_state.mode == HVAC_MODE_OFF) {
         return;
     }
-    
+
+    // No cabin temperature (failed or stale): fixed fallback instead of freezing the last outputs
+    if (isnan(hvac_state.cabin_temp_c)) {
+        hvac_state.is_heating = false;
+        hvac_state.is_cooling = false;
+        hvac_state.temp_reached = false;
+        warmup_state.active = false;
+        tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, SENSOR_FALLBACK_COOLANT_PCT);
+        if (hvac_state.fan_level == HVAC_FAN_AUTO) {
+            bts7960_set_speed(BTS7960_FAN_PERCENT_AUTO_DEFAULT);
+            hvac_state.blower_speed = BTS7960_FAN_PERCENT_AUTO_DEFAULT;
+        }
+        goto compressor;   // A/C rules that need no cabin reading (defrost, user request) still apply
+    }
+
     float error = hvac_state.target_temp_c - hvac_state.cabin_temp_c;
     
     // Check if target reached (within deadband)
@@ -600,6 +617,7 @@ static void run_temperature_control(void)
         }
     }
     
+compressor:
     // =========================================================================
     // A/C Compressor Control
     // =========================================================================
