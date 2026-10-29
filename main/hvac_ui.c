@@ -7,6 +7,9 @@
 #include "hvac_controller.h"
 #include "hvac_hw_config.h"
 #include "hvac_sensors.h"
+#if USE_REMOTE_IO
+#include "remote_io.h"
+#endif
 
 #include <limits.h>
 #include <math.h>
@@ -87,6 +90,7 @@ static lv_obj_t *lbl_system_info = NULL;
 static lv_obj_t *btn_reset_cal = NULL;
 static lv_obj_t *btn_save_cal = NULL;
 static lv_obj_t *btn_onewire_read = NULL;
+static lv_obj_t *lbl_link_info = NULL;
 
 // Message box
 static lv_obj_t *msg_box = NULL;
@@ -598,6 +602,14 @@ static void create_debug_screen(lv_obj_t *parent)
     lv_label_set_text(lbl_thermal_status, "Thermal:\n--");
     lv_obj_set_style_text_color(lbl_thermal_status, UI_COLOR_TEXT_DIM, 0);
     
+    // === Link and IO node (troubleshooting the "everything drops" reports) ===
+    lbl_link_info = lv_label_create(parent);
+    lv_obj_set_width(lbl_link_info, 316);
+    lv_obj_align(lbl_link_info, LV_ALIGN_TOP_LEFT, 2, 125);
+    lv_obj_set_style_text_font(lbl_link_info, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_link_info, UI_COLOR_TEXT_DIM, 0);
+    lv_label_set_text(lbl_link_info, "Link: --\nNode: --");
+
     // === BOTTOM: Control Buttons ===
     btn_onewire_read = lv_btn_create(parent);
     lv_obj_set_size(btn_onewire_read, 95, 45);
@@ -825,6 +837,22 @@ void hvac_ui_update(void)
                 heating_rate, cooling_rate,
                 calibrated ? "CAL" : "LRN");
         lv_label_set_text(lbl_thermal_status, buf);
+
+#if USE_REMOTE_IO
+        // Link counters and node identity: a node restart or a run of timeouts shows here
+        uint32_t tx, rx, crc, timeouts, node_up, node_resets;
+        const char *node_ver;
+        char link_buf[192];     // worst case with 10-digit counters is ~160 chars
+        remote_io_get_stats(&tx, &rx, &crc, &timeouts);
+        remote_io_get_node_info(&node_ver, &node_up, &node_resets);
+        snprintf(link_buf, sizeof(link_buf),
+                 "Link tx %lu rx %lu crc %lu timeout %lu | UI busy %lu\n"
+                 "Node %.28s up %lus restarts %lu",
+                 (unsigned long)tx, (unsigned long)rx, (unsigned long)crc, (unsigned long)timeouts,
+                 (unsigned long)ui_busy_count, node_ver, (unsigned long)node_up,
+                 (unsigned long)node_resets);
+        lv_label_set_text(lbl_link_info, link_buf);
+#endif
     }
     
     // Save state for comparison
