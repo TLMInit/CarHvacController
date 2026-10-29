@@ -71,6 +71,26 @@ static uint32_t get_time_ms(void)
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
 
+static const char *cmd_name(uint8_t cmd)
+{
+    switch (cmd) {
+        case MSG_PING:          return "PING";
+        case MSG_VERSION:       return "VERSION";
+        case MSG_GPIO_SET:      return "GPIO_SET";
+        case MSG_GPIO_GET:      return "GPIO_GET";
+        case MSG_GPIO_MODE:     return "GPIO_MODE";
+        case MSG_PWM_SET:       return "PWM_SET";
+        case MSG_PWM_INIT:      return "PWM_INIT";
+        case MSG_I2C_WRITE:     return "I2C_WRITE";
+        case MSG_I2C_READ:      return "I2C_READ";
+        case MSG_ADS_READ:      return "ADS_READ";
+        case MSG_DS18B20_START: return "DS18B20_START";
+        case MSG_DS18B20_READ:  return "DS18B20_READ";
+        case MSG_RESET:         return "RESET";
+        default:                return "?";
+    }
+}
+
 // Send one command and wait for its reply; caller holds s_link_mutex
 static esp_err_t execute_command_internal(uint8_t cmd, const uint8_t *payload, size_t payload_len,
                                           uint8_t *resp_type, uint8_t *resp_data, size_t *resp_len,
@@ -141,7 +161,7 @@ static esp_err_t execute_command_internal(uint8_t cmd, const uint8_t *payload, s
                         break;
                     } else {
                         s_crc_errors++;
-                        ESP_LOGW(TAG, "CRC error on received frame");
+                        ESP_LOGW(TAG, "CRC error on reply to %s", cmd_name(cmd));
                     }
                 }
                 cobs_receiver_reset(&s_receiver);
@@ -151,10 +171,32 @@ static esp_err_t execute_command_internal(uint8_t cmd, const uint8_t *payload, s
     
     if (result == ESP_ERR_TIMEOUT) {
         s_timeouts++;
-        ESP_LOGD(TAG, "Command 0x%02X timeout", cmd);
     }
-    
+
     return result;
+}
+
+// One console line per timed-out command; a node reset or a lost reply shows up here by name.
+// After 10 in a row (node absent), only every 50th is printed.
+static void log_link_result(uint8_t cmd, const uint8_t *payload, size_t payload_len,
+                            esp_err_t result, uint32_t wait_ms, uint32_t cmd_ms)
+{
+    static uint32_t consecutive = 0;
+
+    if (result != ESP_ERR_TIMEOUT) {
+        if (consecutive > 0) {
+            ESP_LOGW(TAG, "Link recovered after %lu timed-out command(s)", (unsigned long)consecutive);
+            consecutive = 0;
+        }
+        return;
+    }
+    consecutive++;
+    if (consecutive <= 10 || consecutive % 50 == 0) {
+        ESP_LOGW(TAG, "TIMEOUT %s [%d,%d] from %s: link wait %lu ms + command %lu ms (%lu in a row, %lu total)",
+                 cmd_name(cmd), payload_len > 0 ? payload[0] : -1, payload_len > 1 ? payload[1] : -1,
+                 pcTaskGetName(NULL), (unsigned long)wait_ms, (unsigned long)cmd_ms,
+                 (unsigned long)consecutive, (unsigned long)s_timeouts);
+    }
 }
 
 // Send a binary command frame and wait for response (called from any task).
@@ -167,13 +209,17 @@ static esp_err_t send_command_binary(uint8_t cmd, const uint8_t *payload, size_t
         return ESP_ERR_INVALID_STATE;
     }
 
+    uint32_t t0 = get_time_ms();
     if (xSemaphoreTake(s_link_mutex, pdMS_TO_TICKS(LINK_LOCK_TIMEOUT_MS)) != pdTRUE) {
         s_timeouts++;
-        ESP_LOGW(TAG, "Command 0x%02X not sent: link busy for %d ms", cmd, LINK_LOCK_TIMEOUT_MS);
+        ESP_LOGW(TAG, "%s not sent from %s: link busy for %d ms", cmd_name(cmd), pcTaskGetName(NULL),
+                 LINK_LOCK_TIMEOUT_MS);
         return ESP_ERR_TIMEOUT;
     }
+    uint32_t t1 = get_time_ms();
     esp_err_t result = execute_command_internal(cmd, payload, payload_len, resp_type, resp_data,
                                                 resp_len, resp_len ? *resp_len : 0, timeout_ms);
+    log_link_result(cmd, payload, payload_len, result, t1 - t0, get_time_ms() - t1);
     xSemaphoreGive(s_link_mutex);
     return result;
 }
