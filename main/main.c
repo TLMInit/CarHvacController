@@ -357,6 +357,7 @@ void app_main(void)
         ESP_LOGW(TAG, "IO Node not responding, continuing anyway...");
     } else {
         ESP_LOGI(TAG, "IO Node connected!");
+        remote_io_poll_node();
     }
 #else
     ESP_LOGI(TAG, "Remote IO disabled, using local IO only");

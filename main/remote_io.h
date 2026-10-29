@@ -205,4 +205,21 @@ esp_err_t remote_io_reset_node(void);
  */
 esp_err_t remote_io_stop_all_pwm(void);
 
+/**
+ * @brief Ask the node for its VERSION string (version, uptime, reset reason).
+ * Logs the first answer, and a warning whenever the node's uptime went backwards (it restarted).
+ */
+esp_err_t remote_io_poll_node(void);
+
+/**
+ * @brief Last node info from remote_io_poll_node(); version is "?" until the first answer
+ */
+void remote_io_get_node_info(const char **version, uint32_t *uptime_s, uint32_t *resets);
+
+/**
+ * @brief Link counters since boot
+ */
+void remote_io_get_stats(uint32_t *tx_frames, uint32_t *rx_frames,
+                         uint32_t *crc_errors, uint32_t *timeouts);
+
 #endif // REMOTE_IO_H

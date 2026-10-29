@@ -62,6 +62,12 @@ static uint32_t s_rx_frames = 0;
 static uint32_t s_crc_errors = 0;
 static uint32_t s_timeouts = 0;
 
+// IO node identity from its VERSION reply
+static char s_node_version[COBS_MAX_PAYLOAD_SIZE] = "?";
+static uint32_t s_node_uptime_s = 0;
+static uint32_t s_node_resets = 0;
+static bool s_node_seen = false;
+
 /*******************************************************************************
  * Private Functions
  ******************************************************************************/
@@ -566,6 +572,48 @@ esp_err_t remote_onewire_read_ds18b20(int pin, const uint8_t *rom_code, float *t
 /*******************************************************************************
  * Utility Functions
  ******************************************************************************/
+
+esp_err_t remote_io_poll_node(void)
+{
+    uint8_t resp_type = 0;
+    uint8_t data[COBS_MAX_PAYLOAD_SIZE];
+    size_t resp_len = sizeof(data) - 1;
+
+    esp_err_t ret = send_command_binary(MSG_VERSION, NULL, 0, &resp_type, data, &resp_len, CMD_TIMEOUT_MS);
+    if (ret != ESP_OK || resp_type != MSG_VERSION_RESP) {
+        return ret == ESP_OK ? ESP_FAIL : ret;
+    }
+    data[resp_len < sizeof(data) - 1 ? resp_len : sizeof(data) - 1] = '\0';
+
+    // "ionode 2.0 (<ver>) up=<s> rst=<reason>"; older nodes send only the first part
+    char *text = (char *)data;
+    char *up = strstr(text, " up=");
+    char *rst = strstr(text, " rst=");
+    uint32_t uptime = up ? (uint32_t)strtoul(up + 4, NULL, 10) : 0;
+
+    if (!s_node_seen) {
+        ESP_LOGI(TAG, "IO node: %s", text);
+    } else if (up && uptime < s_node_uptime_s) {
+        s_node_resets++;
+        ESP_LOGW(TAG, "IO NODE RESTARTED: uptime %lu s -> %lu s, reset reason %s (%lu since boot)",
+                 (unsigned long)s_node_uptime_s, (unsigned long)uptime, rst ? rst + 5 : "?",
+                 (unsigned long)s_node_resets);
+    }
+    s_node_seen = true;
+    s_node_uptime_s = uptime;
+    if (up) {
+        *up = '\0';
+    }
+    snprintf(s_node_version, sizeof(s_node_version), "%s", text);
+    return ESP_OK;
+}
+
+void remote_io_get_node_info(const char **version, uint32_t *uptime_s, uint32_t *resets)
+{
+    if (version) *version = s_node_version;
+    if (uptime_s) *uptime_s = s_node_uptime_s;
+    if (resets) *resets = s_node_resets;
+}
 
 esp_err_t remote_io_wait_ready(int timeout_ms)
 {

@@ -786,7 +786,16 @@ void hvac_sensors_task(void *pvParameters)
     uint8_t calib_temp_counter = 0;
     const uint8_t CALIB_TEMP_READ_INTERVAL = 20;
     
+    uint32_t last_node_poll_ms = get_time_ms();
+
     while (1) {
+#if USE_REMOTE_IO
+        // Node uptime and reset reason: tells a node restart apart from lost replies
+        if (get_time_ms() - last_node_poll_ms >= 10000) {
+            last_node_poll_ms = get_time_ms();
+            remote_io_poll_node();
+        }
+#endif
         if (calibration_mode) {
             // During calibration, read valve positions at high frequency
             read_valve_positions();
