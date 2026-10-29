@@ -25,6 +25,7 @@
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_app_desc.h"
+#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -36,12 +37,15 @@ static const char *TAG = "LINK";
 #define LINK_EVENT_QUEUE_LEN    20
 #define LINK_READ_CHUNK         128
 
+#define LINK_WATCHDOG_PERIOD_MS 100
+
 static QueueHandle_t s_uart_queue;
 static cobs_receiver_t s_rx;
 static protocol_stats_t s_stats;
-static uint32_t s_last_valid_ms;
-static bool s_seen_any_frame;
-static bool s_safe_state_applied;
+/* Written by the link task, read by the watchdog timer */
+static volatile uint32_t s_last_valid_ms;
+static volatile bool s_seen_any_frame;
+static volatile bool s_safe_state_applied;
 
 static uint32_t now_ms(void)
 {
@@ -273,13 +277,15 @@ static void process_frame(void)
     handle_command(type, payload, payload_len);
 }
 
-static void watchdog_check(uint32_t now)
+/* Runs from an esp_timer, not from link_task: if link_task hangs inside a driver
+ * call, the outputs still go safe; the task watchdog then restarts the node. */
+static void watchdog_timer_cb(void *arg)
 {
 #if LINK_WATCHDOG_MS > 0
     if (!s_seen_any_frame || s_safe_state_applied) {
         return;
     }
-    if (now - s_last_valid_ms > LINK_WATCHDOG_MS) {
+    if (now_ms() - s_last_valid_ms > LINK_WATCHDOG_MS) {
         io_outputs_safe_state();
         s_safe_state_applied = true;
         s_stats.link_up = false;
@@ -295,6 +301,8 @@ static void link_task(void *arg)
     uint8_t buf[LINK_READ_CHUNK];
 
     ESP_LOGI(TAG, "Link task running on core %d", xPortGetCoreID());
+    /* The loop wakes at least every 100 ms; a hang in a driver call restarts the node */
+    esp_task_wdt_add(NULL);
 
     while (1) {
         if (xQueueReceive(s_uart_queue, &event, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -334,9 +342,8 @@ static void link_task(void *arg)
                 break;
             }
         }
-        uint32_t now = now_ms();
-        cobs_receiver_check_timeout(&s_rx, now);
-        watchdog_check(now);
+        cobs_receiver_check_timeout(&s_rx, now_ms());
+        esp_task_wdt_reset();
     }
 }
 
@@ -373,6 +380,22 @@ esp_err_t protocol_server_start(void)
     memset(&s_stats, 0, sizeof(s_stats));
     s_seen_any_frame = false;
     s_safe_state_applied = false;
+
+#if LINK_WATCHDOG_MS > 0
+    const esp_timer_create_args_t wd_args = {
+        .callback = watchdog_timer_cb,
+        .name = "link_wd",
+    };
+    esp_timer_handle_t wd_timer;
+    err = esp_timer_create(&wd_args, &wd_timer);
+    if (err == ESP_OK) {
+        err = esp_timer_start_periodic(wd_timer, LINK_WATCHDOG_PERIOD_MS * 1000);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "link watchdog timer: %s", esp_err_to_name(err));
+        return err;
+    }
+#endif
 
 #if CONFIG_FREERTOS_UNICORE
     const BaseType_t core = 0;
