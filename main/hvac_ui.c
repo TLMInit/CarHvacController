@@ -270,16 +270,22 @@ static void enter_main(void)
 
 static void gesture_handler(lv_event_t *e)
 {
-    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+    /* Gestures bubble to the first ancestor without GESTURE_BUBBLE (scr_main).
+     * Ignore gestures while an overlay is open so it cannot change the page behind it. */
+    if (modal || msg_box) return;
+
+    lv_indev_t *indev = lv_event_get_indev(e);
+    if (!indev) return;
+
+    lv_dir_t dir = lv_indev_get_gesture_dir(indev);
     if (lv_tabview_get_tab_act(tabview) == 0 && dir == LV_DIR_LEFT) {
         enter_debug();
     } else if (lv_tabview_get_tab_act(tabview) == 1 && dir == LV_DIR_RIGHT) {
         enter_main();
     }
-    /* A drag/gesture must not release as a click on the object under the finger. */
-    lv_indev_t *indev = lv_indev_get_act();
-    if (indev) lv_indev_wait_release(indev);
-    (void)e;
+
+    /* Prevent the object under the swipe from activating when the finger lifts. */
+    lv_indev_wait_release(indev);
 }
 
 static void mode_choice_handler(lv_event_t *e)
@@ -844,6 +850,8 @@ esp_err_t hvac_ui_init(void)
     lv_obj_set_style_border_width(scr_main, 0, 0);
     lv_obj_set_style_pad_all(scr_main, 0, 0);
     lv_obj_clear_flag(scr_main, LV_OBJ_FLAG_SCROLLABLE);
+    /* LVGL 8.4 bubbles gestures past gesture-bubbling children to scr_main. */
+    lv_obj_add_event_cb(scr_main, gesture_handler, LV_EVENT_GESTURE, NULL);
 
     /* Hidden tab bar; all programmatic screen changes explicitly disable animation. */
     tabview = lv_tabview_create(scr_main, LV_DIR_BOTTOM, 0);
@@ -864,10 +872,9 @@ esp_err_t hvac_ui_init(void)
         lv_obj_clear_flag(tab, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(tab, LV_OBJ_FLAG_GESTURE_BUBBLE);
     }
-    /* The tabview's content object owns horizontal scrolling/snapping in LVGL 8.4.
-     * Clear its scrollable flag after tab creation so swipes reach gesture_handler. */
+    /* The tabview content owns horizontal scrolling/snapping in LVGL 8.4.
+     * Disable native scrolling; swipes are handled programmatically on scr_main. */
     lv_obj_clear_flag(lv_tabview_get_content(tabview), LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(tabview, gesture_handler, LV_EVENT_GESTURE, NULL);
 
     make_main_screen();
     make_debug_screen();

@@ -64,6 +64,7 @@ Illustrative readings only. The first row shows the controller-reported operatin
 - **Temperature:** the two 64×72 px controls use 22 px symbols and call `hvac_controller_temp_down/up` on `LV_EVENT_SHORT_CLICKED` and `LV_EVENT_LONG_PRESSED_REPEAT` while held. They do not register the release-time `LV_EVENT_CLICKED`, avoiding an extra step after a held repeat. The central Montserrat 44 setpoint is rendered from `target_temp_c` and `temp_unit`; the number and unit use the same 168×56 px label.
 - **Fan:** 56×48 px `−` / `+` controls run their one-shot action only on `LV_EVENT_SHORT_CLICKED` and also support `LV_EVENT_LONG_PRESSED_REPEAT`; release after a repeat does not add a click step. They step through Off, Low, Med-Low, Medium, Med-High, High and clamp at both ends. From AUTO, `−` exits to Off and `+` exits to Low. Tapping the 184×48 px level label sets fan AUTO. The label renders the actual `fan_level` and `blower_speed` percentage.
 - Every click gets LVGL pressed-state feedback. Checked state is updated on the next controller-state render, not from the requested action.
+- Gesture events are registered on `scr_main`, the first ancestor without `LV_OBJ_FLAG_GESTURE_BUBBLE`; child/tabview registration is insufficient because LVGL 8.4 bubbles the gesture past those objects. The handler uses `lv_event_get_indev(e)` for direction and release suppression, and ignores gestures while a modal or message box is open.
 
 ### Diagnostics screen
 
