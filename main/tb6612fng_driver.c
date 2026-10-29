@@ -84,6 +84,9 @@ static TaskHandle_t valve_task_handle = NULL;
 #define VALVE_POSITION_TOLERANCE    2       // Acceptable error window (%) - tighter tolerance
 #define VALVE_HYSTERESIS            2       // Extra margin before restarting (%) - prevents hunting
 #define VALVE_STALL_TIMEOUT_MS      6000     // No movement timeout
+#define VALVE_MAX_MOVE_MS           15000    // One move in one direction longer than 1.5 x full travel = stall
+#define VALVE_STALL_RETRIES         3        // Retries after a stall (10 s, 20 s, 30 s), then latched
+#define VALVE_STALL_RETRY_MS        10000    // Back-off step between retries
 #define VALVE_MOVEMENT_THRESHOLD    2       // Minimum change considered movement
 #define VALVE_MIN_SPEED             30      // Minimum PWM to overcome stiction
 #define VALVE_RAMP_START_ERROR      40      // Start ramping down speed when error is below this % (was 20)
@@ -150,6 +153,9 @@ static tb6612_direction_t last_motor_dir[HVAC_VALVE_MAX] = {TB6612_DIR_STOP};  /
 static int8_t valve_target_adc_side[HVAC_VALVE_MAX] = {0};  // Latched V-shape side: +1=upper, -1=lower, 0=undecided
 static volatile bool valve_calibrating[HVAC_VALVE_MAX] = {false};  // Per-valve calibration flag
 static volatile bool valve_feedback_fault[HVAC_VALVE_MAX] = {false}; // Position reads failing: hold the valve
+static uint32_t valve_move_start_ms[HVAC_VALVE_MAX];        // Start of the current move in one direction
+static uint8_t valve_stall_count[HVAC_VALVE_MAX];           // Stalls since the last successful arrival
+static uint32_t valve_retry_at_ms[HVAC_VALVE_MAX];          // When a stalled valve may retry (0 = latched)
 
 // Per-valve calibration state (for background calibration)
 typedef enum {
@@ -170,6 +176,8 @@ typedef struct {
     int last_direction;
     uint8_t last_adc;
     uint32_t phase_start_ms;
+    uint8_t stall_ref_adc;      // Pot reading at the last observed movement
+    uint32_t stall_ref_ms;      // Time of the last observed movement
 } valve_calib_progress_t;
 
 static valve_calib_progress_t valve_calib_progress[HVAC_VALVE_MAX] = {0};
@@ -350,7 +358,8 @@ esp_err_t tb6612fng_set_valve_position(hvac_valve_id_t valve_id, uint8_t positio
             return ESP_OK;
         }
         state->target_position = position;
-        state->stalled = false;
+        // A stall is kept across target changes (AUTO changes targets every few seconds);
+        // it clears on its retry timer or via tb6612fng_clear_stall()
         state->last_motion_ms = 0;
         // Reset boundary flag when setting a new target - let valve try to reach it
         valve_at_boundary[valve_id] = false;
@@ -484,7 +493,16 @@ void tb6612fng_valve_task(void *pvParameters)
                     }
                     continue;
                 }
-                
+
+                // Stalled: wait for the retry time; after the last retry stay put until tb6612fng_clear_stall()
+                if (state->stalled) {
+                    if (valve_retry_at_ms[i] == 0 || (int32_t)(now_ms - valve_retry_at_ms[i]) < 0) {
+                        continue;
+                    }
+                    state->stalled = false;
+                    ESP_LOGI(TAG, "V%d: retrying after stall (%d of %d)", i, valve_stall_count[i], VALVE_STALL_RETRIES);
+                }
+
                 // Get current ADC reading
                 uint8_t adc_pos = valve_adc_pos[i];
                 
@@ -677,7 +695,8 @@ void tb6612fng_valve_task(void *pvParameters)
                         set_motor_speed(config, 0);
                         state->is_moving = false;
                         state->stalled = false;
-                        ESP_LOGI(TAG, "Valve %d reached target (open=%d%%, adc=%d%%, target=%d%%)", 
+                        valve_stall_count[i] = 0;
+                        ESP_LOGI(TAG, "Valve %d reached target (open=%d%%, adc=%d%%, target=%d%%)",
                                  i, state->position, adc_pos, state->target_position);
                     }
                     continue;
@@ -688,9 +707,6 @@ void tb6612fng_valve_task(void *pvParameters)
                     // Inside hysteresis band and not moving - don't start
                     continue;
                 }
-
-                // Reset stall flag when we have error to correct
-                state->stalled = false;
 
                 tb6612_direction_t desired_dir;
                 bool direction_blocked = false;  // Will be set if we're at a boundary
@@ -806,20 +822,41 @@ void tb6612fng_valve_task(void *pvParameters)
                     speed = max_speed;
                 }
 
+                // Stall detection on the raw pot reading (monotonic through the butterfly's centre).
+                // A reversal starts a new move; the no-motion timer keeps running across it.
+                if (!state->is_moving) {
+                    state->last_motion_ms = now_ms;
+                    state->last_sample_pos = adc_pos;
+                    valve_move_start_ms[i] = now_ms;
+                } else {
+                    if (abs((int16_t)adc_pos - (int16_t)state->last_sample_pos) >= VALVE_MOVEMENT_THRESHOLD) {
+                        state->last_motion_ms = now_ms;
+                        state->last_sample_pos = adc_pos;
+                    }
+                    if (desired_dir != last_motor_dir[i]) {
+                        valve_move_start_ms[i] = now_ms;
+                    }
+                    uint32_t still_ms = now_ms - state->last_motion_ms;
+                    uint32_t move_ms = now_ms - valve_move_start_ms[i];
+                    if (still_ms > VALVE_STALL_TIMEOUT_MS || move_ms > VALVE_MAX_MOVE_MS) {
+                        set_motor_direction((hvac_valve_id_t)i, config, TB6612_DIR_BRAKE, state->position);
+                        set_motor_speed(config, 0);
+                        state->is_moving = false;
+                        state->stalled = true;
+                        valve_stall_count[i]++;
+                        valve_retry_at_ms[i] = (valve_stall_count[i] <= VALVE_STALL_RETRIES)
+                                               ? now_ms + VALVE_STALL_RETRY_MS * valve_stall_count[i] : 0;
+                        ESP_LOGW(TAG, "V%d: STALL (%s) at pos=%d%% adc=%d%% tgt=%d%%, %s",
+                                 i, still_ms > VALVE_STALL_TIMEOUT_MS ? "no movement for 6 s" : "move longer than 15 s",
+                                 state->position, adc_pos, state->target_position,
+                                 valve_retry_at_ms[i] ? "will retry" : "latched until mode change");
+                        continue;
+                    }
+                }
+                state->is_moving = true;
+
                 set_motor_direction((hvac_valve_id_t)i, config, desired_dir, state->position);
                 set_motor_speed(config, speed);
-
-                if (!state->is_moving) {
-                    state->is_moving = true;
-                    state->last_motion_ms = now_ms;
-                    state->last_sample_pos = state->position;;
-                } else {
-                    if (abs((int16_t)state->position - (int16_t)state->last_sample_pos) >= VALVE_MOVEMENT_THRESHOLD) {
-                        state->last_motion_ms = now_ms;
-                        state->last_sample_pos = state->position;
-                    }
-                    // Stall detection disabled - just keep trying
-                }
 
                 if (now_ms - valve_last_log_ms[i] >= VALVE_DEBUG_LOG_MS) {
                     valve_last_log_ms[i] = now_ms;
@@ -889,6 +926,18 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
         prog->state = CALIB_STATE_FAILED;
     }
 
+    // Same stall rule as normal control while the motor is driven
+    if (prog->state == CALIB_STATE_SEEKING_MARKER || prog->state == CALIB_STATE_ROTATING) {
+        if (abs((int)current_adc - (int)prog->stall_ref_adc) >= VALVE_MOVEMENT_THRESHOLD) {
+            prog->stall_ref_adc = current_adc;
+            prog->stall_ref_ms = now_ms;
+        } else if (now_ms - prog->stall_ref_ms > VALVE_STALL_TIMEOUT_MS) {
+            ESP_LOGW(TAG, "V%d: Calibration aborted - STALL (no movement for 6 s at adc=%d%%)",
+                     valve_id, current_adc);
+            prog->state = CALIB_STATE_FAILED;
+        }
+    }
+
     switch (prog->state) {
         case CALIB_STATE_SEEKING_MARKER: {
             // Check timeout
@@ -934,6 +983,8 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
                 ESP_LOGI(TAG, "V%d: Starting rotation from ADC=%d%%", valve_id, prog->start_adc);
                 prog->state = CALIB_STATE_ROTATING;
                 prog->phase_start_ms = now_ms;
+                prog->stall_ref_adc = prog->start_adc;
+                prog->stall_ref_ms = now_ms;
             }
             break;
         }
@@ -1114,6 +1165,8 @@ esp_err_t tb6612fng_start_calibration(hvac_valve_id_t valve_id)
     prog->sample_count = 0;
     prog->last_direction = 0;
     prog->phase_start_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    prog->stall_ref_adc = valve_adc_pos[valve_id];
+    prog->stall_ref_ms = prog->phase_start_ms;
     
     // Mark valve as calibrating (valve task will skip it)
     valve_calibrating[valve_id] = true;
@@ -1723,6 +1776,8 @@ void tb6612fng_clear_stall(hvac_valve_id_t valve_id)
     if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         valve_states[valve_id].stalled = false;
         valve_states[valve_id].last_motion_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        valve_stall_count[valve_id] = 0;
+        valve_retry_at_ms[valve_id] = 0;
         xSemaphoreGive(valve_mutex);
     }
 }

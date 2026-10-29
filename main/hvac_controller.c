@@ -748,6 +748,11 @@ esp_err_t hvac_controller_set_mode(hvac_mode_t mode)
             // Enable motor drivers
             tb6612fng_enable_all();
             bts7960_enable();
+
+            // A mode change is the user's retry for valves latched after repeated stalls
+            for (int v = 0; v < HVAC_VALVE_MAX; v++) {
+                tb6612fng_clear_stall((hvac_valve_id_t)v);
+            }
             
             // Set valve positions for mode
             update_valve_positions(mode);
