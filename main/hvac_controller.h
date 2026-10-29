@@ -42,7 +42,6 @@ typedef struct {
     hvac_fan_speed_t fan_level;     // Fan speed level
     bool ac_enabled;                // A/C compressor request
     bool recirculate;               // Recirculation mode
-    bool rear_defrost;              // Rear window defrost
     
     // Temperature settings
     float target_temp_c;            // Target cabin temperature (°C)
