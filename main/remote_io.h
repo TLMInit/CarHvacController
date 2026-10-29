@@ -46,6 +46,13 @@ void remote_io_flush(void);
  */
 esp_err_t remote_io_reinit(void);
 
+/** True when a CRC-valid response has arrived within the last 3 seconds. */
+bool remote_io_is_connected(void);
+
+/** Snapshot command counters. Any output pointer may be NULL. */
+void remote_io_get_stats(uint32_t *tx_frames, uint32_t *rx_frames,
+                         uint32_t *crc_errors, uint32_t *timeouts);
+
 // ==================== GPIO Functions ====================
 
 typedef enum {
@@ -216,16 +223,5 @@ esp_err_t remote_io_poll_node(void);
  * @brief Last node info from remote_io_poll_node(); version is "?" until the first answer
  */
 void remote_io_get_node_info(const char **version, uint32_t *uptime_s, uint32_t *resets);
-
-/**
- * @brief True if the node answered within the last 3 s (false until its first answer)
- */
-bool remote_io_link_ok(void);
-
-/**
- * @brief Link counters since boot
- */
-void remote_io_get_stats(uint32_t *tx_frames, uint32_t *rx_frames,
-                         uint32_t *crc_errors, uint32_t *timeouts);
 
 #endif // REMOTE_IO_H

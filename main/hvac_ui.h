@@ -44,6 +44,9 @@ lv_obj_t* hvac_ui_get_screen(void);
  */
 void hvac_ui_set_brightness(uint8_t brightness);
 
+/** Apply the persisted DAY/NIGHT brightness after the display backlight is ready. */
+void hvac_ui_apply_saved_brightness(void);
+
 /**
  * @brief Show error message
  * @param message Error message to display

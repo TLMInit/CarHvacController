@@ -429,7 +429,7 @@ void app_main(void)
     
     // Turn on backlight AFTER display and UI are ready (prevents flash)
     ESP_LOGI(TAG, "Turning on display backlight...");
-    hvac_hw_backlight_set(80);  // 80% brightness like working example
+    hvac_ui_apply_saved_brightness();  // Persisted DAY/NIGHT brightness
     
     // Start background tasks
     ESP_LOGI(TAG, "Starting background tasks...");
