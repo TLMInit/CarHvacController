@@ -12,11 +12,15 @@
  */
 
 #include <stdatomic.h>
+#include <stddef.h>
 #include <string.h>
 #include "io_ota.h"
 #include "io_hw.h"
 #include "node_config.h"
 #include "esp_ota_ops.h"
+#include "esp_app_format.h"
+#include "esp_app_desc.h"
+#include "ota_image.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "psa/crypto.h"
@@ -31,6 +35,16 @@ static uint32_t s_size;
 static uint32_t s_received;
 static uint8_t s_expected_sha[32];
 static psa_hash_operation_t s_hash = PSA_HASH_OPERATION_INIT;
+/* The first OTA_IMAGE_HEADER_LEN bytes are held here until they show an ESP32-S3 app of
+ * this project; only then is the slot opened and written */
+static uint8_t s_hdr[OTA_IMAGE_HEADER_LEN];
+
+_Static_assert(offsetof(esp_image_header_t, chip_id) == OTA_IMAGE_CHIP_ID_OFFSET, "image header layout");
+_Static_assert(sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) == OTA_IMAGE_DESC_OFFSET,
+               "app description offset");
+_Static_assert(OTA_IMAGE_DESC_OFFSET + offsetof(esp_app_desc_t, project_name) == OTA_IMAGE_PROJECT_OFFSET,
+               "project name offset");
+_Static_assert(OTA_IMAGE_DESC_OFFSET + sizeof(esp_app_desc_t) == OTA_IMAGE_HEADER_LEN, "app description size");
 
 /* Cleared by whichever of confirm or rollback runs first */
 static atomic_bool s_pending;
@@ -132,17 +146,13 @@ cobs_error_t io_ota_begin(uint32_t size, const uint8_t sha256[32])
     if (s_target == NULL) {
         return ERR_OTA_STATE;
     }
-    if (size == 0 || size > s_target->size) {
+    if (size < OTA_IMAGE_HEADER_LEN || size > s_target->size) {
         return ERR_INVALID_ARGS;
     }
 
     io_outputs_safe_state();
 
-    esp_err_t err = esp_ota_begin(s_target, OTA_WITH_SEQUENTIAL_WRITES, &s_handle);
-    if (err != ESP_OK) {
-        return fail("esp_ota_begin", err, ERR_OTA_WRITE);
-    }
-    s_handle_open = true;
+    /* esp_ota_begin waits for the header check in io_ota_data() */
     if (psa_hash_setup(&s_hash, PSA_ALG_SHA_256) != PSA_SUCCESS) {
         return fail("psa_hash_setup", ESP_FAIL, ERR_OTA_WRITE);
     }
@@ -162,7 +172,38 @@ cobs_error_t io_ota_data(uint32_t offset, const uint8_t *data, size_t len)
     if (offset != s_received || len > s_size - s_received) {
         return ERR_OTA_WRITE;
     }
-    esp_err_t err = esp_ota_write(s_handle, data, len);
+    if (s_received < OTA_IMAGE_HEADER_LEN) {
+        size_t n = OTA_IMAGE_HEADER_LEN - s_received < len ? OTA_IMAGE_HEADER_LEN - s_received : len;
+        memcpy(&s_hdr[s_received], data, n);
+        if (s_received + n == OTA_IMAGE_HEADER_LEN) {
+            char why[96];
+            if (!ota_image_check(s_hdr, OTA_IMAGE_HEADER_LEN, esp_app_get_description()->project_name,
+                                 why, sizeof(why))) {
+                ESP_LOGE(TAG, "Image refused: %s", why);
+                abort_transfer();
+                s_state = OTA_STATE_ERROR;
+                return ERR_OTA_IMAGE;
+            }
+            esp_err_t err = esp_ota_begin(s_target, OTA_WITH_SEQUENTIAL_WRITES, &s_handle);
+            if (err != ESP_OK) {
+                return fail("esp_ota_begin", err, ERR_OTA_WRITE);
+            }
+            s_handle_open = true;
+            if ((err = esp_ota_write(s_handle, s_hdr, OTA_IMAGE_HEADER_LEN)) != ESP_OK) {
+                return fail("esp_ota_write", err, ERR_OTA_WRITE);
+            }
+        }
+        if (n == len) {
+            /* the header bytes go to flash together, once checked */
+            if (psa_hash_update(&s_hash, data, len) != PSA_SUCCESS) {
+                return fail("psa_hash_update", ESP_FAIL, ERR_OTA_WRITE);
+            }
+            s_received += len;
+            return ERR_NONE;
+        }
+    }
+    size_t skip = s_received < OTA_IMAGE_HEADER_LEN ? OTA_IMAGE_HEADER_LEN - s_received : 0;
+    esp_err_t err = esp_ota_write(s_handle, data + skip, len - skip);
     if (err != ESP_OK) {
         return fail("esp_ota_write", err, ERR_OTA_WRITE);
     }

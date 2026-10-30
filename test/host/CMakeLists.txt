@@ -6,7 +6,6 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 enable_testing()
 
-
 set(MAIN ${CMAKE_CURRENT_SOURCE_DIR}/../../main)
 add_compile_options(-Wall -Wextra)
 
@@ -18,3 +17,8 @@ foreach(pad 1 0)
   target_compile_definitions(test_cobs_node_pad${pad} PRIVATE LINK_PAD_TRAILING_ZERO=${pad})
   add_test(NAME test_cobs_node_pad${pad} COMMAND test_cobs_node_pad${pad})
 endforeach()
+
+# OTA image header check (shared with the display repo)
+add_executable(test_ota_image test_ota_image.c ${MAIN}/ota_image.c)
+target_include_directories(test_ota_image PRIVATE ${MAIN} .)
+add_test(NAME test_ota_image COMMAND test_ota_image)

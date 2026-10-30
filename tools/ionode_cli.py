@@ -58,7 +58,7 @@ RESP_NAMES = {
 ERR_NAMES = {
     0: "none", 1: "invalid command", 2: "invalid arguments", 3: "invalid pin",
     4: "I2C failure", 5: "timeout / no device", 6: "CRC mismatch", 7: "frame error", 8: "overflow",
-    9: "OTA state", 10: "OTA write", 11: "OTA verify",
+    9: "OTA state", 10: "OTA write", 11: "OTA verify", 12: "OTA image (not a CarHvacIoNode ESP32-S3 build)",
 }
 
 # Carrier pin map (hvac_hw_config.h / node_config.h): name -> (IN1, IN2, PWM, ADS address, ADS channel)
