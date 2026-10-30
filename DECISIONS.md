@@ -71,5 +71,18 @@ Step A (safety; tags v2.1.1-display / v2.2.1-node):
 - 6: the diagnostics tab keeps RESET CAL and SAVE CAL at their positions; the gap stays (layout untouched).
 - 9: as specified.
 
+Step B:
+- 4: the five `hvac_sensors_get_*_valve_pos()` getters had no callers and went with the array. `HARDWARE_PHOTO_CHECKLIST.md` item 8 is the bench checklist that names these rows.
+
+Step C:
+- 7: the old local path no longer compiled anyway (it referenced a removed `ds18b20_coolant`). `managed_components/` is tracked in this repo, so the two vendored components were removed with `git rm` in a second commit for the same finding. `dependencies.lock` changed only in those two entries and the manifest hash; every remaining component keeps its version and hash. `sdkconfig` did not change.
+- 8: dead = found by grep only at its declaration, definition and comments, repeated until stable (47 public functions plus `calibrate_valve_internal`, the callback type and storage nothing could register, one table and one define). Kept: a few unused `#define`s that were never local-path code, and the unused `i2c_bus` parameters of two init functions (API and log output unchanged).
+- 11: `cobs_crc16()` is the same CRC as the store's copy (CCITT-FALSE: poly 0x1021, init 0xFFFF, no reflection, no xor; equal on "123456789" and 20 000 random buffers), so stored calibration records stay valid.
+- Diff for step C: 31 files, +37 / −1,826 lines (the brief estimated about −1,200; finding 8 had more dead functions than counted). The linker had already dropped most of it: app −208 bytes.
+
+Step D:
+- 10: `sdkconfig` regenerated from the defaults; it differs from the -Og one only in the optimisation choice and `CONFIG_FREERTOS_TASK_FUNCTION_WRAPPER`, which IDF offers only at -Og. Assertions stay on. Display app 0x169f70 → 0x1662c0 (−1.0 %), node 0x4a780 → 0x46840 (−5 %). No new warnings at -O2. `hvac_ui_update` timing needs the board; BENCH.md asks for the log line from both builds.
+- The node's VERSION/HELLO prefix is now `ionode 2.3`, matching the release.
+
 ## Models
 - Strongest available model (Opus) for WP-A, WP-B, WP-C, WP-G, WP-H; faster model (Sonnet) for WP-D, WP-E, WP-F, WP-T. WP-A is not named in the brief; it is the framework every package depends on, so it gets the stronger model.

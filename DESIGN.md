@@ -90,15 +90,15 @@ Illustrative readings only. The first row shows the controller-reported operatin
 │ remote TX / RX / CRC / timeout counters   │
 │ link connected / lost                     │
 ├────────────┬────────────┬─────────────────┤ y=192
-│  READ 1W   │ RESET CAL  │     SAVE CAL    │ 48 px
+│ (empty)    │ RESET CAL  │     SAVE CAL    │ 48 px
 └──────────────────────────────────────────┘ y=240
 ```
 
-The fault explanation wraps rather than silently clipping. The scrolling content lists all five valves in the specified order. Actual valve positions use the corresponding `hvac_state_t` fields; target positions use `tb6612fng_get_valve_target()` for the matching `hvac_valve_id_t`. Any valve whose bit is set in `valve_fault_mask` is highlighted and named in the fault explanation.
+The fault explanation wraps rather than silently clipping. The scrolling content lists all five valves in the specified order. Actual and target positions are both open % (v2.2): actuals come from `tb6612fng_get_valve_position()` through `hvac_sensors_get_all()` into the `hvac_state_t` fields, targets from `tb6612fng_get_valve_target()` for the matching `hvac_valve_id_t`. Any valve whose bit is set in `valve_fault_mask` is highlighted and named in the fault explanation.
 
 The `DAY/NIGHT` target is 100×48 px. It switches the backlight through the existing `hvac_ui_set_brightness()` API, persists `night_mode` in NVS namespace `hvac` next to the existing controller settings, and restores it at boot. Defaults are DAY 80% and NIGHT 18%. These are proposed starting values and should be adjusted after night driving tests.
 
-`RESET CAL` opens a modal; no calibration reset happens until `RESET CAL` is confirmed. Both `KEEP MODEL` and `RESET CAL` are 144×48 px targets. `READ 1W` and `SAVE CAL` are each 96×48 px.
+`RESET CAL` opens a modal; no calibration reset happens until `RESET CAL` is confirmed. Both `KEEP MODEL` and `RESET CAL` are 144×48 px targets. `SAVE CAL` is 96×48 px. The `READ 1W` button was removed in v2.2 (it blocked the UI for 750 ms); Service → Sensor roles shows every DS18B20 live.
 
 ### Airflow picker
 
@@ -276,6 +276,9 @@ generated Montserrat 14/16 subsets with æ/ø/å; the main page keeps its fonts.
 | `event_log.c` | 50-entry ring, newest first, fed by link, valves, controller, self-test, OTA |
 | `valve_cal_store.c` | Per-valve calibration records with CRC in `hvac_cal` |
 | `presets.c`, `comfort.c`, `cascade.c` | Presets; dew point, defog and heater-delay logic; cascade PI (pure, host-tested) |
+| `motor_link.c` | Per-valve "wanted vs acknowledged" motor command bookkeeping: resend until ACKed, 1 s re-assert (pure, host-tested, v2.2) |
+| `ota_image.c` | Image header check (ESP32-S3, project name) before any OTA flash write; identical in the node repo (pure, host-tested, v2.2) |
+| `hvac_ui_common.h` | Helpers shared by the settings/diagnostics/service pages (`now_ms`, `refresh_due`) |
 | `selftest.c` | One-shot boot check after calibration |
 | `hvac_ui_settings.c`, `hvac_ui_diag.c`, `hvac_ui_service.c` | The new pages |
 | `wifi_ap.c`, `web_server.c`, `web/index.html` | Phone access point and page |
@@ -292,6 +295,8 @@ generated Montserrat 14/16 subsets with æ/ø/å; the main page keeps its fonts.
 | `httpd` | IDF default | on request | thread-safe getters only; OTA uploads stream in chunks |
 | `node_ota` | — | per upload | streams a node image over the link, one command per mutex hold |
 | `ota_valid` | — | until validated | marks a fresh display image valid after 30 s UI + link up |
+
+Only the valve task's calibration tick switches the sensors' fast position reads (on while a valve calibrates or learns its direction). The firmware has no local-IO build any more (v2.2): every actuator and sensor is on the node.
 
 The sensors task now does one broadcast Convert T per second and, on the next cycle, one
 scratchpad read per ROM (at most four); searches run in the same task.

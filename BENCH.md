@@ -1,9 +1,14 @@
-# Bench and car check — v2.1-display with v2.2-node
+# Bench and car check — v2.2-display with v2.3-node
 
-## Safety fixes: v2.1.1-display with v2.2.1-node (findings 1, 2, 3, 5, 6, 9)
+Flash sets with SHA-256 sums are in `../releases/v2.2-display` and `../releases/v2.3-node`.
+Check the sums first (`Get-FileHash *.bin`) against `SHA256SUMS.txt`.
 
-Flash sets in `../releases/v2.1.1-display` and `../releases/v2.2.1-node`. Partition tables are
-unchanged from v2.1/v2.2, so either the full `@flash_args` set or the phone page works.
+Coming from v2.1/v2.2 or v2.1.1/v2.2.1 the partition tables are unchanged: the phone page or
+the full `@flash_args` set both work. Coming from v2.0 or earlier, flash the full set once
+(section 1). The checks below go in this order: the safety fixes (also valid for v2.1.1), the
+-O2 build, then the general v2.1 procedure in sections 1–8.
+
+## Safety fixes (findings 1, 2, 3, 5, 6, 9; first shipped as v2.1.1-display / v2.2.1-node)
 
 1. **Lost stop (1).** System in AUTO, Diagnostics → Valve service open on one valve. Change the
    setpoint so that valve moves; the instant it reaches its target, pull the node's RX wire
@@ -25,16 +30,33 @@ unchanged from v2.1/v2.2, so either the full `@flash_args` set or the phone page
    the live temperatures.
 6. **UI cadence (9).** With nothing touched for a minute, change the setpoint from the phone
    page: the display shows it within half a second.
+7. **Valve rows in open % (4).** Diagnostics tab with the system settled: each valve's `ACT`
+   is within a few percent of its `TARGET`; a closed valve reads `ACT 0..3% TARGET 0%`.
 
-Flash sets with SHA-256 sums are in `../releases/v2.1-display` and `../releases/v2.2-node`.
-Check the sums first (`Get-FileHash *.bin`) against `SHA256SUMS.txt`.
+## Release build at -O2 (finding 10)
+
+-O2 can surface timing and uninitialised-variable bugs that -Og hid, so run this as a whole,
+on the bench with the car's valves, blower and sensors connected:
+
+1. Before flashing, note the `hvac_ui_update avg=... max=...` line (every 5 s on the display
+   console) from the build you run now (v2.1.1 or older, -Og).
+2. Flash both boards. Full boot: no panic, no `Guru Meditation`, no task watchdog line; self-test OK.
+3. Calibration: Settings → Valves → Recalibrate at boot: On → reboot. Every butterfly valve
+   calibrates and logs `CALIBRATED`; reboot once more, every valve logs `accepted stored`.
+4. AUTO for ten minutes at a setpoint a few degrees from cabin: valves settle without hunting,
+   the event log has no `stall` and no node reset, Link health shows 0 timeouts/min at rest.
+5. Note the `hvac_ui_update avg=... max=...` line again and compare it with step 1.
+6. Pull the node RX wire as in safety check 1; the stop is re-asserted within a second.
+7. One OTA round trip: node image through the phone page, then the display image; both
+   confirm (`OTA: New image confirmed` on the node, `New display firmware validated` in the
+   display event log).
 
 ## 1. Flash (both boards change partition table: full flash once)
 
 ```
-cd ..\releases\v2.2-node
+cd ..\releases\v2.3-node
 python -m esptool --chip esp32s3 -p COM_NODE -b 921600 write_flash "@flash_args"
-cd ..\v2.1-display
+cd ..\v2.2-display
 python -m esptool --chip esp32s3 -p COM_DISPLAY -b 921600 write_flash "@flash_args"
 ```
 
@@ -46,16 +68,16 @@ Later updates can go over the phone page.
 | Expect | Means |
 |---|---|
 | `SETTINGS: hvac_cfg schema 1: N keys loaded, 0 rejected, 66 rows total` | settings loaded |
-| `HELLO: node protocol 2, caps 0x03 (search ota), ionode 2.2 (...)` | handshake; pad off from here |
+| `HELLO: node protocol 2, caps 0x03 (search ota), ionode 2.3 (...)` | handshake; pad off from here |
 | `1-Wire search: 1 ROM(s)` and `Sensor roles: single ROM assigned DUCT (migration from 2.0)` | existing duct sensor kept its role |
-| `V0: calibrating (no stored calibration ...)` then `CALIBRATED`, same for V1–V3; `V4: fixed calibration (linear valve)` | first boot stores calibration |
+| `V0: recalibrating: no stored calibration (...)` then `CALIBRATED`, same for V1–V3; `V4: fixed calibration (linear valve)` | first boot stores calibration |
 | `SELFTEST: PASS ...` lines, then `EVENT: INFO: Self-test OK` | all checks pass |
 
 Node console: `LINK: HELLO from display protocol 2: reply padding off`.
 
 ## 3. Second boot
 
-Every butterfly valve logs `using stored calibration (...)` and does not rotate. Boot to
+Every butterfly valve logs `accepted stored (...)` and does not rotate. Boot to
 control is seconds instead of a full calibration round.
 
 ## 4. Display checks

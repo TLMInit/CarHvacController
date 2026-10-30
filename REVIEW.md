@@ -94,6 +94,24 @@ Display hashes are in this repo; node hashes (marked *node*) are in `CarHvacIoNo
 | N-11 | `watch` CLI command | 5 | held |
 | INST | Instrumentation for the "everything drops" reports | 1 | **done** 6a0fe99 (timeout lines), 99ca320 (node restarts), a465c59 (debug tab); *node* d83c7fd (uptime + reset reason) |
 
+### Second review (v2.1 → v2.2-display / v2.3-node)
+
+Display hashes on `v2.2/integration`, node hashes (*node*) on `v2.3/integration`. Step A shipped
+early as `v2.1.1-display` / `v2.2.1-node`.
+
+| # | Title | Step | Status |
+|---|---|---|---|
+| 1 | Lost stop leaves a motor running | A | **done** 9723795 (`motor_link.c`: pending until both parts ACKed, 1 s re-assert of all five valves, event-log line on a resent stop; host test) |
+| 2 | Stored calibration discarded for a closed valve | A | **done** 77338f4 (range-only check ±3 %; `accepted stored` / `recalibrating: <reason>`; host test) |
+| 3 | Wrong image accepted by OTA | A | **done** b3d499a, *node* b78b8eb (project name + chip checked before any flash write, both boards; host test) |
+| 4 | Diagnostics compares raw pot % with open % | B | **done** e5424fe (positions from the valve driver; raw array, its mutex and five getters deleted) |
+| 5 | Getter with side effects | A | **done** f2e6d26 (`tb6612fng_is_calibrating()` pure; the calibration tick alone switches fast reads) |
+| 6 | READ 1W debug button | A | **done** dd38445 (button, `hvac_sensors_debug_read_onewire()`, `remote_onewire_read_ds18b20()` deleted) |
+| 7 | Local-IO build path | C | **done** c38081e, c3f848c (`USE_REMOTE_IO` and every local branch gone; `espressif/ds18b20`, `espressif/onewire_bus` dropped) |
+| 8 | Unused public functions | C | **done** c553876 (47 public functions plus `calibrate_valve_internal`; blocking `tb6612fng_calibrate_valve` gone) |
+| 9 | UI update cadence | A | **done** ac54b46 (`lv_tick_elaps(last) >= 100`) |
+| 10 | Release built at -Og | D | **done** 5aba0c4, *node* b5dd702 (`CONFIG_COMPILER_OPTIMIZATION_PERF`; app −1.0 % display, −5 % node; bench note in `BENCH.md`) |
+| 11 | Duplicates | C | **done** 59ef1ad (`hvac_ui_common.h`; calibration store uses `cobs_crc16()`, same CRC, stored records stay valid) |
 ---
 
 ## Task layout (as built)

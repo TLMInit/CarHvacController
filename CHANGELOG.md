@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.2-display (with node v2.3)
+
+The eleven findings of the second review; details in `REVIEW.md` (status) and `DECISIONS.md`.
+v2.1.1-display / v2.2.1-node carried the safety fixes early.
+
+- A stop the node never acknowledged is resent on the next tick, and every valve's command
+  is re-asserted once a second (1).
+- A valve closed at power-off keeps its stored calibration (2).
+- Both boards refuse an OTA image of the other project, before anything is written (3).
+- Diagnostics shows valve positions in open %, the unit of the target (4).
+- Fast sensor reads during calibration and direction learning no longer drop out when a
+  page polls the driver (5); the blocking READ 1W button is gone (6).
+- UI refresh every 100 ms of time instead of every 10 loop passes (9).
+- Dead code removed: the local-IO build path, two components and ~50 unused functions;
+  duplicate helpers merged (7, 8, 11). About 1,800 lines fewer.
+- Both boards built at -O2 (10).
+
 ## v2.1-display (with node v2.2)
 
 Defaults keep v2.0 behaviour except that leaving DEF restores the A/C choice. Details and
