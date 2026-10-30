@@ -612,8 +612,11 @@ esp_err_t tb6612fng_set_valve_position(hvac_valve_id_t valve_id, uint8_t positio
         }
         state->target_position = position;
         // A stall is kept across target changes (AUTO changes targets every few seconds);
-        // it clears on its retry timer or via tb6612fng_clear_stall()
-        state->last_motion_ms = 0;
+        // it clears on its retry timer or via tb6612fng_clear_stall().
+        // A new target restarts the no-movement window. It used to be set to 0, which a valve
+        // still moving (is_moving stays true) read as "no movement since boot": an instant
+        // STALL on every target change mid-move.
+        state->last_motion_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
         // Reset boundary flag when setting a new target - let valve try to reach it
         valve_at_boundary[valve_id] = false;
         // Reset V-shape side latch when target changes significantly
