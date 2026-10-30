@@ -85,24 +85,24 @@ static void test_pad_only_while_flag(void)
     cobs_pad_trailing_zero = false;
 }
 
-/* Longest payloads, flag set: the padded reply must still fit COBS_MAX_FRAME_SIZE. */
+/* Longest payloads, flag set: the padded reply must fit send_frame's buffer
+ * (COBS_MAX_FRAME_SIZE + 1 for the delimiter) and stay within what the display
+ * receiver stores (COBS_MAX_FRAME_SIZE encoded bytes). */
 static void test_pad_at_max_payload(void)
 {
-#ifdef KNOWN_BUG_TESTS
     cobs_pad_trailing_zero = true;
-    for (size_t n = 60; n <= 63; n++) {
+    for (size_t n = 59; n <= COBS_MAX_PAYLOAD_SIZE - 1; n++) {
         int found = 0;
         for (int tries = 0; tries < 20000 && !found; tries++) {
-            uint8_t pl[COBS_MAX_PAYLOAD_SIZE], f[COBS_MAX_FRAME_SIZE];
+            uint8_t pl[COBS_MAX_PAYLOAD_SIZE], f[COBS_MAX_FRAME_SIZE + 1];
             fill(pl, n, 0);
             if (!crc_lo_zero(0x87, pl, n)) continue;
             found = 1;
-            CHECKM(cobs_build_frame(0x87, pl, n, f, sizeof(f)) > 0, "padded %zu-byte payload does not fit COBS_MAX_FRAME_SIZE", n);
+            CHECKM(cobs_build_frame(0x87, pl, n, f, sizeof(f)) > 0, "padded %zu-byte payload does not fit the reply buffer", n);
         }
         CHECK(found);
     }
     cobs_pad_trailing_zero = false;
-#endif
 }
 
 int main(void)

@@ -63,7 +63,9 @@ static uint32_t now_ms(void)
 
 static void send_frame(uint8_t type, const uint8_t *payload, size_t len)
 {
-    uint8_t frame[COBS_MAX_FRAME_SIZE];
+    /* +1: a full-size reply with the compatibility pad encodes to COBS_MAX_FRAME_SIZE,
+     * and cobs_build_frame needs room for the delimiter after it */
+    uint8_t frame[COBS_MAX_FRAME_SIZE + 1];
     size_t n = cobs_build_frame(type, payload, len, frame, sizeof(frame));
     if (n == 0) {
         ESP_LOGE(TAG, "Reply 0x%02X (%u bytes) does not fit a frame", type, (unsigned)len);

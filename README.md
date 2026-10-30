@@ -263,6 +263,5 @@ cmake --build ../tbuild-node
 ctest --test-dir ../tbuild-node --output-on-failure
 ```
 
-`-DRUN_KNOWN_BUG_TESTS=ON` also builds the check for a padded 63-byte reply (currently fails, see the
-report). CI (`.github/workflows/ci.yml`) runs these tests, then builds with `espressif/idf:v6.1` and fails on
+CI (`.github/workflows/ci.yml`) runs these tests, then builds with `espressif/idf:v6.1` and fails on
 any compiler warning from `main/`.
