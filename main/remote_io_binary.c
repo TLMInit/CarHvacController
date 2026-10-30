@@ -720,25 +720,6 @@ esp_err_t remote_ds18b20_read_temp(const uint8_t *rom_code, float *temperature_c
     return ret == ESP_OK ? ESP_FAIL : ret;
 }
 
-/**
- * @brief Blocking read - starts conversion, waits, then reads
- * For backwards compatibility - use async pattern for better performance
- */
-esp_err_t remote_onewire_read_ds18b20(int pin, const uint8_t *rom_code, float *temperature_c)
-{
-    (void)pin; (void)rom_code;  // Ignored in binary protocol
-    
-    // Start conversion
-    esp_err_t ret = remote_ds18b20_start_conversion(rom_code);
-    if (ret != ESP_OK) return ret;
-    
-    // Wait for conversion (750ms max for 12-bit)
-    vTaskDelay(pdMS_TO_TICKS(750));
-    
-    // Read temperature result
-    return remote_ds18b20_read_temp(rom_code, temperature_c);
-}
-
 /*******************************************************************************
  * Utility Functions
  ******************************************************************************/

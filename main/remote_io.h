@@ -135,11 +135,6 @@ esp_err_t remote_onewire_init(int pin);
  */
 esp_err_t remote_onewire_scan(int pin, uint8_t rom_codes[][8], int max_devices, int *found_count);
 
-/**
- * @brief Read temperature from DS18B20 (blocking - waits 750ms)
- */
-esp_err_t remote_onewire_read_ds18b20(int pin, const uint8_t *rom_code, float *temperature_c);
-
 // ==================== DS18B20 Async Functions ====================
 
 /**

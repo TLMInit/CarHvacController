@@ -1300,33 +1300,3 @@ void hvac_sensors_set_calibration_mode(bool enabled)
     }
 }
 
-esp_err_t hvac_sensors_debug_read_onewire(float *temperature_c)
-{
-    float temp = NAN;
-    esp_err_t ret = ESP_ERR_INVALID_STATE;
-
-#if USE_REMOTE_IO
-    ret = remote_onewire_read_ds18b20(DS18B20_ONEWIRE_PIN, NULL, &temp);
-#else
-    if (ds18b20_duct == NULL) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    ret = ds18b20_trigger_temperature_conversion(ds18b20_duct);
-    if (ret == ESP_OK) {
-        vTaskDelay(pdMS_TO_TICKS(100));
-        ret = ds18b20_get_temperature(ds18b20_duct, &temp);
-    }
-#endif
-
-    if (ret == ESP_OK && xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        sensor_data[SENSOR_DUCT_TEMP].value = temp;
-        sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_OK;
-        sensor_data[SENSOR_DUCT_TEMP].last_update_ms = get_time_ms();
-        xSemaphoreGive(sensor_mutex);
-    }
-
-    if (temperature_c) {
-        *temperature_c = temp;
-    }
-    return ret;
-}

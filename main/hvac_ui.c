@@ -876,20 +876,6 @@ static void reset_cal_confirm_handler(lv_event_t *e)
     (void)reset;
 }
 
-static void onewire_read_handler(lv_event_t *e)
-{
-    float temp_c = NAN;
-    (void)e;
-    esp_err_t ret = hvac_sensors_debug_read_onewire(&temp_c);
-    if (ret == ESP_OK && !isnan(temp_c)) {
-        char msg[64];
-        snprintf(msg, sizeof(msg), "1-Wire duct: %.2f C", temp_c);
-        hvac_ui_show_info(msg);
-    } else {
-        hvac_ui_show_error("1-Wire read failed");
-    }
-}
-
 static void save_cal_handler(lv_event_t *e)
 {
     (void)e;
@@ -1030,9 +1016,6 @@ static void make_debug_screen(void)
                    308, 18, &lv_font_montserrat_14, UI_COLOR_TEXT, LV_TEXT_ALIGN_LEFT);
     }
 
-    (void)ui_make_button(tab_debug, "READ 1W", 8, 192, 96, 48,
-                      &lv_font_montserrat_14, onewire_read_handler,
-                      UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
     (void)ui_make_button(tab_debug, "RESET CAL", 112, 192, 96, 48,
                       &lv_font_montserrat_14, reset_cal_confirm_handler,
                       UI_COLOR_WARNING, UI_COLOR_WARNING);
