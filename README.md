@@ -43,6 +43,16 @@ place, so settings, valve calibration and thermal learning survive.
   `HVAC-xxxx` with the password shown there and open `http://192.168.4.1`: status, settings,
   event log, diagnostics and firmware upload for the display and the node. Uploads are
   refused unless the system is OFF and the blower has stopped.
+- **Electric compressor** (v2.4, needs node v2.5): Settings → A/C → Compressor type =
+  Electric shows the output rows. Speed output PWM (GPIO10, 100–20000 Hz), Analog (RC) (GPIO10
+  through the node README's 10 kΩ / 10 µF filter, 0–3.3 V) or DAC MCP4725 (node I2C, 0x60/0x61).
+  The A/C relay (GPIO6) is the compressor's enable: wire it to the enable input. The compressor
+  runs at Minimum speed or more, ramps at Speed ramp, and switches off after Off after no demand
+  without a request. Assign a sensor the Evaporator role (Service → Sensor roles) for the freeze
+  limits and the evaporator loop; with the clutch type the same role replaces the duct freeze
+  cutout. Diagnostics shows `A/C ELEC dem .. out .. EN ev ..`. Service → Compressor test runs it
+  with mode OFF: start the blower with BLOWER LOW, set the demand with − / +; it stops after 60 s
+  without a touch or when you leave the page.
 - **Updates**: a new display image is kept only after it has run the UI for 30 s with the
   node link up; otherwise the bootloader rolls back. The node does the same after one PING
   and one VERSION within 60 s.
@@ -51,7 +61,8 @@ place, so settings, valve calibration and thermal learning survive.
 
 Host unit tests (no ESP-IDF, no hardware) live in `test/host/`: settings table and cross-field rules,
 NVS schema/migration (`settings_ns_open` against a fake NVS), dew point and defog, cascade control,
-COBS + CRC and the pad rule, valve motor bookkeeping, valve calibration records, OTA image check.
+COBS + CRC and the pad rule, valve motor bookkeeping, valve calibration records, OTA image check,
+the electric compressor law and its output bytes (PWM_INIT_HZ, 16-bit PWM_SET, MCP4725).
 Firmware sources are compiled as they are; ESP-IDF headers are faked under `test/host/fakes/`.
 
 ```

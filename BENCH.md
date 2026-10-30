@@ -6,9 +6,59 @@ Check the sums first (`Get-FileHash *.bin`) against `SHA256SUMS.txt`.
 Coming from v2.1 or later the partition tables are unchanged: the phone page or the full
 `@flash_args` set both work. Coming from v2.0 or earlier, flash the full set once (section 1).
 Stored settings carry over; values that break a new cross-field rule are fixed at the first
-boot and each fix is logged (`SETTINGS:` lines). Order of the checks: the settings release,
+boot and each fix is logged (`SETTINGS:` lines). Order of the checks: the electric compressor, the settings release,
 the settings edge checks (only before changing those settings), the hotfix, the safety fixes,
 the -O2 build, then the general procedure in sections 1–8.
+
+## Electric compressor (v2.4-display / v2.5-node)
+
+Needs node v2.5 (HELLO caps include `pwm_hz`). Run it before the older sections. Multimeter
+on the output against node GND: PWM and analog RC on GPIO10 (PWM: use the meter's DC volts,
+which averages; or a scope), analog RC after the node README's filter (10 kΩ, 10 µF, meter
+≥ 1 MΩ), DAC on its VOUT. Relay (GPIO6) = enable: an LED or the meter on the relay output.
+
+1. **Clutch unchanged.** Compressor type Clutch (default): A/C on in a manual mode with fan
+   Medium: relay on, diagnostics row `A/C REQ ON  COMP ON  RECIRC ..` as before; GPIO10 stays 0 V
+   and the node console shows no PWM_INIT_HZ. (In fan Low the clutch drops with `Interlock:
+   blower below Low`: a known, unchanged clutch issue, see DECISIONS.md.)
+2. **Node without the capability.** With a v2.4 node set Compressor type Electric: event log
+   `A/C electric output unavailable: node lacks PWM_HZ`, A/C reason `Electric: node lacks PWM_HZ`,
+   relay stays off whatever is requested. Then flash node v2.5.
+3. **Output scale, per type** (Compressor test page, mode OFF, BLOWER LOW on, Output at min
+   speed 0, Minimum speed 0, Speed ramp 100 so each step settles at once):
+
+   | Demand | PWM (1 kHz) | Analog RC | DAC, Vdd 3.3 V |
+   |---|---|---|---|
+   | 0 % (STOP) | 0 V | 0 V | 0 V |
+   | 50 % | half of the high level, about 1.65 V | about 1.65 V (settles in ~0.5 s) | about 1.65 V |
+   | 100 % | about 3.3 V (steady high) | about 3.3 V | Vdd − 1 LSB |
+
+   PWM log line: `PWM GPIO10 1000 Hz 13 bit: ESP_OK`; at 20 kHz `... 11 bit`. Analog RC:
+   `analog RC GPIO10 20000 Hz 8 bit`. DAC at the first electric boot: event `A/C DAC 0x60: output
+   and EEPROM set to 0`; power-cycle the DAC alone: it comes up at 0 V (was half scale).
+4. **Ramp.** Defaults back (ramp 20 %/s, minimum speed 20 %, output 10..100 %): test demand
+   0 → 100 %: the output starts at the minimum (about 28 % of full scale) and climbs to full
+   scale in about 4 s; 100 → 10 % falls back to the minimum over about 4 s.
+5. **Idle-off.** Demand to 0 with − (not STOP): output stays at the minimum speed level, reason
+   `Electric: idling`; after 30 s (Off after no demand) the enable drops and the output goes to 0,
+   reason `Electric: idle off`. Raise the demand at once: the enable waits for the minimum off
+   time (10 s, reason `Minimum off-time`).
+6. **Blower interlock.** Test running, BLOWER LOW off: the enable drops and the output goes to 0
+   at once, reason `Interlock: blower below Low`. In normal use the same with fan OFF.
+7. **Link pull.** Running at 50 %, unplug the link: PWM / analog RC go to 0 V and the relay drops
+   when the node watchdog trips (3 s); the DAC follows within about 0.1 s after that. Display:
+   reason `Electric: link down`. Plug back: HELLO, the output is initialised again (log line from
+   step 3) and follows the demand.
+8. **Invert.** Invert output on: idle reads full scale, 100 % demand reads 0 V. Back off.
+9. **Dead-man.** Start a test and do not touch for 60 s: demand 0, enable off, `Test ended,
+   demand 0`, the test's blower stops. Leaving the page does the same at once; switching the
+   airflow mode on ends it too.
+10. **Evaporator** (sensor with the Evaporator role, chill it with cold spray or ice): clutch type,
+    A/C on: at the cut-out (1 °C) the relay drops with `Interlock: evaporator freeze`, back above
+    the cut-in (4 °C). Electric: between cut-in and cut-out the output is capped
+    (`Electric: freeze limit`), at the cut-out `Electric: freeze cut`. Self-test shows
+    `Evaporator sensor`. `/api/state` has `compressor_type`, `ac_demand`, `ac_output`,
+    `ac_enable`, `evap_c`.
 
 ## Settings release v2.3-display / v2.4-node (items 5–16)
 

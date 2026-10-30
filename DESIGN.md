@@ -260,7 +260,8 @@ main  <-swipe->  diagnostics  <-swipe->  settings home
                                            |- Display / Climate / Fan / Comfort / Control / Valves / Connect / System
                                            |     (Valves starts with Air distribution: 5 manual modes x 4 air valves, % open)
                                            |- Diagnostics: Event log, Link health, Self-test, Trend chart
-                                           '- Service: Valve service (mode OFF only), Sensor roles
+                                           '- Service: Valve service (mode OFF only), Sensor roles,
+                                                 Compressor test (v2.4: electric type, mode OFF only)
                                                  (Valve service opens the Service settings group, editable with mode OFF)
 ```
 
@@ -289,6 +290,8 @@ generated Montserrat 14/16 subsets with æ/ø/å; the main page keeps its fonts.
 | `hvac_ui_settings.c`, `hvac_ui_diag.c`, `hvac_ui_service.c` | The new pages |
 | `wifi_ap.c`, `web_server.c`, `web/index.html` | Phone access point and page |
 | `ota_display.c` | Display update into the inactive slot; kept after 30 s of UI with the link up, rolled back after 5 min without |
+| `ac_electric.c` | Electric compressor law: demand, idle-off, evaporator PI, ramp, limiter (pure, host-tested, v2.4) |
+| `ac_output.c`, `ac_output_calc.c`, `link_payload.c` | Compressor speed output over the link (PWM / analog RC / MCP4725); the arithmetic and payload bytes are pure and host-tested (v2.4) |
 
 ### New tasks
 
@@ -322,3 +325,82 @@ budgets, OTA reboot wait vs the node's 60 s confirm, node slot size, project nam
 blower PWM 25 kHz, ADS1115 full scale, the byte-identical `cobs_protocol.h` / `ota_image.h`) carry
 a comment at both ends; the full list with the rule and its enforcement is `INVENTORY.md`
 section 5, the node's side is the table in its README.
+
+## 11. A/C settings block (v2.4)
+
+### Group order and visibility
+
+The A/C group shows, in this order: Compressor type, the electric block (Speed output, Output
+pin, PWM frequency, Invert output, Output at min / max speed, DAC full scale, DAC address,
+Speed ramp, Minimum speed, Off after no demand, Evaporator target), the freeze limits
+(Evaporator cut-out / cut-in), then the older A/C rows moved here (AUTO uses A/C, Humidity A/C
+on / off, DEF restores A/C). The electric rows are hidden with Compressor type = clutch; the pin
+row only for PWM and analog RC, the frequency only for PWM, full scale and address only for the
+DAC. The cut-out / cut-in rows are always shown: both types use them once the EVAPORATOR sensor
+role is assigned. The evaporator PI gains (Kp, Ki) are Advanced, on the phone page only. Hidden
+rows keep their values and are exported and imported as usual.
+
+### Modes
+
+- **Clutch** (default): exactly the behaviour before v2.4. Requests (user A/C, DEF, AUTO
+  warm-up, humidity rule, dew-point defog, AUTO cooling) switch the relay; interlocks are mode
+  OFF, blower below Low and the freeze cutout; minimum off time and the humidity-only minimum
+  on time apply.
+- **Electric**: the same requests become a demand (`ac_electric_demand`: user and Max cool
+  100 %, DEF / defog / warm-up 60 %, humidity 40 %, AUTO cooling from the deadband to
+  `SET_AUTO_FAN_FULL_C`). `ac_electric_step` runs every 100 ms control cycle and turns it into
+  enable and speed (minimum speed, ramp, idle-off, evaporator PI and limiter; see
+  `ac_electric.h`). Interlocks (enable off at once, no ramp): mode OFF (except the compressor
+  test), link down (demand 0 as well), output unavailable or not initialised, blower below Low,
+  the duct freeze cutout when there is no evaporator reading, and the minimum off time while the
+  enable is off. The idle-off time (default 30 s at minimum speed) replaces the clutch's
+  humidity minimum on time. Cascade mode uses the same demand.
+
+### Enable
+
+The enable is the A/C relay on node GPIO6, driven through the same `set_ac_compressor()` as the
+clutch: same 1 s re-assert, same minimum off-time bookkeeping. Wire it to the compressor's
+enable/run input: it drops at once in every node safe state.
+
+### Outputs (`ac_output.c`)
+
+| Type | Link commands | Full scale |
+|---|---|---|
+| PWM | `PWM_INIT_HZ(pin, freq, bits)` with bits = min(13, floor(log2(80 MHz / freq))) (100 Hz and 1 kHz: 13, 20 kHz: 11); duty as raw counts in the 3-byte `PWM_SET` | 100 % duty |
+| analog RC | `PWM_INIT_HZ(pin, 20000, 8)`, duty in the 2-byte `PWM_SET`; 10 kΩ / 10 µF filter (node README) | about 3.3 V |
+| MCP4725 | `I2C_WRITE` fast write, value = round(pct × 4095); once per boot and address DAC + EEPROM set to 0 (`60 60 02 00 00`) | Vdd (3.3 V, or 5 V with a level shifter) |
+
+Every type needs `NODE_CAP_PWM_HZ` in the node's HELLO: without it the output is unavailable
+(event log, A/C reason `Electric: node lacks PWM_HZ`) and the enable stays off; nothing falls
+back to another output. The channel is initialised again at every HELLO (`remote_io_hello_seq()`:
+boot, link recovered, node restart), on a type / pin / frequency / address change (the old pin's
+duty or the old DAC goes to 0 first), and once a second after a refused init. The value is sent
+on change and re-sent once a second with the relay and blower. Output % is already inverted when
+Invert output is on, and the idle level is 0 % (100 % inverted). The node's safe state sets PWM
+to 0 at once and the DACs to 0 within about 0.1 s; with Invert on that reads as full speed, so the
+enable is what stops the compressor.
+
+### Evaporator
+
+With the EVAPORATOR role assigned both types use it: the clutch's freeze cutout becomes
+Evaporator cut-out / cut-in (hysteresis, reason `Interlock: evaporator freeze`) instead of the
+duct proxy; the electric type runs its PI loop on it and limits the speed linearly from 100 % at
+cut-in to 0 at cut-out, with a latched cut at cut-out. Without the role both keep the duct proxy
+(duct below 3 °C with the coolant valve closed, back above 6 °C).
+
+### Diagnostics
+
+Diagnostics tab row 3: clutch `A/C REQ .. COMP .. RECIRC ..` as before; electric
+`A/C ELEC dem 40% out 44% EN ev 4.2C`. `/api/state` adds `compressor_type`, `ac_demand`,
+`ac_output`, `ac_enable`, `evap_c` (null without a reading). Self-test lists the Evaporator sensor
+like Coolant and Outside.
+
+### Compressor test (service page)
+
+Electric type and mode OFF only, with the valve page's reason line. − / + set the demand in
+10 % steps (hold repeats), STOP ends the test; the page shows demand, output %, enable, the
+evaporator reading, blower duty and the A/C reason. The test bypasses only "mode OFF"; the
+blower interlock, minimum off time, freeze limits and link checks stay. BLOWER LOW runs the
+blower at Low for the test, because a compressor without airflow ices the evaporator within
+minutes. The controller ends the test 60 s after the last touch, on a mode change, on STOP and
+when the page closes: demand 0 at once and the test's blower off.
