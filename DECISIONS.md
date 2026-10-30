@@ -110,5 +110,10 @@ Step C (expose the inventory):
 - 16: export is JSON by NVS key; the Wi-Fi password is left out unless "Include the Wi-Fi password" is ticked (a file travels further than the screen). Import is all or nothing: format, schema (equal only; no migration exists yet), unknown keys, types, ranges and steps (refused, not clamped), Service rows only with mode OFF, then every cross-field rule on the resulting set; values are applied together under the settings lock. ESP-IDF 6.1 no longer ships cJSON, so a small bounded reader for this format lives in `settings.c`. Refusal texts are English only.
 - The node's version prefix is `ionode 2.4` for this release.
 
+## v2.4-display / v2.5-node — electric compressor
+
+- N-1 (owner: "follow low"): the A/C blower interlock is the configured Low duty (`SET_FAN_MIN_DUTY`), not a fixed 30 %. With a low fan minimum the compressor runs at that airflow; the duct freeze cutout (and, with the evaporator role assigned, the evaporator limiter) is the guard. The fan-minimum edge check in BENCH.md now tests exactly that. This supersedes the step B note above that kept `AC_MIN_BLOWER_PCT`.
+- Protocol: `PWM_INIT_HZ` 0x22 and a 3-byte `PWM_SET` (16-bit raw duty), both announced by `NODE_CAP_PWM_HZ`. The 16-bit form is an addition to the brief: the node's PWM_SET duty was 8-bit, which would have made 10-13-bit resolution useless.
+
 ## Models
 - Strongest available model (Opus) for WP-A, WP-B, WP-C, WP-G, WP-H; faster model (Sonnet) for WP-D, WP-E, WP-F, WP-T. WP-A is not named in the brief; it is the framework every package depends on, so it gets the stronger model.

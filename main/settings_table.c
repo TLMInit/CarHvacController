@@ -87,7 +87,7 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     BOOL(SET_DEF_RESTORES_AC,  CL, "DEF restores A/C", "DEF gendanner A/C", 1, "def_restore_ac", apply_controller),
 
     /* Fan */
-    /* default 30 = hvac_controller.c AC_MIN_BLOWER_PCT: manual Low keeps the A/C with defaults */
+    /* also the A/C blower interlock threshold (hvac_controller.c: blower below Low drops the A/C) */
     INT (SET_FAN_MIN_DUTY,     FN, "Fan minimum", "Blæser minimum", 5, 100, 5, 30, "%", "fan_min", apply_controller),
     INT (SET_FAN_MAX_DUTY,     FN, "Fan maximum", "Blæser maksimum", 30, 100, 5, 100, "%", "fan_max", apply_controller),
     ENUM(SET_AUTO_CURVE,       FN, "AUTO fan curve", "AUTO blæserkurve", 3, SET_CURVE_NORMAL, k_curve_en, k_curve_da, "auto_curve", apply_controller),

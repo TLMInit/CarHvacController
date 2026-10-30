@@ -402,7 +402,7 @@ host-tested), **comment** = both sites name each other, nothing checks it.
 | 19 | `VALVE_PASS_EVENT_MS` 1000 (tb6612fng_driver.c) | `CONFIG_ESP_TASK_WDT_TIMEOUT_S` 10 (sdkconfig) | event ≤ watchdog / 10 | assert (tb6612fng_driver.c) |
 | 20 | `VALVE_WRAP_CLEAR_NEAR_PCT` | `VALVE_ADC_WRAPAROUND_THRESH` 40 (tb6612fng_driver.c) | clear < threshold | assert |
 | 21 | `TEMP_MIN_C` / `TEMP_MAX_C` (hvac_controller.c) | default-setpoint range, `SET_PRESET_COOL_C` min, `SET_PRESET_HEAT_C` max (settings_table.c) | same 16 / 30 °C | one source: `SETTINGS_SETPOINT_MIN_C` / `_MAX_C` (settings.h) |
-| 22 | `AC_MIN_BLOWER_PCT` 30 (hvac_controller.c) | `SET_FAN_MIN_DUTY` default 30 (settings_table.c) | default fan minimum ≥ interlock, so manual Low keeps the A/C with defaults (a lower setting drops the A/C on purpose) | comment |
+| 22 | A/C blower interlock (hvac_controller.c) | `SET_FAN_MIN_DUTY` (settings_table.c) | the interlock is the configured Low duty (v2.4: was a fixed 30 %) | one source |
 | 23 | `VALVE_BOUNDARY_SAFE_MARGIN` 1 and the clamp to 10 (tb6612fng_driver.c) | `SET_SAFE_MARGIN_PCT` default 1, max 10 (settings_table.c) | boot value = default, clamp = max | comment |
 | 24 | self-test maximum wait (selftest.c) | `SET_CAL_TIMEOUT_S` (settings_table.c) | wait ≥ longest calibration | one source: `tb6612fng_calib_max_ms()` = 2 × timeout + settle (items 10, 11) |
 | 25 | `SET_FAN_MIN_DUTY` ≤ Med-low ≤ Medium ≤ Med-high ≤ `SET_FAN_MAX_DUTY` | `g_fan_levels` (manual Low = fan minimum, High = fan maximum) | ascending | rule (item 5) |

@@ -56,10 +56,6 @@ _Static_assert(CTRL_REASSERT_MS * 2 <= REMOTE_IO_LINK_WINDOW_MS,
 
 // Cold-start warm-up (SET_COLD_START_*), the S-08 fallback (SET_SENSOR_FALLBACK_HEAT,
 // SET_AUTO_FAN_NO_SENSOR) and the defog release/windscreen floor (SET_DEFOG_*) are settings.
-// Evaporator icing guard: the compressor needs this much airflow. Fixed on purpose, not the
-// fan minimum, so a lower fan minimum (or night cap) drops the A/C rather than icing it.
-// Pair: SET_FAN_MIN_DUTY default (settings_table.c) is 30, so manual Low keeps the A/C with defaults.
-#define AC_MIN_BLOWER_PCT            30
 
 /*******************************************************************************
  * Private Data
@@ -1003,10 +999,12 @@ compressor:
     if (hvac_state.mode == HVAC_MODE_OFF) {
         interlock = true;
         ac_reason = "System OFF";
-    } else if (bts7960_get_speed() < AC_MIN_BLOWER_PCT) {
-        // No airflow over the evaporator: it ices up
+    } else if (bts7960_get_speed() < cfg.fan_min) {
+        // No airflow over the evaporator: it ices up. The limit is the configured Low duty
+        // (SET_FAN_MIN_DUTY), so A/C runs in every manual level; the freeze cutout below
+        // remains the guard for a low fan minimum.
         interlock = true;
-        ac_reason = "Interlock: blower below 30 %";
+        ac_reason = "Interlock: blower below Low";
     } else {
         // Crude freeze protection: duct air near 0 C while the heater adds no heat
         static bool freeze_lock = false;

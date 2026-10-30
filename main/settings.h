@@ -102,7 +102,7 @@ typedef enum {
     SET_DEF_RESTORES_AC,        /* bool, default yes: leaving DEF restores the A/C choice from before DEF */
 
     /* Fan */
-    SET_FAN_MIN_DUTY,           /* int %, 5..100, default 30: manual LOW and the AUTO floor */
+    SET_FAN_MIN_DUTY,           /* int %, 5..100, default 30: manual LOW, the AUTO floor and the A/C blower interlock */
     SET_FAN_MAX_DUTY,           /* int %, 30..100, default 100 */
     SET_AUTO_CURVE,             /* enum set_curve_t, default NORMAL */
     SET_QUIET_NIGHT_CAP,        /* int %, 0 = off .. 100, default 0: fan cap while NIGHT is selected */
