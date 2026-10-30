@@ -498,6 +498,8 @@ void app_main(void)
                     ESP_LOGI(TAG, "Duct: %.1f°C", state.duct_temp_c);
                 }
             }
+            ESP_LOGI(TAG, "Valve task: longest pass %lu ms in the last 10 s",
+                     (unsigned long)tb6612fng_take_max_pass_ms());
         }
         
         vTaskDelay(pdMS_TO_TICKS(1000));

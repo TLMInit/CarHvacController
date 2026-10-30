@@ -12,6 +12,7 @@
 #include "motor_link.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -668,6 +669,15 @@ void tb6612fng_stop_all_valves(void)
     }
 }
 
+#define VALVE_PASS_EVENT_MS     1000    // a pass this long writes an event (task watchdog is 10 s)
+
+static volatile uint32_t s_pass_max_ms;    // longest pass since tb6612fng_take_max_pass_ms()
+
+uint32_t tb6612fng_take_max_pass_ms(void)
+{
+    return __atomic_exchange_n(&s_pass_max_ms, 0, __ATOMIC_RELAXED);
+}
+
 void tb6612fng_valve_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Valve control task started");
@@ -677,6 +687,9 @@ void tb6612fng_valve_task(void *pvParameters)
 
     while (1) {
         esp_task_wdt_reset();
+        int64_t pass_start_us = esp_timer_get_time();
+        uint32_t timeouts_at_start = 0;
+        remote_io_get_stats(NULL, NULL, NULL, &timeouts_at_start);
 
         // Run per-valve calibration state machines (non-blocking)
         tb6612fng_calibration_tick();
@@ -1155,6 +1168,19 @@ void tb6612fng_valve_task(void *pvParameters)
             for (int i = 0; i < HVAC_VALVE_MAX; i++) {
                 apply_motor(i, now_ms);
             }
+        }
+
+        uint32_t pass_ms = (uint32_t)((esp_timer_get_time() - pass_start_us) / 1000);
+        if (pass_ms > s_pass_max_ms) {
+            s_pass_max_ms = pass_ms;
+        }
+        if (pass_ms > VALVE_PASS_EVENT_MS) {
+            uint32_t timeouts_now = 0;
+            remote_io_get_stats(NULL, NULL, NULL, &timeouts_now);
+            ESP_LOGW(TAG, "Valve pass took %lu ms (%lu link timeouts)", (unsigned long)pass_ms,
+                     (unsigned long)(timeouts_now - timeouts_at_start));
+            event_log_add(EVT_FAULT, "Valve pass %lu ms, %lu timeouts", (unsigned long)pass_ms,
+                          (unsigned long)(timeouts_now - timeouts_at_start));
         }
 
         vTaskDelay(pdMS_TO_TICKS(VALVE_TASK_PERIOD_MS));

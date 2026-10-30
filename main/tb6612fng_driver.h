@@ -148,6 +148,9 @@ esp_err_t tb6612fng_auto_calibrate_all(void);
  */
 bool tb6612fng_is_calibrating(void);
 
+/** Longest valve-task pass in ms since the previous call (resets it). For the status line. */
+uint32_t tb6612fng_take_max_pass_ms(void);
+
 // ==================== v2.1 interfaces (implemented by WP-D) ====================
 
 /** Where a valve's calibration came from at boot. */
