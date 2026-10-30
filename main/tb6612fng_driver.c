@@ -9,6 +9,7 @@
 #include "settings.h"
 #include "event_log.h"
 #include "valve_cal_store.h"
+#include "motor_link.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
@@ -166,15 +167,10 @@ static uint8_t valve_stall_count[HVAC_VALVE_MAX];           // Stalls since the 
 static uint32_t valve_retry_at_ms[HVAC_VALVE_MAX];          // When a stalled valve may retry (0 = latched)
 static bool valve_stop_requested[HVAC_VALVE_MAX];           // Set by tb6612fng_stop_valve(), applied by the valve task
 
-// Motor outputs: what the loop wants (pending_*) and what the node last acknowledged (sent_*)
-#define MOTOR_REFRESH_MS    1000    // A moving valve's outputs are re-sent at least this often
-#define SENT_UNKNOWN        (-1)    // Not acknowledged: send on the next apply
-static tb6612_direction_t pending_dir[HVAC_VALVE_MAX];
-static uint8_t pending_speed[HVAC_VALVE_MAX];
-static bool pending_set[HVAC_VALVE_MAX];
-static int16_t sent_dir[HVAC_VALVE_MAX] = { [0 ... HVAC_VALVE_MAX - 1] = SENT_UNKNOWN };
-static int16_t sent_speed[HVAC_VALVE_MAX] = { [0 ... HVAC_VALVE_MAX - 1] = SENT_UNKNOWN };
-static uint32_t sent_ms[HVAC_VALVE_MAX];
+// Motor outputs: what each valve should do and what the node acknowledged (motor_link.h).
+// Every send records its intent there, so the valve task resends whatever was not
+// acknowledged and re-asserts every valve once a second, whichever path sent it.
+static motor_link_t motor_link[HVAC_VALVE_MAX];
 
 // Per-valve calibration state (for background calibration)
 typedef enum {
@@ -271,8 +267,9 @@ static bool is_valve_enabled(hvac_valve_id_t valve_id);
  * Private Functions
  ******************************************************************************/
 
-static void set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *config, tb6612_direction_t direction, int position)
+static bool set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *config, tb6612_direction_t direction, int position)
 {
+    bool ok = true;
     bool dir_changed = (valve_id < HVAC_VALVE_MAX && last_motor_dir[valve_id] != direction);
     const char *dir_str = "?";
     
@@ -308,10 +305,7 @@ static void set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *
         ESP_LOGE(TAG, "GPIO set failed: in1=%s, in2=%s",
                  esp_err_to_name(ret1), esp_err_to_name(ret2));
     }
-    if (valve_id < HVAC_VALVE_MAX) {
-        // Unknown after a failure, so the next apply_motor() sends it again
-        sent_dir[valve_id] = (ret1 == ESP_OK && ret2 == ESP_OK) ? (int16_t)direction : SENT_UNKNOWN;
-    }
+    ok = (ret1 == ESP_OK && ret2 == ESP_OK);
 #else
     switch (direction) {
         case TB6612_DIR_STOP:
@@ -344,45 +338,68 @@ static void set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *
     if (dir_changed) {
         ESP_LOGI(TAG, "Motor dir=%s pos=%d%% (IN1=%d IN2=%d)", dir_str, position, config->in1, config->in2);
     }
+    return ok;
 }
 
-static void set_motor_speed(const motor_config_t *config, uint8_t speed)
+static bool set_motor_speed(const motor_config_t *config, uint8_t speed)
 {
 #if USE_REMOTE_IO
-    int v = config - motor_configs;
     esp_err_t ret = remote_pwm_set_duty(config->pwm_pin, speed);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "PWM set failed for pin %d: %s", config->pwm_pin, esp_err_to_name(ret));
-        sent_speed[v] = SENT_UNKNOWN;
-    } else {
-        ESP_LOGD(TAG, "PWM pin=%d duty=%d", config->pwm_pin, speed);
-        sent_speed[v] = speed;
-        sent_ms[v] = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        return false;
     }
+    ESP_LOGD(TAG, "PWM pin=%d duty=%d", config->pwm_pin, speed);
+    return true;
 #else
     ledc_set_duty(TB6612_LEDC_MODE, config->pwm_channel, speed);
     ledc_update_duty(TB6612_LEDC_MODE, config->pwm_channel);
+    return true;
 #endif
 }
 
-// The valve loop decides outputs under valve_mutex and sends them after releasing it,
-// only when they differ from what the node acknowledged, plus a refresh once a second.
-static void queue_motor(int valve, tb6612_direction_t direction, uint8_t speed)
+static uint32_t motor_now_ms(void)
 {
-    pending_dir[valve] = direction;
-    pending_speed[valve] = speed;
-    pending_set[valve] = true;
+    return xTaskGetTickCount() * portTICK_PERIOD_MS;
 }
 
+// Sends the parts in mask of what the valve should do and records the node's answers
+static void motor_send(int valve, unsigned mask, int position)
+{
+    motor_link_t *m = &motor_link[valve];
+    const motor_config_t *config = &motor_configs[valve];
+    bool dir_ok = true, speed_ok = true;
+    if (mask & MOTOR_SEND_DIR) {
+        dir_ok = set_motor_direction((hvac_valve_id_t)valve, config, (tb6612_direction_t)m->want_dir, position);
+    }
+    if (mask & MOTOR_SEND_SPEED) {
+        speed_ok = set_motor_speed(config, (uint8_t)m->want_speed);
+    }
+    if (motor_link_sent(m, mask, dir_ok, speed_ok, motor_now_ms())) {
+        ESP_LOGW(TAG, "V%d: stop resent after a lost command", valve);
+        event_log_add(EVT_FAULT, "V%d stop resent after a lost command", valve);
+    }
+}
+
+// Direct drive (calibration, service): record the intent and send both parts now
+static void motor_now(hvac_valve_id_t valve, tb6612_direction_t direction, uint8_t speed, int position)
+{
+    motor_link_want(&motor_link[valve], direction, speed);
+    motor_send(valve, MOTOR_SEND_DIR | MOTOR_SEND_SPEED, position);
+}
+
+// The valve loop decides outputs under valve_mutex and sends them after releasing it
+static void queue_motor(int valve, tb6612_direction_t direction, uint8_t speed)
+{
+    motor_link_want(&motor_link[valve], direction, speed);
+}
+
+// Sends what is not acknowledged yet, and re-asserts every commanded valve once a second
 static void apply_motor(int valve, uint32_t now_ms)
 {
-    const motor_config_t *config = &motor_configs[valve];
-    bool refresh = (now_ms - sent_ms[valve]) >= MOTOR_REFRESH_MS;
-    if (refresh || sent_dir[valve] != (int16_t)pending_dir[valve]) {
-        set_motor_direction((hvac_valve_id_t)valve, config, pending_dir[valve], valve_states[valve].position);
-    }
-    if (refresh || sent_speed[valve] != (int16_t)pending_speed[valve]) {
-        set_motor_speed(config, pending_speed[valve]);
+    unsigned mask = motor_link_due(&motor_link[valve], now_ms, remote_io_is_connected());
+    if (mask) {
+        motor_send(valve, mask, valve_states[valve].position);
     }
 }
 
@@ -570,6 +587,9 @@ esp_err_t tb6612fng_init(void)
     
     // Initialize all valve states
     memset(valve_states, 0, sizeof(valve_states));
+    for (int i = 0; i < HVAC_VALVE_MAX; i++) {
+        motor_link_init(&motor_link[i]);
+    }
     tb6612fng_apply_settings();
     
     ESP_LOGI(TAG, "TB6612FNG driver initialized");
@@ -717,9 +737,7 @@ void tb6612fng_motor_set(hvac_valve_id_t valve_id, tb6612_direction_t direction,
         return;
     }
     
-    const motor_config_t *config = &motor_configs[valve_id];
-    set_motor_direction(valve_id, config, direction, valve_states[valve_id].position);
-    set_motor_speed(config, speed);
+    motor_now(valve_id, direction, speed, valve_states[valve_id].position);
 }
 
 void tb6612fng_valve_task(void *pvParameters)
@@ -1207,10 +1225,7 @@ void tb6612fng_valve_task(void *pvParameters)
                 }
             }
             for (int i = 0; i < HVAC_VALVE_MAX; i++) {
-                if (pending_set[i]) {
-                    pending_set[i] = false;
-                    apply_motor(i, now_ms);
-                }
+                apply_motor(i, now_ms);
             }
         }
 
@@ -1240,7 +1255,6 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
     }
     
     valve_calib_progress_t *prog = &valve_calib_progress[valve_id];
-    const motor_config_t *config = &motor_configs[valve_id];
     uint8_t current_adc = valve_adc_pos[valve_id];
     uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     uint32_t elapsed = now_ms - prog->phase_start_ms;
@@ -1269,8 +1283,7 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
             // Check timeout
             if (elapsed > CALIB_MAX_ROTATION_TIME) {
                 ESP_LOGW(TAG, "V%d: Calibration timeout seeking marker (at %d%%)", valve_id, current_adc);
-                set_motor_direction(valve_id, config, TB6612_DIR_BRAKE, current_adc);
-                set_motor_speed(config, 0);
+                motor_now(valve_id, TB6612_DIR_BRAKE, 0, current_adc);
                 prog->state = CALIB_STATE_FAILED;
                 break;
             }
@@ -1283,8 +1296,7 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
             
             // Check if reached marker
             if (abs((int)current_adc - CALIB_MARKER_ADC) <= CALIB_MARKER_TOLERANCE) {
-                set_motor_direction(valve_id, config, TB6612_DIR_BRAKE, current_adc);
-                set_motor_speed(config, 0);
+                motor_now(valve_id, TB6612_DIR_BRAKE, 0, current_adc);
                 ESP_LOGI(TAG, "V%d: Reached marker at ADC=%d%%", valve_id, current_adc);
                 prog->state = CALIB_STATE_AT_MARKER;
                 prog->phase_start_ms = now_ms;  // Start settle timer
@@ -1303,8 +1315,7 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
                 prog->last_direction = 0;
                 
                 // Start rotating forward
-                set_motor_direction(valve_id, config, TB6612_DIR_FORWARD, prog->start_adc);
-                set_motor_speed(config, CALIB_MOTOR_SPEED);
+                motor_now(valve_id, TB6612_DIR_FORWARD, CALIB_MOTOR_SPEED, prog->start_adc);
                 
                 ESP_LOGI(TAG, "V%d: Starting rotation from ADC=%d%%", valve_id, prog->start_adc);
                 prog->state = CALIB_STATE_ROTATING;
@@ -1321,8 +1332,7 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
             // Check timeout
             if (elapsed > CALIB_MAX_ROTATION_TIME) {
                 ESP_LOGW(TAG, "V%d: Calibration timeout during rotation", valve_id);
-                set_motor_direction(valve_id, config, TB6612_DIR_BRAKE, current_adc);
-                set_motor_speed(config, 0);
+                motor_now(valve_id, TB6612_DIR_BRAKE, 0, current_adc);
                 prog->state = CALIB_STATE_FAILED;
                 break;
             }
@@ -1352,8 +1362,7 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
             // Check if rotation complete (back to marker)
             if (prog->sample_count > CALIB_MIN_SAMPLES) {
                 if (abs((int)current_adc - CALIB_MARKER_ADC) <= CALIB_MARKER_TOLERANCE) {
-                    set_motor_direction(valve_id, config, TB6612_DIR_BRAKE, current_adc);
-                    set_motor_speed(config, 0);
+                    motor_now(valve_id, TB6612_DIR_BRAKE, 0, current_adc);
                     ESP_LOGI(TAG, "V%d: Rotation complete at ADC=%d%% (%d samples)", 
                              valve_id, current_adc, prog->sample_count);
                     prog->state = CALIB_STATE_COMPLETE;
@@ -1370,8 +1379,7 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
         
         case CALIB_STATE_COMPLETE: {
             // FIRST: Ensure motor is stopped briefly before normal control resumes
-            set_motor_direction(valve_id, config, TB6612_DIR_BRAKE, current_adc);
-            set_motor_speed(config, 0);
+            motor_now(valve_id, TB6612_DIR_BRAKE, 0, current_adc);
             
             // Validate calibration range - reject if too narrow
             uint8_t adc_range = prog->global_max - prog->global_min;
@@ -1453,8 +1461,7 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
         
         case CALIB_STATE_FAILED: {
             // Stop motor on failure too
-            set_motor_direction(valve_id, config, TB6612_DIR_BRAKE, current_adc);
-            set_motor_speed(config, 0);
+            motor_now(valve_id, TB6612_DIR_BRAKE, 0, current_adc);
             
             ESP_LOGW(TAG, "V%d: Calibration FAILED - using defaults", valve_id);
             if (!valve_calibration[valve_id].calibrated) {
@@ -1523,7 +1530,6 @@ esp_err_t tb6612fng_start_calibration(hvac_valve_id_t valve_id)
     valve_calibrating[valve_id] = true;
     
     // Start moving toward marker
-    const motor_config_t *config = &motor_configs[valve_id];
     uint8_t current_adc = valve_adc_pos[valve_id];
     
     ESP_LOGI(TAG, "V%d: Starting background calibration (marker=%d%%, current_adc=%d%%)", 
@@ -1536,8 +1542,7 @@ esp_err_t tb6612fng_start_calibration(hvac_valve_id_t valve_id)
         seek_dir = TB6612_DIR_REVERSE;
     }
     
-    set_motor_direction(valve_id, config, seek_dir, current_adc);
-    set_motor_speed(config, CALIB_MOTOR_SPEED);
+    motor_now(valve_id, seek_dir, CALIB_MOTOR_SPEED, current_adc);
     
     return ESP_OK;
 }
@@ -1646,16 +1651,13 @@ esp_err_t tb6612fng_calibrate_valve(hvac_valve_id_t valve_id)
     
     ESP_LOGI(TAG, "Calibrating valve %d", valve_id);
     
-    const motor_config_t *config = &motor_configs[valve_id];
     
     // Move to fully closed position
-    set_motor_direction(valve_id, config, TB6612_DIR_REVERSE, -1);
-    set_motor_speed(config, VALVE_MOTOR_SPEED);
+    motor_now(valve_id, TB6612_DIR_REVERSE, VALVE_MOTOR_SPEED, -1);
     vTaskDelay(pdMS_TO_TICKS(VALVE_FULL_TRAVEL_TIME_MS + 500));
     
     // Stop
-    set_motor_direction(valve_id, config, TB6612_DIR_BRAKE, 0);
-    set_motor_speed(config, 0);
+    motor_now(valve_id, TB6612_DIR_BRAKE, 0, 0);
     vTaskDelay(pdMS_TO_TICKS(200));
     
     // Update state
@@ -1684,7 +1686,6 @@ static esp_err_t __attribute__((unused)) calibrate_valve_internal(hvac_valve_id_
     ESP_LOGI(TAG, "====== AUTO-CALIBRATION START: Valve %d ======", valve_id);
     ESP_LOGI(TAG, "Using rotation marker method (marker=%d%%)", CALIB_MARKER_ADC);
     
-    const motor_config_t *config = &motor_configs[valve_id];
     
     // Track ADC values during one revolution
     uint8_t global_min = 255;
@@ -1719,8 +1720,7 @@ static esp_err_t __attribute__((unused)) calibrate_valve_internal(hvac_valve_id_
         ESP_LOGI(TAG, "  Already at marker position!");
     }
     
-    set_motor_direction(valve_id, config, seek_dir, current_adc);
-    set_motor_speed(config, CALIB_MOTOR_SPEED);
+    motor_now(valve_id, seek_dir, CALIB_MOTOR_SPEED, current_adc);
     
     uint32_t phase_start = xTaskGetTickCount();
     bool marker_found = false;
@@ -1751,8 +1751,7 @@ static esp_err_t __attribute__((unused)) calibrate_valve_internal(hvac_valve_id_
     }
     
     // Brief stop to settle
-    set_motor_direction(valve_id, config, TB6612_DIR_BRAKE, current_adc);
-    set_motor_speed(config, 0);
+    motor_now(valve_id, TB6612_DIR_BRAKE, 0, current_adc);
     vTaskDelay(pdMS_TO_TICKS(CALIB_SETTLE_TIME_MS));
     
     // === PHASE 2: Complete one full rotation, tracking ADC values ===
@@ -1765,8 +1764,7 @@ static esp_err_t __attribute__((unused)) calibrate_valve_internal(hvac_valve_id_
     sample_count = 0;
     
     // Always move forward for the rotation mapping
-    set_motor_direction(valve_id, config, TB6612_DIR_FORWARD, start_adc);
-    set_motor_speed(config, CALIB_MOTOR_SPEED);
+    motor_now(valve_id, TB6612_DIR_FORWARD, CALIB_MOTOR_SPEED, start_adc);
     
     phase_start = xTaskGetTickCount();
     bool rotation_complete = false;
@@ -1818,8 +1816,7 @@ static esp_err_t __attribute__((unused)) calibrate_valve_internal(hvac_valve_id_
     end_adc = valve_adc_pos[valve_id];
     
     // Stop motor
-    set_motor_direction(valve_id, config, TB6612_DIR_BRAKE, end_adc);
-    set_motor_speed(config, 0);
+    motor_now(valve_id, TB6612_DIR_BRAKE, 0, end_adc);
     
     if (!rotation_complete) {
         ESP_LOGW(TAG, "Rotation did not complete (timeout), using collected data");
