@@ -151,6 +151,26 @@ static void test_old_constant_defaults(void)
     CHECK(settings_def(SET_AP_CHANNEL)->group == SET_GROUP_ADVANCED);
 }
 
+/* Item 12: the grid's defaults are the old fixed table of update_valve_positions()
+ * (hvac_controller.c): rows FACE, FOOT, FACE_FOOT, DEFROST, DEFROST_FOOT; columns centre 1,
+ * centre 2, foot, windscreen. */
+static void test_air_grid_defaults(void)
+{
+    static const float old[SETTINGS_AIR_MODES][SETTINGS_AIR_VALVES] = {
+        { 100, 100, 0, 0 }, { 0, 0, 100, 0 }, { 70, 70, 70, 0 }, { 0, 0, 0, 100 }, { 0, 0, 50, 100 },
+    };
+    CHECK(SETTINGS_AIR_ID(0, 0) == SET_AIR_FACE_C1);
+    CHECK(SETTINGS_AIR_ID(2, 2) == SET_AIR_FF_FOOT);
+    CHECK(SETTINGS_AIR_ID(4, 3) == SET_AIR_DF_WS);
+    for (int m = 0; m < SETTINGS_AIR_MODES; m++) {
+        for (int v = 0; v < SETTINGS_AIR_VALVES; v++) {
+            const setting_def_t *d = settings_def(SETTINGS_AIR_ID(m, v));
+            CHECKM(d->def == old[m][v], "air %d/%d: default %g, old %g", m, v, (double)d->def, (double)old[m][v]);
+            CHECK(d->group == SET_GROUP_AIR && d->type == SET_TYPE_INT && d->min == 0 && d->max == 100 && d->step == 5);
+        }
+    }
+}
+
 int main(void)
 {
     RUN(test_rows_in_order);
@@ -159,5 +179,6 @@ int main(void)
     RUN(test_labels_and_enums);
     RUN(test_decision_defaults);
     RUN(test_old_constant_defaults);
+    RUN(test_air_grid_defaults);
     T_DONE();
 }

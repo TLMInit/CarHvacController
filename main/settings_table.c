@@ -61,6 +61,7 @@ static const char *const k_ap_da[]      = { "Fra", "Auto-fra", "Altid" };
 #define CN SET_GROUP_CONNECT
 #define SY SET_GROUP_SYSTEM
 #define AD SET_GROUP_ADVANCED
+#define AR SET_GROUP_AIR
 
 const setting_def_t g_settings_table[SET_COUNT] = {
     /* Display: no callback, the UI polls settings_seq() */
@@ -177,6 +178,30 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     INT (SET_AC_MIN_ON_S,       AD, "A/C min on (humidity)", "A/C min til (fugt)", 10, 300, 10, 30, "s", "ac_min_on_s", apply_controller),
     /* used at the next AP start (like the password): wifi_ap.c reads it in ap_start() */
     INT (SET_AP_CHANNEL,        AD, "Wi-Fi channel", "Wi-Fi-kanal", 1, 13, 1, 1, NULL, "ap_channel", NULL),
+
+    /* Air distribution per manual mode (item 12); defaults = the old fixed table */
+#define AIR(i, en, da, df, key) INT(i, AR, en, da, 0, 100, 5, df, "%", key, apply_controller)
+    AIR(SET_AIR_FACE_C1,   "Face: center 1", "Ansigt: midt 1", 100, "ad_f_c1"),
+    AIR(SET_AIR_FACE_C2,   "Face: center 2", "Ansigt: midt 2", 100, "ad_f_c2"),
+    AIR(SET_AIR_FACE_FOOT, "Face: foot", "Ansigt: fod", 0, "ad_f_ft"),
+    AIR(SET_AIR_FACE_WS,   "Face: windscreen", "Ansigt: rude", 0, "ad_f_ws"),
+    AIR(SET_AIR_FOOT_C1,   "Foot: center 1", "Fod: midt 1", 0, "ad_ft_c1"),
+    AIR(SET_AIR_FOOT_C2,   "Foot: center 2", "Fod: midt 2", 0, "ad_ft_c2"),
+    AIR(SET_AIR_FOOT_FOOT, "Foot: foot", "Fod: fod", 100, "ad_ft_ft"),
+    AIR(SET_AIR_FOOT_WS,   "Foot: windscreen", "Fod: rude", 0, "ad_ft_ws"),
+    AIR(SET_AIR_FF_C1,     "Face+Foot: center 1", "Ansigt+fod: midt 1", 70, "ad_ff_c1"),
+    AIR(SET_AIR_FF_C2,     "Face+Foot: center 2", "Ansigt+fod: midt 2", 70, "ad_ff_c2"),
+    AIR(SET_AIR_FF_FOOT,   "Face+Foot: foot", "Ansigt+fod: fod", 70, "ad_ff_ft"),
+    AIR(SET_AIR_FF_WS,     "Face+Foot: windscreen", "Ansigt+fod: rude", 0, "ad_ff_ws"),
+    AIR(SET_AIR_DEF_C1,    "Defrost: center 1", "Afrim: midt 1", 0, "ad_d_c1"),
+    AIR(SET_AIR_DEF_C2,    "Defrost: center 2", "Afrim: midt 2", 0, "ad_d_c2"),
+    AIR(SET_AIR_DEF_FOOT,  "Defrost: foot", "Afrim: fod", 0, "ad_d_ft"),
+    AIR(SET_AIR_DEF_WS,    "Defrost: windscreen", "Afrim: rude", 100, "ad_d_ws"),
+    AIR(SET_AIR_DF_C1,     "Def+Foot: center 1", "Afrim+fod: midt 1", 0, "ad_df_c1"),
+    AIR(SET_AIR_DF_C2,     "Def+Foot: center 2", "Afrim+fod: midt 2", 0, "ad_df_c2"),
+    AIR(SET_AIR_DF_FOOT,   "Def+Foot: foot", "Afrim+fod: fod", 50, "ad_df_ft"),
+    AIR(SET_AIR_DF_WS,     "Def+Foot: windscreen", "Afrim+fod: rude", 100, "ad_df_ws"),
+#undef AIR
 };
 
 /* ---- Cross-field rules (see settings.h) ---- */

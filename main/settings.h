@@ -58,6 +58,7 @@ typedef enum {
     SET_GROUP_SYSTEM,
     SET_GROUP_SERVICE,          /* valve service page only, mode OFF (no rows yet) */
     SET_GROUP_ADVANCED,         /* phone page only */
+    SET_GROUP_AIR,              /* air distribution grid: a sub-page of Valves on the display */
     SET_GROUP_COUNT
 } setting_group_t;
 
@@ -186,8 +187,21 @@ typedef enum {
     SET_AC_MIN_ON_S,            /* int s, 10..300 step 10, default 30: humidity-only clutch */
     SET_AP_CHANNEL,             /* int, 1..13, default 1: used at the next AP start */
 
+    /* Air distribution: valve % per manual mode (rows FACE..DEFROST_FOOT, columns centre 1,
+     * centre 2, foot, windscreen = hvac_valve_id_t 0..3); int 0..100 step 5. Use SETTINGS_AIR_ID. */
+    SET_AIR_FACE_C1, SET_AIR_FACE_C2, SET_AIR_FACE_FOOT, SET_AIR_FACE_WS,
+    SET_AIR_FOOT_C1, SET_AIR_FOOT_C2, SET_AIR_FOOT_FOOT, SET_AIR_FOOT_WS,
+    SET_AIR_FF_C1, SET_AIR_FF_C2, SET_AIR_FF_FOOT, SET_AIR_FF_WS,
+    SET_AIR_DEF_C1, SET_AIR_DEF_C2, SET_AIR_DEF_FOOT, SET_AIR_DEF_WS,
+    SET_AIR_DF_C1, SET_AIR_DF_C2, SET_AIR_DF_FOOT, SET_AIR_DF_WS,
+
     SET_COUNT
 } setting_id_t;
+
+/* Air distribution grid: m = mode - HVAC_MODE_FACE (0..4), v = hvac_valve_id_t (0..3). */
+#define SETTINGS_AIR_MODES      5
+#define SETTINGS_AIR_VALVES     4
+#define SETTINGS_AIR_ID(m, v)   ((setting_id_t)(SET_AIR_FACE_C1 + (m) * SETTINGS_AIR_VALVES + (v)))
 
 typedef void (*setting_apply_cb_t)(setting_id_t id);
 

@@ -166,10 +166,12 @@ typedef struct {
     int defog_ws;
     float heat_gain, heat_gain_min, heat_gain_max;
     uint32_t ac_min_off_ms, ac_min_on_ms;
+    uint8_t air[SETTINGS_AIR_MODES][SETTINGS_AIR_VALVES];  // valve % per manual mode (SET_AIR_*)
 } ctl_cfg_t;
 
 static ctl_cfg_t cfg;
 static bool cfg_loaded = false;
+static bool air_changed = false;    // grid edited: the next cycle moves the current mode's valves
 
 static comfort_defog_t defog;
 static comfort_heater_delay_t heater_delay;
@@ -267,6 +269,14 @@ static void cfg_refresh(void)   // caller holds state_mutex (or runs before the 
     n.ac_min_on_ms = (uint32_t)cfg_t(SET_AC_MIN_ON_S) * 1000u;
     if (thermal_adapt.sample_count == 0) {
         thermal_adapt.adaptive_coolant_gain = n.heat_gain;  // nothing learned yet: the base gain
+    }
+    for (int m = 0; m < SETTINGS_AIR_MODES; m++) {
+        for (int v = 0; v < SETTINGS_AIR_VALVES; v++) {
+            n.air[m][v] = (uint8_t)cfg_t(SETTINGS_AIR_ID(m, v));
+        }
+    }
+    if (cfg_loaded && memcmp(n.air, cfg.air, sizeof(n.air)) != 0) {
+        air_changed = true;
     }
 
     if (!cfg_loaded || n.control_mode != cfg.control_mode) {
@@ -503,65 +513,35 @@ static void update_thermal_adaptation(float cabin_temp, bool is_heating, bool is
     thermal_adapt.last_sample_time = now;
 }
 
+// FACE..DEFROST_FOOT take their air valves from the grid (SET_AIR_*); AUTO and OFF do not
+static bool is_grid_mode(hvac_mode_t mode)
+{
+    return mode >= HVAC_MODE_FACE && mode <= HVAC_MODE_DEFROST_FOOT;
+}
+
+static uint8_t air_pct(hvac_mode_t mode, hvac_valve_id_t valve)
+{
+    return cfg.air[mode - HVAC_MODE_FACE][valve];
+}
+
 static void update_valve_positions(hvac_mode_t mode)
 {
-    uint8_t center = 0, foot = 0, windscreen = 0;
-    
-    switch (mode) {
-        case HVAC_MODE_FACE:
-            center = 100;
-            foot = 0;
-            windscreen = 0;
-            break;
-            
-        case HVAC_MODE_FOOT:
-            center = 0;
-            foot = 100;
-            windscreen = 0;
-            break;
-            
-        case HVAC_MODE_FACE_FOOT:
-            center = 70;
-            foot = 70;
-            windscreen = 0;
-            break;
-            
-        case HVAC_MODE_DEFROST:
-            center = 0;
-            foot = 0;
-            windscreen = 100;
-            break;
-            
-        case HVAC_MODE_DEFROST_FOOT:
-            center = 0;
-            foot = 50;
-            windscreen = 100;
-            break;
-            
-        case HVAC_MODE_AUTO:
-            // Auto mode adjusts based on temperature
-            center = 50;
-            foot = 50;
-            windscreen = 0;
-            break;
-            
-        case HVAC_MODE_OFF:
-        default:
-            center = 0;
-            foot = 0;
-            windscreen = 0;
-            break;
+    // OFF closes everything; AUTO starts balanced and then runs its own law
+    uint8_t pos[SETTINGS_AIR_VALVES] = { 0 };
+    if (mode == HVAC_MODE_AUTO) {
+        pos[HVAC_VALVE_CENTER_1] = pos[HVAC_VALVE_CENTER_2] = pos[HVAC_VALVE_FOOT] = 50;
+    } else if (is_grid_mode(mode)) {
+        for (int v = 0; v < SETTINGS_AIR_VALVES; v++) {
+            pos[v] = air_pct(mode, (hvac_valve_id_t)v);
+        }
     }
-    
-    // Apply valve positions
-    tb6612fng_set_valve_position(HVAC_VALVE_CENTER_1, center);
-    tb6612fng_set_valve_position(HVAC_VALVE_CENTER_2, center);
-    tb6612fng_set_valve_position(HVAC_VALVE_FOOT, foot);
-    tb6612fng_set_valve_position(HVAC_VALVE_WINDSCREEN, windscreen);
-    
-    hvac_state.center_valve_pos = center;
-    hvac_state.foot_valve_pos = foot;
-    hvac_state.windscreen_valve_pos = windscreen;
+    for (int v = 0; v < SETTINGS_AIR_VALVES; v++) {
+        tb6612fng_set_valve_position((hvac_valve_id_t)v, pos[v]);
+    }
+
+    hvac_state.center_valve_pos = pos[HVAC_VALVE_CENTER_1];
+    hvac_state.foot_valve_pos = pos[HVAC_VALVE_FOOT];
+    hvac_state.windscreen_valve_pos = pos[HVAC_VALVE_WINDSCREEN];
 }
 
 // Valve targets decided in this control cycle (-1 = no request). Rules write in order,
@@ -650,6 +630,17 @@ static void run_temperature_control(void)
     hvac_state.valve_fault_mask = fault_mask;
     hvac_state.valve_fault = (fault_mask != 0);
     
+    // Air distribution grid edited: a manual mode moves to the new values now (defog below
+    // still raises the windscreen in this cycle)
+    if (air_changed) {
+        air_changed = false;
+        if (is_grid_mode(hvac_state.mode)) {
+            for (int v = 0; v < SETTINGS_AIR_VALVES; v++) {
+                want_valve((hvac_valve_id_t)v, air_pct(hvac_state.mode, (hvac_valve_id_t)v));
+            }
+        }
+    }
+
     // Skip control in OFF mode (set_mode(OFF) already stopped everything)
     if (hvac_state.mode == HVAC_MODE_OFF) {
         defog.active = false;
@@ -928,7 +919,7 @@ compressor:
             want_valve(HVAC_VALVE_WINDSCREEN, (uint8_t)cfg.defog_ws);
         }
     } else if (defog_was_active && hvac_state.mode != HVAC_MODE_AUTO) {
-        want_valve(HVAC_VALVE_WINDSCREEN, is_defrost(hvac_state.mode) ? 100 : 0);
+        want_valve(HVAC_VALVE_WINDSCREEN, air_pct(hvac_state.mode, HVAC_VALVE_WINDSCREEN));
     }
 
     // =========================================================================

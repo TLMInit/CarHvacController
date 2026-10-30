@@ -19,7 +19,7 @@ static const char *TAG = "CONSOLE";
 
 static const char *const k_group_names[SET_GROUP_COUNT] = {
     "display", "climate", "fan", "comfort", "control", "valves", "connect", "system",
-    "service", "advanced",
+    "service", "advanced", "air",
 };
 
 static const setting_def_t *find_key(const char *key)
