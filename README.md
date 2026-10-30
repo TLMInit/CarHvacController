@@ -251,3 +251,18 @@ main/io_status_led.c    WS2812 status LED, optional, yields its pin to the displ
 main/cobs_protocol.*    copied from the display repo; two marked changes
 tools/ionode_cli.py     PC-side tester speaking the same protocol
 ```
+
+## Tests
+
+Host unit tests for `main/cobs_protocol.c` live in `test/host/` (round trip, trailing-zero handling, reply
+padding only while `cobs_pad_trailing_zero` is set; built with `LINK_PAD_TRAILING_ZERO` 1 and 0).
+
+```
+cmake -S test/host -B ../tbuild-node
+cmake --build ../tbuild-node
+ctest --test-dir ../tbuild-node --output-on-failure
+```
+
+`-DRUN_KNOWN_BUG_TESTS=ON` also builds the check for a padded 63-byte reply (currently fails, see the
+report). CI (`.github/workflows/ci.yml`) runs these tests, then builds with `espressif/idf:v6.1` and fails on
+any compiler warning from `main/`.
