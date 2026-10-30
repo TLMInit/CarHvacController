@@ -53,6 +53,8 @@
 #include "valve_cal_store.h"
 #include "selftest.h"
 #include "console_cmds.h"
+#include "wifi_ap.h"
+#include "ota_display.h"
 #include <math.h>
 
 static const char *TAG = "HVAC_MAIN";
@@ -466,6 +468,10 @@ void app_main(void)
 
     // Start LVGL task (pinned to core 1 like working example)
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, NULL, 1);
+
+    // A freshly updated image is kept only after 30 s of running UI with the node link up
+    ota_display_start_validation();
+    ESP_ERROR_CHECK(wifi_ap_init());
 
     // Last: a console "set" runs the apply callbacks of everything above at once
     console_cmds_start();
