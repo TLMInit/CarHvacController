@@ -8,6 +8,31 @@ the full `@flash_args` set both work. Coming from v2.0 or earlier, flash the ful
 (section 1). The checks below go in this order: the safety fixes (also valid for v2.1.1), the
 -O2 build, then the general v2.1 procedure in sections 1–8.
 
+## Hotfix v2.2.1-display (items 1–4)
+
+The node is unchanged in this hotfix (`v2.3.1-node` is the same code as `v2.3-node`).
+
+**Link outage (items 1, 2).** System in AUTO, valves settled, display console open.
+1. Pull the node's RX wire (display TX → node RX) and leave it out for 30 s, then reconnect.
+2. Expect, in this order:
+   - `Link down: valve commands paused` within about 0.2 s of pulling;
+   - while it is out: the 10 s status lines `Valve task: longest pass N ms` with N under 100,
+     apart from the 10 s window in which the link broke (that pass can take one command
+     timeout, up to about 0.4 s with another task's timeout in front of it); no `V<n>` lines
+     and no valve events in the event log; after 3 s the node's own watchdog stops its outputs;
+   - on reconnecting: `Link back after N ms: every commanded valve re-sent in this pass`,
+     and the valves resume. The event log has no `stop resent` entry unless a stop was in
+     flight at the moment of pulling.
+3. Record for the report: N of every status line during the outage, and whether any
+   `Valve pass ... ms` event appeared (it must not).
+
+**Wi-Fi (item 4).** Settings → Connect → Phone Wi-Fi: Always.
+1. The console prints `Free internal heap with AP on: N (largest block M)`. Write N and M
+   here: ____ / ____ (needed for the report; this cannot be measured off the board).
+2. Diagnostics tab, last row: `WI-FI ON 0 PHONE(S)`; join with a phone: `1 PHONE(S)`.
+3. A failed start (not provoked on purpose) would show `WI-FI FAILED <step>: <error>` on that
+   row, an `AP start failed` event at most every 10 s, and a retry every second.
+
 ## Safety fixes (findings 1, 2, 3, 5, 6, 9; first shipped as v2.1.1-display / v2.2.1-node)
 
 1. **Lost stop (1).** System in AUTO, Diagnostics → Valve service open on one valve. Change the
