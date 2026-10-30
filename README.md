@@ -71,8 +71,8 @@ GPIO21, adapter RX ← node GPIO2, GND ↔ GND. `pip install pyserial`, then:
 
 ```
 python tools/ionode_cli.py -p COM8 ping           # PONG
-python tools/ionode_cli.py -p COM8 version        # ionode 2.2 (<git describe>) up=<s> rst=<reason>
-python tools/ionode_cli.py -p COM8 hello          # protocol 2, caps 0x03 (search ota), ionode 2.2 (<git describe>)
+python tools/ionode_cli.py -p COM8 version        # ionode 2.3 (<git describe>) up=<s> rst=<reason>
+python tools/ionode_cli.py -p COM8 hello          # protocol 2, caps 0x03 (search ota), ionode 2.3 (<git describe>)
 python tools/ionode_cli.py -p COM8 search         # 1 ROM(s), then e.g. 28 ff 64 1e 0f 21 03 5a
 python tools/ionode_cli.py -p COM8 ota-status     # IDLE, 0 bytes
 python tools/ionode_cli.py -p COM8 ota build/CarHvacIoNode.bin   # ~15 s, then reboot and confirm
@@ -151,16 +151,17 @@ size or sha256 mismatch, 12 OTA image is not an ESP32-S3 `CarHvacIoNode` build.
 ### Protocol 2
 
 - **Handshake.** A protocol 2 display sends HELLO with its protocol version on every
-  connect. HELLO_RESP carries the node's protocol version, the capability bits and
-  the same `ionode 2.2 (<git describe>)` text as VERSION. A 2.1 node answers HELLO
+  connect (from display v2.3 followed by its link window, see Link watchdog). HELLO_RESP
+  carries the node's protocol version, the capability bits and the same
+  `ionode 2.3 (<git describe>)` text as VERSION. A 2.1 node answers HELLO
   with error 1, which tells the display it is talking to protocol 1.
 - **Pad rule.** Until the first HELLO since boot, replies whose CRC ends in 0x00
   get the compatibility pad described below. From that HELLO on (HELLO_RESP
   included) nothing is padded. `LINK_PAD_TRAILING_ZERO 0` turns the pad off entirely.
 - **ONEWIRE_SEARCH** runs the 1-Wire ROM search on GPIO7. One ROM takes roughly
   20–30 ms; no new ROM is started after 100 ms, so the reply comes well inside the
-  display's 200 ms timeout. An empty bus gives count 0; error 5 if the bus driver
-  never started.
+  display's 500 ms search timeout (`SEARCH_TIMEOUT_MS`). An empty bus gives count 0;
+  error 5 if the bus driver never started.
 
 ### Node OTA
 
@@ -214,9 +215,10 @@ and PWM pins, blower PWM, relay); every other pin is refused with code 3.
   `node_config.h`; 0 disables the watchdog. A 2.3 node answers the 3-byte HELLO with
   error 2 and the display repeats HELLO without the window. The check runs from an esp_timer, so it still fires
   if the link task hangs; the task watchdog then restarts the node (5 s, panic on).
-  When the link returns, the display (from its Phase 1 build on) re-sends the relay and
-  blower every second and the direction and duty of any valve it is moving; an idle
-  valve stays stopped, which is what it was.
+  When the link returns, the display re-sends the relay and blower every second and
+  every valve's last command (direction and duty, a stop included) once a second
+  (display v2.1.1 on; from v2.2.1 all valves in the first pass after the link returns),
+  so an idle valve's stop is re-asserted too.
 - **RGB LED.** The DevKitC-1's on-board LED is on GPIO48 (board v1.0, blower PWM) or
   GPIO38 (v1.1, foot valve AIN1). Read the revision off the silkscreen before trusting
   either pin's behaviour on a scope.
@@ -251,8 +253,8 @@ modules IO_UART_BIN, IO_GPIO, IO_PWM, IO_I2C, IO_ADS1115, IO_ONEWIRE and
 IO_STATUS_LED. Everything the display uses is covered by this node. Two things it
 had on top are back in 2.1:
 
-- **Scratchpad retry.** A DS18B20 read with a CRC mismatch is retried up to three
-  times before an error goes back to the display (`io_onewire.c`).
+- **Scratchpad retry.** A DS18B20 read with a CRC mismatch is tried up to three times
+  in all (`DS18B20_READ_ATTEMPTS`) before an error goes back to the display (`io_onewire.c`).
 - **Status LED.** The original drove the DevKitC's on-board RGB LED through
   `led_strip` on **GPIO48** (read out of its flash dump), which on this carrier is
   also the blower PWM input: each refresh pulsed the BTS7960 for 30 µs until the

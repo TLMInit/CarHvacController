@@ -4,7 +4,7 @@
  *
  * Message types, payload layouts and error codes come from cobs_protocol.h,
  * which is shared with the display firmware. The display sends one command and
- * waits (2 ms grace, then up to 200 ms) for exactly one reply, so this task
+ * waits up to 200 ms (its CMD_TIMEOUT_MS) for exactly one reply, so this task
  * never sends anything unsolicited.
  *
  * Link watchdog: when the link window passes without a valid frame after at
