@@ -28,6 +28,8 @@
 #include "sensor_roles.h"
 
 _Static_assert(SENSOR_ROLES_MAX_ROMS == ONEWIRE_SEARCH_MAX_ROMS, "one role slot per ROM the node's search can return");
+_Static_assert(SENSOR_ROLE_DUCT == 1 && SENSOR_ROLE_COOLANT == 2 && SENSOR_ROLE_OUTSIDE == 3 && SENSOR_ROLE_EVAPORATOR == 4,
+               "\"rom_roles\" stores role numbers: append new roles, never renumber");
 #include "nvs.h"
 #include <stdio.h>
 
@@ -562,6 +564,7 @@ const char *sensor_role_name(sensor_role_t role)
         case SENSOR_ROLE_DUCT:    return "Duct";
         case SENSOR_ROLE_COOLANT: return "Coolant";
         case SENSOR_ROLE_OUTSIDE: return "Outside";
+        case SENSOR_ROLE_EVAPORATOR: return "Evaporator";
         default:                  return "Unused";
     }
 }

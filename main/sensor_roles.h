@@ -12,6 +12,8 @@
  * Assignments persist in NVS namespace "hvac_cfg", key "rom_roles" (blob of
  * SENSOR_ROLES_MAX_ROMS x {rom[8], role}). Migration from 2.0: if no assignment
  * exists and exactly one ROM is found, it becomes DUCT (what the single sensor was).
+ * Roles are append-only: the blob stores the role number (one byte), so an older blob
+ * loads unchanged, and older firmware skips a role it does not know (>= its COUNT).
  */
 
 #ifndef SENSOR_ROLES_H
@@ -33,6 +35,7 @@ typedef enum {
     SENSOR_ROLE_DUCT,           /* duct outlet air: what 2.0 called "duct" */
     SENSOR_ROLE_COOLANT,        /* heater core / coolant line: heater delay */
     SENSOR_ROLE_OUTSIDE,        /* outside air: defog glass estimate */
+    SENSOR_ROLE_EVAPORATOR,     /* evaporator fins / outlet (v2.4): freeze limits, electric compressor loop */
     SENSOR_ROLE_COUNT
 } sensor_role_t;
 
@@ -59,7 +62,7 @@ esp_err_t sensor_roles_assign(const uint8_t rom[8], sensor_role_t role);
 /** Temperature of the sensor with this role, NaN if none. */
 float sensor_roles_get_temp(sensor_role_t role);
 
-/** "Duct", "Coolant", "Outside", "Unused" (English; the UI translates). */
+/** "Duct", "Coolant", "Outside", "Evaporator", "Unused" (English; the UI translates). */
 const char *sensor_role_name(sensor_role_t role);
 
 #ifdef __cplusplus

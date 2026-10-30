@@ -267,8 +267,8 @@ static uint32_t s_sensor_last;
 
 static const char *role_text(sensor_role_t r)
 {
-    static const char *const en[SENSOR_ROLE_COUNT] = { "Unused", "Duct", "Coolant", "Outside" };
-    static const char *const da[SENSOR_ROLE_COUNT] = { "Ubrugt", "Kanal", "K\xC3\xB8lev\xC3\xA6ske", "Ude" };
+    static const char *const en[SENSOR_ROLE_COUNT] = { "Unused", "Duct", "Coolant", "Outside", "Evaporator" };
+    static const char *const da[SENSOR_ROLE_COUNT] = { "Ubrugt", "Kanal", "K\xC3\xB8lev\xC3\xA6ske", "Ude", "Fordamper" };
     if ((unsigned)r >= SENSOR_ROLE_COUNT) return "?";
     return ui_lang_da() ? da[r] : en[r];
 }
