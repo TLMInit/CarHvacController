@@ -13,6 +13,8 @@
 #include "event_log.h"
 #include "comfort.h"
 #include "cascade.h"
+#include "ac_electric.h"
+#include "ac_output.h"
 #include "presets_priv.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
@@ -166,6 +168,10 @@ typedef struct {
     int defog_ws;
     float heat_gain, heat_gain_min, heat_gain_max;
     uint32_t ac_min_off_ms, ac_min_on_ms;
+    bool ac_electric;               // SET_AC_COMPRESSOR = electric
+    float evap_off, evap_on;        // SET_EVAP_OFF / ON: freeze cutout with the evaporator role (both types)
+    ac_electric_params_t acp;
+    ac_output_cfg_t acout;
     uint8_t air[SETTINGS_AIR_MODES][SETTINGS_AIR_VALVES];  // valve % per manual mode (SET_AIR_*)
     uint8_t warm_foot, warm_centre, cold_centre, cold_ws, cool_foot, balanced;   // AUTO distribution % (SERVICE)
 } ctl_cfg_t;
@@ -181,6 +187,17 @@ static cascade_state_t cascade;
 static uint32_t cascade_last_ms = 0;
 static bool ac_mem_valid = false;           // user A/C flag remembered on entering DEF
 static bool ac_mem = false;
+static ac_electric_state_t ac_el;           // electric compressor (SET_AC_COMPRESSOR = electric)
+static ac_output_cfg_t ac_out_cfg;          // written by run_temperature_control, read by the task
+static float ac_out_pct;                    // outside the state mutex (both in the controller task)
+
+// Compressor test (service page): overrides the electric demand with mode OFF
+#define AC_TEST_DEADMAN_MS      60000u      // no touch this long ends the test
+static struct {
+    bool active, blower;
+    float demand_pct;
+    uint32_t touch_ms;
+} ac_test;
 
 // The setting, or the table's own default if it is out of the table's range (each default
 // exists once: in the table)
@@ -268,6 +285,37 @@ static void cfg_refresh(void)   // caller holds state_mutex (or runs before the 
     n.heat_gain_max = fmaxf(n.heat_gain_min, cfg_t(SET_HEAT_GAIN_MAX));   // the settings rule already keeps this
     n.ac_min_off_ms = (uint32_t)cfg_t(SET_AC_MIN_OFF_S) * 1000u;
     n.ac_min_on_ms = (uint32_t)cfg_t(SET_AC_MIN_ON_S) * 1000u;
+    n.ac_electric = cfg_ti(SET_AC_COMPRESSOR) == SET_AC_ELECTRIC;
+    n.evap_off = cfg_t(SET_EVAP_OFF);
+    n.evap_on = cfg_t(SET_EVAP_ON);
+    n.acp = (ac_electric_params_t){
+        .invert = cfg_ti(SET_AC_OUT_INVERT) != 0,
+        .out_min_pct = cfg_t(SET_AC_OUT_MIN_PCT),
+        .out_max_pct = cfg_t(SET_AC_OUT_MAX_PCT),
+        .ramp_pct_per_s = cfg_t(SET_AC_RAMP_PCT_S),
+        .min_speed_pct = cfg_t(SET_AC_MIN_SPEED_PCT),
+        .idle_off_s = cfg_t(SET_AC_IDLE_OFF_S),
+        .evap_target_c = cfg_t(SET_EVAP_TARGET),
+        .evap_off_c = n.evap_off,
+        .evap_on_c = n.evap_on,
+        .kp = cfg_t(SET_AC_EVAP_KP),
+        .ki = cfg_t(SET_AC_EVAP_KI),
+    };
+    static const uint8_t out_pins[] = SETTINGS_AC_OUT_PINS;
+    int pin_idx = cfg_ti(SET_AC_OUT_PIN);
+    n.acout = (ac_output_cfg_t){
+        .active = n.ac_electric,
+        .type = (uint8_t)cfg_ti(SET_AC_OUT_TYPE),
+        .pin = out_pins[pin_idx >= 0 && pin_idx < (int)sizeof(out_pins) ? pin_idx : 0],
+        .freq_hz = (uint32_t)cfg_ti(SET_AC_OUT_FREQ_HZ),
+        .dac_addr = (uint8_t)(0x60 + cfg_ti(SET_AC_DAC_ADDR)),
+    };
+    if (!cfg_loaded || n.ac_electric != cfg.ac_electric) {
+        ac_electric_init(&ac_el);   // fresh state whenever the type changes
+        hvac_state.ac_demand_pct = hvac_state.ac_speed_pct = hvac_state.ac_output_pct = 0.0f;
+        hvac_state.ac_enable = hvac_state.ac_limiter = hvac_state.ac_test = hvac_state.ac_test_blower = false;
+    }
+    hvac_state.compressor_type = n.ac_electric ? SET_AC_ELECTRIC : SET_AC_CLUTCH;
     if (thermal_adapt.sample_count == 0) {
         thermal_adapt.adaptive_coolant_gain = n.heat_gain;  // nothing learned yet: the base gain
     }
@@ -380,6 +428,7 @@ static void reassert_outputs(void)
     last_ms = now_ms;
     remote_gpio_set_level(AC_RELAY_PIN, ac_relay_level(ac_relay_on));
     bts7960_refresh();
+    ac_output_reassert();       // electric speed output; nothing with the clutch type
 }
 
 /**
@@ -564,6 +613,105 @@ static void apply_cycle_targets(void)
     }
 }
 
+/* Crude freeze protection: duct air near 0 C while the heater adds no heat. Used without an
+ * evaporator reading (clutch; electric, where the module's limiter replaces it otherwise). */
+static bool duct_freeze_update(void)
+{
+    static bool freeze_lock = false;
+    int16_t coolant_target = cycle_targets[HVAC_VALVE_COOLANT] >= 0
+                             ? cycle_targets[HVAC_VALVE_COOLANT]
+                             : tb6612fng_get_valve_target(HVAC_VALVE_COOLANT);
+    if (!isnan(hvac_state.duct_temp_c)) {
+        if (hvac_state.duct_temp_c < AC_FREEZE_CUTOUT_C && coolant_target <= 5) {
+            freeze_lock = true;
+        } else if (hvac_state.duct_temp_c > AC_FREEZE_CUTIN_C) {
+            freeze_lock = false;
+        }
+    }
+    return freeze_lock;
+}
+
+/* Compressor test: valid only with mode OFF, the electric type and a touch within the dead-man
+ * time; anything else ends it (the blower it ran goes back off while the mode is still OFF). */
+static bool ac_test_running(uint32_t now_ms)
+{
+    if (!ac_test.active) {
+        return false;
+    }
+    if (hvac_state.mode == HVAC_MODE_OFF && cfg.ac_electric && now_ms - ac_test.touch_ms < AC_TEST_DEADMAN_MS) {
+        blower_command(ac_test.blower ? (uint8_t)cfg.fan_min : 0, false);  // sends only on change
+        return true;
+    }
+    if (hvac_state.mode == HVAC_MODE_OFF) {
+        blower_command(0, false);
+    }
+    ESP_LOGI(TAG, "Compressor test ended%s",
+             now_ms - ac_test.touch_ms >= AC_TEST_DEADMAN_MS ? " (no touch / page left)" : "");
+    memset(&ac_test, 0, sizeof(ac_test));
+    return false;
+}
+
+/* Electric compressor, one control cycle: interlocks, ac_electric step, relay = enable, output %
+ * for ac_output (sent by the task outside the state mutex). request_reason names the winning request. */
+static void electric_cycle(float demand, const char *request_reason)
+{
+    uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    static uint32_t last_ms = 0;
+    float dt_s = (last_ms != 0 && now_ms - last_ms <= 1000u) ? (now_ms - last_ms) / 1000.0f
+                                                             : HVAC_TASK_PERIOD_MS / 1000.0f;
+    last_ms = now_ms;
+
+    bool test = ac_test_running(now_ms);
+    if (test) {
+        demand = ac_test.demand_pct;
+        request_reason = "Compressor test";
+    }
+    // Interlocks; the first names the reason. The minimum off time holds only a stopped compressor.
+    const char *lock = NULL;
+    ac_output_state_t out_state = ac_output_state();
+    if (hvac_state.mode == HVAC_MODE_OFF && !test) {
+        lock = "System OFF";
+    } else if (!remote_io_is_connected()) {
+        lock = "Electric: link down";
+        demand = 0.0f;
+    } else if (out_state == AC_OUT_UNSUPPORTED) {
+        lock = "Electric: node lacks PWM_HZ";
+    } else if (out_state != AC_OUT_READY) {
+        lock = "Electric: output not ready";
+    } else if (bts7960_get_speed() < cfg.fan_min) {
+        lock = "Interlock: blower below Low";
+    } else if (isnan(hvac_state.evap_c) && duct_freeze_update()) {
+        lock = "Interlock: duct freeze (<3 C)";
+    } else if (!ac_relay_on && now_ms - ac_changed_ms < cfg.ac_min_off_ms) {
+        lock = demand > 0.0f ? "Minimum off-time" : "";     // "" = locked, reason below
+    }
+
+    ac_electric_inputs_t in = { .demand_pct = demand, .evap_c = hvac_state.evap_c,
+                                .interlock = lock != NULL, .dt_s = dt_s };
+    ac_electric_outputs_t out;
+    ac_electric_step(&ac_el, &cfg.acp, &in, &out);
+    set_ac_compressor(out.enable);      // relay = enable, same minimum off-time bookkeeping
+    ac_out_pct = out.output_pct;
+
+    const char *reason = lock;
+    if (reason == NULL || reason[0] == '\0') {
+        reason = out.freeze_cut ? "Electric: freeze cut" :
+                 out.enable && out.limiter_active ? "Electric: freeze limit" :
+                 out.enable && demand <= 0.0f ? "Electric: idling" :
+                 !out.enable ? "Electric: idle off" : request_reason;
+    }
+    hvac_state.ac_test = test;
+    hvac_state.ac_test_blower = test && ac_test.blower;
+    hvac_state.ac_demand_pct = demand;
+    hvac_state.ac_speed_pct = out.speed_pct;
+    hvac_state.ac_output_pct = out.output_pct;
+    hvac_state.ac_enable = out.enable;
+    hvac_state.ac_limiter = out.limiter_active;
+    if (strcmp(hvac_state.ac_reason, reason) != 0) {
+        snprintf(hvac_state.ac_reason, sizeof(hvac_state.ac_reason), "%s", reason);
+    }
+}
+
 static void run_temperature_control(void)
 {
     for (int v = 0; v < HVAC_VALVE_MAX; v++) {
@@ -614,6 +762,8 @@ static void run_temperature_control(void)
     // Extra sensors and the cabin dew point (informational in every mode)
     hvac_state.outside_temp_c = sensor_roles_get_temp(SENSOR_ROLE_OUTSIDE);
     hvac_state.coolant_temp_c = sensor_roles_get_temp(SENSOR_ROLE_COOLANT);
+    hvac_state.evap_c = sensor_roles_get_temp(SENSOR_ROLE_EVAPORATOR);
+    ac_out_cfg = cfg.acout;
     hvac_state.dew_point_c = comfort_dew_point_c(hvac_state.cabin_temp_c, hvac_state.cabin_humidity);
 
     // NOT_FOUND in the first seconds after boot means "not read yet", not a fault
@@ -649,6 +799,9 @@ static void run_temperature_control(void)
         hvac_state.heater_delay_active = false;
         hvac_state.duct_target_c = NAN;
         strcpy(hvac_state.ac_reason, "System OFF");
+        if (cfg.ac_electric) {
+            electric_cycle(0.0f, "System OFF");     // steps the module (off), or runs the compressor test
+        }
         return;
     }
 
@@ -994,6 +1147,24 @@ compressor:
     bool other_request = user_request || is_defrost_mode || defog_request || auto_cool_request ||
                          (hvac_state.mode == HVAC_MODE_AUTO && warmup_state.active);
 
+    if (cfg.ac_electric) {
+        // Same requests, as a demand; the interlocks are in electric_cycle()
+        ac_demand_inputs_t d = {
+            .auto_cooling = auto_cool_request,
+            .cabin_error_c = hvac_state.target_temp_c - hvac_state.cabin_temp_c,   // NaN without a cabin reading
+            .deadband_c = cfg.deadband,
+            .full_c = cfg.auto_full_c,
+            .humidity = humidity_request,
+            .defog = defog_request || (hvac_state.mode == HVAC_MODE_AUTO && warmup_state.active),
+            .defrost = is_defrost_mode,
+            .user = user_request,
+            .max_cool = hvac_state.preset == HVAC_PRESET_MAX_COOL,
+        };
+        electric_cycle(ac_electric_demand(&d), ac_reason);
+        apply_cycle_targets();
+        return;
+    }
+
     // Interlocks: override every request immediately, regardless of the minimum on-time
     bool interlock = false;
     if (hvac_state.mode == HVAC_MODE_OFF) {
@@ -1005,23 +1176,21 @@ compressor:
         // remains the guard for a low fan minimum.
         interlock = true;
         ac_reason = "Interlock: blower below Low";
-    } else {
-        // Crude freeze protection: duct air near 0 C while the heater adds no heat
-        static bool freeze_lock = false;
-        int16_t coolant_target = cycle_targets[HVAC_VALVE_COOLANT] >= 0
-                                 ? cycle_targets[HVAC_VALVE_COOLANT]
-                                 : tb6612fng_get_valve_target(HVAC_VALVE_COOLANT);
-        if (!isnan(hvac_state.duct_temp_c)) {
-            if (hvac_state.duct_temp_c < AC_FREEZE_CUTOUT_C && coolant_target <= 5) {
-                freeze_lock = true;
-            } else if (hvac_state.duct_temp_c > AC_FREEZE_CUTIN_C) {
-                freeze_lock = false;
-            }
+    } else if (!isnan(hvac_state.evap_c)) {
+        // Evaporator role assigned: its reading with SET_EVAP_OFF / SET_EVAP_ON replaces the duct proxy
+        static bool evap_lock = false;
+        if (hvac_state.evap_c <= cfg.evap_off) {
+            evap_lock = true;
+        } else if (hvac_state.evap_c > cfg.evap_on) {
+            evap_lock = false;
         }
-        if (freeze_lock) {
+        if (evap_lock) {
             interlock = true;
-            ac_reason = "Interlock: duct freeze (<3 C)";
+            ac_reason = "Interlock: evaporator freeze";
         }
+    } else if (duct_freeze_update()) {
+        interlock = true;
+        ac_reason = "Interlock: duct freeze (<3 C)";
     }
     // The minimum on-time is only for the humidity rule, the one request that comes and
     // goes by itself; a user A/C-off, a mode change or an interlock drops the clutch at once.
@@ -1089,6 +1258,7 @@ esp_err_t hvac_controller_init(void)
     hvac_state.ac_compressor_on = false;
     hvac_state.preset = HVAC_PRESET_NONE;
     hvac_state.outside_temp_c = NAN;
+    hvac_state.evap_c = NAN;
     hvac_state.coolant_temp_c = NAN;
     hvac_state.dew_point_c = NAN;
     hvac_state.duct_target_c = NAN;
@@ -1429,6 +1599,36 @@ hvac_preset_t hvac_controller_get_preset(void)
     return p;
 }
 
+esp_err_t hvac_controller_ac_test(float demand_pct, bool blower_low)
+{
+    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    esp_err_t ret = ESP_ERR_INVALID_STATE;
+    if (hvac_state.mode == HVAC_MODE_OFF && cfg.ac_electric) {
+        if (!ac_test.active) {
+            ESP_LOGI(TAG, "Compressor test started");
+        }
+        ac_test.active = true;
+        ac_test.blower = blower_low;
+        ac_test.demand_pct = fminf(100.0f, fmaxf(0.0f, demand_pct));
+        ac_test.touch_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        ret = ESP_OK;
+    }
+    xSemaphoreGive(state_mutex);
+    return ret;
+}
+
+void hvac_controller_ac_test_end(void)
+{
+    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (ac_test.active) {
+            ac_test.touch_ms -= AC_TEST_DEADMAN_MS;     // the next cycle ends it (and stops its blower)
+        }
+        xSemaphoreGive(state_mutex);
+    }
+}
+
 void hvac_controller_apply_settings(void)
 {
     if (state_mutex != NULL && xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -1451,6 +1651,7 @@ void hvac_controller_task(void *pvParameters)
             run_temperature_control();
             xSemaphoreGive(state_mutex);
         }
+        ac_output_service(&ac_out_cfg, ac_out_pct);    // link I/O outside the state mutex
         reassert_outputs();
 
         // One NVS write per burst of changes (e.g. holding temp +), 5 s after the last one

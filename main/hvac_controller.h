@@ -101,6 +101,17 @@ typedef struct {
     float coolant_temp_c;           // Role COOLANT, NaN if not assigned
     float duct_target_c;            // Cascade: duct temperature target, NaN in classic
     char ac_reason[32];             // Why the compressor is on/off, e.g. "Interlock: blower below 30 %"
+
+    // v2.4 electric compressor (the ac_* values stay 0/false with the clutch type)
+    uint8_t compressor_type;        // set_ac_compressor_t: SET_AC_CLUTCH or SET_AC_ELECTRIC
+    float ac_demand_pct;            // demand 0..100 handed to ac_electric
+    float ac_speed_pct;             // commanded speed after ramp and limiter
+    float ac_output_pct;            // output % of full scale (inverted if set; idle level when off)
+    bool ac_enable;                 // enable line (= the relay, ac_compressor_on once acknowledged)
+    bool ac_limiter;                // evaporator limiter capping the speed
+    bool ac_test;                   // compressor test (service page) overriding the demand
+    bool ac_test_blower;            // ...and running the blower at Low
+    float evap_c;                   // Role EVAPORATOR, NaN if not assigned
 } hvac_state_t;
 
 /**
@@ -212,6 +223,15 @@ void hvac_controller_temp_down(void);
  * @param enabled true to enable
  */
 void hvac_controller_set_ac(bool enabled);
+
+/**
+ * @brief Compressor test (service page): electric type and mode OFF only, else ESP_ERR_INVALID_STATE.
+ * Overrides the demand (0..100 %); blower_low runs the blower at Low meanwhile. The blower interlock,
+ * minimum off time, freeze limits and link checks stay. Each call counts as a touch: 60 s without
+ * one, a mode change or hvac_controller_ac_test_end() ends it and drops the demand to 0.
+ */
+esp_err_t hvac_controller_ac_test(float demand_pct, bool blower_low);
+void hvac_controller_ac_test_end(void);
 
 /**
  * @brief Enable/disable recirculation
