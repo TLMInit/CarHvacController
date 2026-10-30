@@ -93,7 +93,7 @@ static uint32_t s_last_wifi_ms;
 
 static row_t s_rows[MAX_ROWS];
 static size_t s_nrows;
-static ui_label_t s_wifi_state, s_wifi_ssid;
+static ui_label_t s_wifi_state, s_wifi_ssid, s_wifi_addr, s_wifi_url;
 static bool s_wifi_rows;
 static ui_label_t s_svc_info;       /* Service group: why the rows are read-only */
 static int s_svc_locked = -1;       /* Service group shown: 1 = mode not OFF, rows read-only; -1 = other view */
@@ -394,6 +394,14 @@ static void refresh_wifi(void)
         ui_label_set_color(&s_wifi_state, UI_COLOR_TEXT_DIM);
     }
     ui_label_format(&s_wifi_ssid, "SSID %s", wifi_ap_ssid());
+    char ip[16];
+    if (wifi_ap_address(ip, sizeof(ip))) {      /* read-only, only while the AP is on */
+        ui_label_format(&s_wifi_addr, "%s: %s", tr("Address", "Adresse"), ip);
+        ui_label_format(&s_wifi_url, "%s: http://%s", tr("Phone page", "Telefonside"), ip);
+    } else {
+        ui_label_set(&s_wifi_addr, "");
+        ui_label_set(&s_wifi_url, "");
+    }
 }
 
 /* Service group: rows enabled only with mode OFF; redrawn only when that changes */
@@ -554,7 +562,11 @@ static void open_view(view_t view, int group, const ui_page_t *page)
                                 UI_COLOR_TEXT_DIM, LV_TEXT_ALIGN_LEFT);
             (void)ui_make_label(s_body, &s_wifi_ssid, "", 8, 3 + INFO_ROW_H, 304, 18, UI_FONT_14,
                                 UI_COLOR_TEXT, LV_TEXT_ALIGN_LEFT);
-            b.y = 2 * INFO_ROW_H;
+            (void)ui_make_label(s_body, &s_wifi_addr, "", 8, 3 + 2 * INFO_ROW_H, 304, 18, UI_FONT_14,
+                                UI_COLOR_TEXT, LV_TEXT_ALIGN_LEFT);
+            (void)ui_make_label(s_body, &s_wifi_url, "", 8, 3 + 3 * INFO_ROW_H, 304, 18, UI_FONT_14,
+                                UI_COLOR_TEXT, LV_TEXT_ALIGN_LEFT);
+            b.y = 4 * INFO_ROW_H;
             s_wifi_rows = true;
             s_last_wifi_ms = lv_tick_get() - WIFI_REFRESH_MS;
             refresh_wifi();

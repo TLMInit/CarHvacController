@@ -12,6 +12,7 @@
 #define WIFI_AP_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
 
@@ -28,6 +29,8 @@ void wifi_ap_apply_settings(void);
 bool wifi_ap_is_on(void);
 /** Last AP start failure ("esp_wifi_start: ESP_ERR_NO_MEM"), "" when none. Retried every second. */
 const char *wifi_ap_last_error(void);
+/** The AP's own IPv4 address from esp_netif ("192.168.4.1"); false (buf untouched) while the AP is off. */
+bool wifi_ap_address(char *buf, size_t len);
 const char *wifi_ap_ssid(void);             /* "HVAC-1A2B" */
 int wifi_ap_client_count(void);
 uint32_t wifi_ap_remaining_s(void);         /* 10MIN mode: seconds left without a client, else 0 */

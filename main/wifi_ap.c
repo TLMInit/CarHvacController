@@ -29,6 +29,7 @@ static const char *TAG = "WIFI_AP";
 #define AP_ERR_LOG_US       (10LL * 1000000)    /* a failing start is retried every second, logged every 10 s */
 
 static TaskHandle_t s_task;
+static esp_netif_t *s_netif;
 static char s_ssid[12];
 static volatile bool s_on;
 static volatile int s_clients;
@@ -165,7 +166,8 @@ esp_err_t wifi_ap_init(void)
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         return err;
     }
-    if (!esp_netif_create_default_wifi_ap()) {
+    s_netif = esp_netif_create_default_wifi_ap();
+    if (!s_netif) {
         return ESP_FAIL;
     }
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL));
@@ -190,6 +192,16 @@ const char *wifi_ap_last_error(void)
 bool wifi_ap_is_on(void)
 {
     return s_on;
+}
+
+bool wifi_ap_address(char *buf, size_t len)
+{
+    esp_netif_ip_info_t ip;
+    if (!s_on || !s_netif || esp_netif_get_ip_info(s_netif, &ip) != ESP_OK || ip.ip.addr == 0) {
+        return false;
+    }
+    snprintf(buf, len, IPSTR, IP2STR(&ip.ip));
+    return true;
 }
 
 const char *wifi_ap_ssid(void)
