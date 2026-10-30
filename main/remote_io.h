@@ -90,6 +90,18 @@ esp_err_t remote_pwm_configure(int pin, int freq_hz, int resolution_bits);
  */
 esp_err_t remote_pwm_set_duty(int pin, int duty);
 
+/**
+ * @brief PWM_INIT_HZ: frequency in Hz and resolution (node rules: 1..40000 Hz, 1..14 bits,
+ * 78126 <= freq x 2^bits <= 80 MHz). ESP_ERR_NOT_SUPPORTED without NODE_CAP_PWM_HZ (nothing sent).
+ */
+esp_err_t remote_pwm_init_hz(int pin, uint32_t freq_hz, int bits);
+
+/**
+ * @brief 3-byte PWM_SET: duty in raw counts of the channel, 0..2^bits (= full on).
+ * ESP_ERR_NOT_SUPPORTED without NODE_CAP_PWM_HZ (nothing sent).
+ */
+esp_err_t remote_pwm_set_duty16(int pin, uint16_t counts);
+
 // ==================== I2C Functions ====================
 
 /**
@@ -182,6 +194,11 @@ void remote_io_get_node_info(const char **version, uint32_t *uptime_s, uint32_t 
  * that node keeps its own LINK_WATCHDOG_MS (until it restarts).
  */
 esp_err_t remote_io_hello(uint8_t *node_proto, uint8_t *node_caps);
+
+/** @brief Answered HELLOs since boot (0 = none yet). It changes at every connect (boot, link
+ * recovered, node restart): outputs the node does not set up at its own boot (PWM_INIT_HZ
+ * channels) re-initialise when it moves. */
+uint32_t remote_io_hello_seq(void);
 
 /** @brief 1-Wire search on the node's bus. Fills up to max ROM codes; needs NODE_CAP_SEARCH. */
 esp_err_t remote_ds18b20_search(uint8_t roms[][8], int max, int *count);

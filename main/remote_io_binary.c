@@ -14,6 +14,7 @@
 #include "cobs_protocol.h"
 #include "event_log.h"
 #include "ota_image.h"
+#include "link_payload.h"
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -88,6 +89,7 @@ static bool s_expect_restart = false;       // set by remote_io_reset_node: next
 // HELLO handshake state
 static uint8_t s_node_proto = 0;            // 0 until HELLO answered; 1 = node without HELLO
 static uint8_t s_node_caps = 0;
+static uint32_t s_hello_seq = 0;            // answered HELLOs since boot (remote_io_hello_seq)
 static bool s_hello_pending = false;        // serviced by the next caller, outside the mutex
 static bool s_pad_possible = true;          // node may pad replies: no protocol >= 2 HELLO_RESP since its start
 static bool s_node_no_window = false;       // this node refused the link window in HELLO (2.3 node)
@@ -126,6 +128,7 @@ static const char *cmd_name(uint8_t cmd)
         case MSG_GPIO_MODE:     return "GPIO_MODE";
         case MSG_PWM_SET:       return "PWM_SET";
         case MSG_PWM_INIT:      return "PWM_INIT";
+        case MSG_PWM_INIT_HZ:   return "PWM_INIT_HZ";
         case MSG_I2C_WRITE:     return "I2C_WRITE";
         case MSG_I2C_READ:      return "I2C_READ";
         case MSG_ADS_READ:      return "ADS_READ";
@@ -515,6 +518,26 @@ esp_err_t remote_pwm_set_duty(int pin, int duty)
     return send_command_binary(MSG_PWM_SET, MSG_OK, payload, 2, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
+esp_err_t remote_pwm_init_hz(int pin, uint32_t freq_hz, int bits)
+{
+    if (!(s_node_caps & NODE_CAP_PWM_HZ)) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    uint8_t payload[6];
+    size_t n = link_payload_pwm_init_hz(payload, (uint8_t)pin, freq_hz, (uint8_t)bits);
+    return send_command_binary(MSG_PWM_INIT_HZ, MSG_OK, payload, n, NULL, NULL, NULL, CMD_TIMEOUT_MS);
+}
+
+esp_err_t remote_pwm_set_duty16(int pin, uint16_t counts)
+{
+    if (!(s_node_caps & NODE_CAP_PWM_HZ)) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    uint8_t payload[3];
+    size_t n = link_payload_pwm_set16(payload, (uint8_t)pin, counts);
+    return send_command_binary(MSG_PWM_SET, MSG_OK, payload, n, NULL, NULL, NULL, CMD_TIMEOUT_MS);
+}
+
 /*******************************************************************************
  * I2C Functions
  ******************************************************************************/
@@ -529,14 +552,8 @@ esp_err_t remote_i2c_write(int bus_num, uint8_t addr, const uint8_t *data, size_
     
     // First byte of data is register address for most I2C devices
     uint8_t payload[COBS_MAX_PAYLOAD_SIZE];
-    payload[0] = addr;
-    payload[1] = data[0];  // reg address
-    payload[2] = (uint8_t)(len - 1);  // data length (excluding reg)
-    if (len > 1) {
-        memcpy(&payload[3], &data[1], len - 1);
-    }
-    
-    return send_command_binary(MSG_I2C_WRITE, MSG_OK, payload, 3 + len - 1, NULL, NULL, NULL, CMD_TIMEOUT_MS);
+    size_t n = link_payload_i2c_write(payload, sizeof(payload), addr, data, len);
+    return send_command_binary(MSG_I2C_WRITE, MSG_OK, payload, n, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
 esp_err_t remote_i2c_write_read(int bus_num, uint8_t addr,
@@ -785,8 +802,9 @@ esp_err_t remote_io_hello(uint8_t *node_proto, uint8_t *node_caps)
         s_node_proto = data[0];
         s_pad_possible = (s_node_proto < 2);    // a protocol 2 node stops padding after HELLO
         s_node_caps = data[1];
-        ESP_LOGI(TAG, "HELLO: node protocol %u, caps 0x%02X (%s%s), %s", s_node_proto, s_node_caps,
-                 (s_node_caps & NODE_CAP_SEARCH) ? "search " : "", (s_node_caps & NODE_CAP_OTA) ? "ota" : "",
+        ESP_LOGI(TAG, "HELLO: node protocol %u, caps 0x%02X (%s%s%s), %s", s_node_proto, s_node_caps,
+                 (s_node_caps & NODE_CAP_SEARCH) ? "search " : "", (s_node_caps & NODE_CAP_OTA) ? "ota " : "",
+                 (s_node_caps & NODE_CAP_PWM_HZ) ? "pwm_hz" : "",
                  resp_len > 2 ? (const char *)&data[2] : "?");
     } else if (ret == ESP_FAIL && resp_type == MSG_ERROR && resp_len >= 1 && data[0] == ERR_INVALID_CMD) {
         // Protocol 1 node: no HELLO and it keeps padding; cobs_parse_frame tolerates the pad
@@ -800,9 +818,15 @@ esp_err_t remote_io_hello(uint8_t *node_proto, uint8_t *node_caps)
         ESP_LOGW(TAG, "HELLO failed: %s", esp_err_to_name(ret));
         return ret;
     }
+    __atomic_add_fetch(&s_hello_seq, 1, __ATOMIC_RELEASE);
     if (node_proto) *node_proto = s_node_proto;
     if (node_caps) *node_caps = s_node_caps;
     return ret;
+}
+
+uint32_t remote_io_hello_seq(void)
+{
+    return __atomic_load_n(&s_hello_seq, __ATOMIC_ACQUIRE);
 }
 
 // Called from the sensors task (sensor_roles search)
