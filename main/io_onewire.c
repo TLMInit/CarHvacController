@@ -19,9 +19,10 @@
 
 static const char *TAG = "IO_1W";
 
-#define DS18B20_READ_ATTEMPTS   3       /* the original node retried scratchpad reads too */
+#define DS18B20_READ_ATTEMPTS   3       /* the original node retried scratchpad reads too; all inside the
+                                           display's remote_io_binary.c CMD_TIMEOUT_MS */
 /* One ROM takes ~200 RMT bit slots (~20-30 ms); no new ROM is started after this,
- * so the reply stays inside the display's 200 ms timeout. */
+ * so the reply stays inside the display's remote_io_binary.c SEARCH_TIMEOUT_MS (500 ms). */
 #define ONEWIRE_SEARCH_BUDGET_US 100000
 
 #define OW_CMD_SKIP_ROM         0xCC

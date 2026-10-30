@@ -97,6 +97,24 @@ common GND), power both boards. On the display's console you should see
 end stops (about 10 s per valve). On the node's console the 10-second status line
 shows `link up` and growing frame counters.
 
+### Numbers shared with the display
+
+These live in both repos and must change together; each site names the other.
+
+| What | Node | Display | Rule, enforcement |
+| --- | --- | --- | --- |
+| Link window / watchdog | `LINK_WATCHDOG_MS` 3000 until HELLO | `REMOTE_IO_LINK_WINDOW_MS` 3000 (`remote_io.h`) | equal: sent in HELLO; bounds `LINK_WINDOW_MIN_MS`/`_MAX_MS` asserted on both sides |
+| Frame timeout | `LINK_FRAME_TIMEOUT_MS` 20 | `FRAME_TIMEOUT_MS` 20 (`remote_io_binary.c`) | equal, comment |
+| Reply budgets | ADS poll ≤ ~20 ms (`io_i2c.c`), DS18B20 3 tries, search budget 100 ms (`io_onewire.c`) | `CMD_TIMEOUT_MS` 200, `SEARCH_TIMEOUT_MS` 500 | node budget below the display timeout, comment |
+| OTA confirm | `OTA_CONFIRM_TIMEOUT_MS` 60 s | `OTA_REBOOT_WAIT_MS` 30 s | display wait below the confirm time, comment |
+| Node image size | slot 0xF0000 (`partitions.csv`) | `NODE_OTA_SLOT_SIZE` (`remote_io.h`) | equal; both refuse a larger image |
+| Project name | `project(CarHvacIoNode)` | `NODE_PROJECT_NAME` | equal, comment; the OTA image check uses it |
+| Baud, link pins | `LINK_BAUD` 921600 | `REMOTE_IO_BAUD_RATE` (`hvac_hw_config.h`) | equal, comment |
+| Pin map | `NODE_BOOT_*_PINS`, `NODE_ALLOWED_PINS` | `hvac_hw_config.h` | same pins, comment |
+| Blower PWM | `{48, 25}` in `NODE_BOOT_PWM_PINS` | `remote_pwm_configure(..., 25000, 10)` (`bts7960_driver.c`) | 25 kHz both, comment |
+| ADS1115 full scale | `ADS_CFG_PGA_4V096` (`io_i2c.c`) | mV maths 4096/32767 (`ads1115_driver.c`) | same range, comment |
+| Protocol header | `main/cobs_protocol.h`, `main/ota_image.h` | same files | byte-identical; `tools/ionode_cli.py` `ERR_NAMES` mirrors the error codes |
+
 ## Protocol
 
 Frames: COBS-encoded `[type][payload][CRC16-CCITT big-endian]` followed by `0x00`.

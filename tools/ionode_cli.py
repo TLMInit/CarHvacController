@@ -55,7 +55,7 @@ RESP_NAMES = {
     0x85: "I2C_DATA", 0x86: "ADS_VALUE", 0x87: "TEMP_VALUE",
     0x88: "HELLO_RESP", 0x89: "ROM_LIST", 0x8A: "OTA_ACK",
 }
-ERR_NAMES = {
+ERR_NAMES = {   # = cobs_error_t in main/cobs_protocol.h (both repos)
     0: "none", 1: "invalid command", 2: "invalid arguments", 3: "invalid pin",
     4: "I2C failure", 5: "timeout / no device", 6: "CRC mismatch", 7: "frame error", 8: "overflow",
     9: "OTA state", 10: "OTA write", 11: "OTA verify", 12: "OTA image (not a CarHvacIoNode ESP32-S3 build)",

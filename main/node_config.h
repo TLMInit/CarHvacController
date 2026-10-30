@@ -19,7 +19,7 @@
 #define NODE_VERSION_STRING     "ionode 2.3"   /* protocol_server.c appends the build's git describe */
 
 /* A new OTA image must answer PING and VERSION within this time, or it rolls back */
-#define OTA_CONFIRM_TIMEOUT_MS  60000
+#define OTA_CONFIRM_TIMEOUT_MS  60000   /* above the display's remote_io_binary.c OTA_REBOOT_WAIT_MS (30 s) */
 
 /* ---- UART link to the display -------------------------------------------
  * Display side: UART1, TX GPIO10 -> node RX, RX GPIO11 <- node TX, 921600 8N1.
@@ -27,14 +27,14 @@
 #define LINK_UART_NUM           UART_NUM_1
 #define LINK_TX_PIN             GPIO_NUM_2
 #define LINK_RX_PIN             GPIO_NUM_21
-#define LINK_BAUD               921600
+#define LINK_BAUD               921600  /* = display hvac_hw_config.h REMOTE_IO_BAUD_RATE */
 #define LINK_RX_BUF_SIZE        512
 #define LINK_TX_BUF_SIZE        256
-#define LINK_FRAME_TIMEOUT_MS   20      /* partial frame discarded after this much silence */
+#define LINK_FRAME_TIMEOUT_MS   20      /* partial frame discarded after this much silence; = display remote_io_binary.c FRAME_TIMEOUT_MS */
 #define LINK_WATCHDOG_MS        3000    /* outputs forced to safe state after this much silence; 0 = off.
                                            Default until a HELLO carries the display's link window, which
                                            then replaces it, clamped to LINK_WINDOW_MIN_MS..LINK_WINDOW_MAX_MS
-                                           (cobs_protocol.h); coupled: display REMOTE_IO_LINK_WINDOW_MS */
+                                           (cobs_protocol.h); coupled: display remote_io.h REMOTE_IO_LINK_WINDOW_MS */
 #define LINK_REPLY_ON_CRC_ERROR 0       /* 1 = answer a corrupt frame with ERROR 6 instead of staying silent */
 #define LINK_PAD_TRAILING_ZERO  1       /* 1 = pad replies whose CRC ends in 0x00 until a HELLO arrives (protocol 1 displays strip one trailing zero); 0 = never pad */
 
@@ -61,6 +61,7 @@
  * 8-bit duty, as the link protocol carries one duty byte.
  */
 #define NODE_BOOT_PWM_PINS      { {17, 20}, {15, 20}, {40, 20}, {47, 20}, {13, 20}, {48, 25} }
+/* {48, 25} = the display's bts7960_driver.c remote_pwm_configure(BTS7960_RPWM, 25000, 10) */
 #define NODE_DEFAULT_PWM_KHZ    20      /* used when PWM_SET arrives for a pin that never saw PWM_INIT */
 
 /* ---- Status LED (WS2812) --------------------------------------------------

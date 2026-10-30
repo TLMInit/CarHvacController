@@ -32,13 +32,14 @@ static int s_fail_streak;       /* consecutive bus-level failures, see track() *
 #define ADS_REG_CONFIG          0x01
 #define ADS_CFG_OS_START        0x8000              /* write: start; read: 1 = idle */
 #define ADS_CFG_MUX_SINGLE(ch)  ((0x4U | ((ch) & 0x3U)) << 12)
-#define ADS_CFG_PGA_4V096       (0x1U << 9)
+#define ADS_CFG_PGA_4V096       (0x1U << 9)         /* the display's ads1115_driver.c mV maths assume 4096 mV */
 #define ADS_CFG_MODE_SINGLE     (0x1U << 8)
 #define ADS_CFG_DR_860SPS       (0x7U << 5)
 #define ADS_CFG_COMP_DISABLE    0x0003
 #define ADS_FIRST_WAIT_US       1000                /* conversion at 860 SPS takes ~1.16 ms */
 #define ADS_POLL_STEP_US        100
-#define ADS_POLL_MAX_STEPS      100                 /* ~1 ms + 100 x (100 us + one read) ~= 20 ms worst case */
+#define ADS_POLL_MAX_STEPS      100                 /* ~1 ms + 100 x (100 us + one read) ~= 20 ms worst case,
+                                                       inside the display's remote_io_binary.c CMD_TIMEOUT_MS */
 
 esp_err_t io_i2c_init(void)
 {
