@@ -13,6 +13,7 @@
 
 #include "remote_io.h"
 #include "cobs_protocol.h"
+#include "event_log.h"
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -44,6 +45,19 @@ static const char *TAG = "REMOTE_IO";
 #define CMD_TIMEOUT_MS          200     // Response timeout (ADS needs ~5-10ms)
 #define FRAME_TIMEOUT_MS        20      // Timeout to reset frame receiver state
 #define LINK_LOCK_TIMEOUT_MS    1000    // Max wait for another task's command to finish
+#define SEARCH_TIMEOUT_MS       500     // 1-Wire search of up to 4 ROMs on the node
+#define OTA_CMD_TIMEOUT_MS      1000    // OTA_DATA may wait for a 4 KB sector erase
+#define OTA_SLOW_TIMEOUT_MS     5000    // OTA_BEGIN / OTA_END (erase, sha256 + boot slot)
+#define OTA_REBOOT_WAIT_MS      30000   // new image boot, incl. a possible bootloader check
+#define TIMEOUT_EVENT_PERIOD_MS 10000   // EVT_TIMEOUT at most this often, with a count
+
+// Link health over the last minute: 6 slots of 10 s, each an RTT histogram.
+// shortcut: histogram instead of a sample ring; ~50 commands/s would need ~3000 samples
+// (24 KB) for a full minute. p95 is the upper edge of its bucket (100 us steps to 2 ms,
+// then 1 ms steps to 30 ms, beyond that the slot maximum).
+#define RTT_SLOTS               6
+#define RTT_SLOT_MS             10000
+#define RTT_BUCKETS             49
 
 /*******************************************************************************
  * Private Data
@@ -69,6 +83,24 @@ static char s_node_version[COBS_MAX_PAYLOAD_SIZE] = "?";
 static uint32_t s_node_uptime_s = 0;
 static uint32_t s_node_resets = 0;
 static bool s_node_seen = false;
+static bool s_expect_restart = false;       // set by remote_io_reset_node: next uptime drop is ours
+
+// HELLO handshake state
+static uint8_t s_node_proto = 0;            // 0 until HELLO answered; 1 = node without HELLO
+static uint8_t s_node_caps = 0;
+static bool s_hello_pending = false;        // serviced by the next caller, outside the mutex
+static bool s_pad_possible = true;          // node may pad replies: no protocol >= 2 HELLO_RESP since its start
+
+typedef struct {
+    uint32_t id;                            // now_ms / RTT_SLOT_MS this slot belongs to
+    uint16_t hist[RTT_BUCKETS];
+    uint16_t timeouts;
+    uint32_t max_us;
+} rtt_slot_t;
+
+static rtt_slot_t s_rtt[RTT_SLOTS];
+static uint32_t s_rtt_last_us = 0;
+static portMUX_TYPE s_rtt_lock = portMUX_INITIALIZER_UNLOCKED;
 
 /*******************************************************************************
  * Private Functions
@@ -84,6 +116,7 @@ static const char *cmd_name(uint8_t cmd)
     switch (cmd) {
         case MSG_PING:          return "PING";
         case MSG_VERSION:       return "VERSION";
+        case MSG_HELLO:         return "HELLO";
         case MSG_GPIO_SET:      return "GPIO_SET";
         case MSG_GPIO_GET:      return "GPIO_GET";
         case MSG_GPIO_MODE:     return "GPIO_MODE";
@@ -94,9 +127,84 @@ static const char *cmd_name(uint8_t cmd)
         case MSG_ADS_READ:      return "ADS_READ";
         case MSG_DS18B20_START: return "DS18B20_START";
         case MSG_DS18B20_READ:  return "DS18B20_READ";
+        case MSG_ONEWIRE_SEARCH: return "ONEWIRE_SEARCH";
+        case MSG_OTA_BEGIN:     return "OTA_BEGIN";
+        case MSG_OTA_DATA:      return "OTA_DATA";
+        case MSG_OTA_END:       return "OTA_END";
+        case MSG_OTA_STATUS:    return "OTA_STATUS";
         case MSG_RESET:         return "RESET";
         default:                return "?";
     }
+}
+
+static uint8_t rtt_bucket(uint32_t us)
+{
+    if (us < 2000) return (uint8_t)(us / 100);
+    if (us < 30000) return (uint8_t)(20 + (us - 2000) / 1000);
+    return RTT_BUCKETS - 1;
+}
+
+static uint32_t rtt_bucket_upper_us(int b)
+{
+    return b < 20 ? (uint32_t)(b + 1) * 100 : 2000 + (uint32_t)(b - 19) * 1000;
+}
+
+// The slot for `now`, cleared when it last held an older 10 s window; caller holds s_rtt_lock
+static rtt_slot_t *rtt_slot(uint32_t now_ms)
+{
+    uint32_t id = now_ms / RTT_SLOT_MS;
+    rtt_slot_t *slot = &s_rtt[id % RTT_SLOTS];
+    if (slot->id != id) {
+        memset(slot, 0, sizeof(*slot));
+        slot->id = id;
+    }
+    return slot;
+}
+
+// One reply (rtt_us) or one lost reply (timed_out); called under s_link_mutex
+static void rtt_record(uint32_t rtt_us, bool timed_out)
+{
+    uint32_t now = get_time_ms();
+    portENTER_CRITICAL(&s_rtt_lock);
+    rtt_slot_t *slot = rtt_slot(now);
+    if (timed_out) {
+        if (slot->timeouts < UINT16_MAX) slot->timeouts++;
+    } else {
+        uint8_t b = rtt_bucket(rtt_us);
+        if (slot->hist[b] < UINT16_MAX) slot->hist[b]++;
+        if (rtt_us > slot->max_us) slot->max_us = rtt_us;
+        s_rtt_last_us = rtt_us;
+    }
+    portEXIT_CRITICAL(&s_rtt_lock);
+}
+
+/*
+ * Pad strip. A protocol 1 node, or a protocol 2 node before it has seen HELLO, appends one
+ * 0x00 to a reply whose CRC low byte is 0x00. With this CRC (init 0xFFFF, no xorout) the
+ * padded message M|crc_hi|00|00 is itself CRC-valid (CRC over M|crc_hi is always 0x0000), so
+ * cobs_parse_frame returns the payload one byte too long. While padding is possible, a
+ * reply whose CRC field was 0x0000 (crc16(type|data) == 0) and whose shorter form also
+ * checks out loses its last byte. False match: a genuine CRC of 0x0000, 1 in 65536.
+ * Worked bytes, TEMP_VALUE -1.27 C (FF 81), CRC = F0 00:
+ *   padded   87 FF 81 F0 00 00 -> parsed data FF 81 F0 -> crc16(87 FF 81 F0) = 0000 and
+ *            crc16(87 FF 81) = F000 = F0<<8 -> stripped to FF 81            (correct)
+ *   unpadded 87 FF 81 F0 00    -> parsed data FF 81, crc16(87 FF 81) = F000 != 0 -> kept
+ *   after a protocol 2 HELLO_RESP s_pad_possible is false: data FF 81 F0 would be kept
+ *            (that is then a genuine 3-byte payload with CRC 0x0000).
+ * Host-checked over all 65536 2-byte payloads (256 padded) during WP-C.
+ */
+static size_t strip_pad(uint8_t type, const uint8_t *data, size_t len)
+{
+    if (!s_pad_possible || len < 1 || len > COBS_MAX_PAYLOAD_SIZE) {
+        return len;
+    }
+    uint8_t msg[1 + COBS_MAX_PAYLOAD_SIZE];
+    msg[0] = type;
+    memcpy(&msg[1], data, len);
+    if (cobs_crc16(msg, 1 + len) == 0 && cobs_crc16(msg, len) == ((uint16_t)data[len - 1] << 8)) {
+        return len - 1;
+    }
+    return len;
 }
 
 // Send one command and wait for its reply of type `expect` (or MSG_ERROR); caller holds s_link_mutex
@@ -119,6 +227,7 @@ static esp_err_t execute_command_internal(uint8_t cmd, uint8_t expect, const uin
     // Send frame
     uart_write_bytes(s_uart_num, frame, frame_len);
     s_tx_frames++;
+    int64_t sent_us = esp_timer_get_time();
 
     // Wait for response (no fixed grace delay: the read below returns as soon as bytes arrive)
     uint32_t start_ms = get_time_ms();
@@ -151,6 +260,13 @@ static esp_err_t execute_command_internal(uint8_t cmd, uint8_t expect, const uin
                     
                     if (cobs_parse_frame(rx_frame, rx_frame_len, &msg_type, data, sizeof(data), &data_len)) {
                         s_rx_frames++;
+                        data_len = strip_pad(msg_type, data, data_len);
+                        // Link down -> up after first contact: the node may have lost HELLO
+                        if (s_node_seen && !remote_io_is_connected()) {
+                            ESP_LOGI(TAG, "Link up again: HELLO queued");
+                            s_pad_possible = true;      // the node may have restarted unseen
+                            __atomic_store_n(&s_hello_pending, true, __ATOMIC_RELEASE);
+                        }
                         /* A CRC-valid response proves the remote link is alive, even
                          * when the remote endpoint returns a command-level error. */
                         s_last_response_ms = get_time_ms();
@@ -193,6 +309,9 @@ static esp_err_t execute_command_internal(uint8_t cmd, uint8_t expect, const uin
     
     if (result == ESP_ERR_TIMEOUT) {
         s_timeouts++;
+        rtt_record(0, true);
+    } else {
+        rtt_record((uint32_t)(esp_timer_get_time() - sent_us), false);
     }
 
     return result;
@@ -204,6 +323,20 @@ static void log_link_result(uint8_t cmd, const uint8_t *payload, size_t payload_
                             esp_err_t result, uint32_t wait_ms, uint32_t cmd_ms)
 {
     static uint32_t consecutive = 0;
+    static uint32_t unlogged = 0;           // timeouts not yet in the event log
+    static uint32_t last_event_ms = 0;
+    static bool event_logged = false;
+
+    if (result == ESP_ERR_TIMEOUT) {
+        unlogged++;
+    }
+    // Flushed by the first command after the period, so a burst is reported once with its count
+    if (unlogged > 0 && (!event_logged || get_time_ms() - last_event_ms >= TIMEOUT_EVENT_PERIOD_MS)) {
+        event_log_add(EVT_TIMEOUT, "%lu link timeout(s), last %s", (unsigned long)unlogged, cmd_name(cmd));
+        unlogged = 0;
+        last_event_ms = get_time_ms();
+        event_logged = true;
+    }
 
     if (result != ESP_ERR_TIMEOUT) {
         if (consecutive > 0) {
@@ -223,6 +356,8 @@ static void log_link_result(uint8_t cmd, const uint8_t *payload, size_t payload_
 
 // Send a binary command frame and wait for response (called from any task).
 // Runs in the caller's context under s_link_mutex, so no pointer outlives its call.
+static void link_service_hello(void);
+
 static esp_err_t send_command_binary(uint8_t cmd, uint8_t expect, const uint8_t *payload, size_t payload_len,
                                      uint8_t *resp_type, uint8_t *resp_data, size_t *resp_len,
                                      int timeout_ms)
@@ -243,7 +378,20 @@ static esp_err_t send_command_binary(uint8_t cmd, uint8_t expect, const uint8_t 
                                                 resp_len, resp_len ? *resp_len : 0, timeout_ms);
     log_link_result(cmd, payload, payload_len, result, t1 - t0, get_time_ms() - t1);
     xSemaphoreGive(s_link_mutex);
+    if (cmd != MSG_HELLO) {
+        link_service_hello();
+    }
     return result;
+}
+
+// Sends a queued HELLO from whichever task just finished a command (one extra round trip,
+// outside the link mutex); the exchange makes sure only one task sends it
+static void link_service_hello(void)
+{
+    if (__atomic_load_n(&s_hello_pending, __ATOMIC_ACQUIRE) &&
+        __atomic_exchange_n(&s_hello_pending, false, __ATOMIC_ACQ_REL)) {
+        remote_io_hello(NULL, NULL);
+    }
 }
 
 // Note: send_simple_command removed - use send_command_binary directly
@@ -616,18 +764,30 @@ esp_err_t remote_io_poll_node(void)
         // Each display boot resets the node (S-04), so up=0 rst=SW here is expected;
         // restarts are counted only after this first contact
         ESP_LOGI(TAG, "IO node (first contact since display boot): %s", text);
+        __atomic_store_n(&s_hello_pending, true, __ATOMIC_RELEASE);
     } else if (up && uptime < s_node_uptime_s) {
-        s_node_resets++;
-        ESP_LOGW(TAG, "IO NODE RESTARTED: uptime %lu s -> %lu s, reset reason %s (%lu since boot)",
-                 (unsigned long)s_node_uptime_s, (unsigned long)uptime, rst ? rst + 5 : "?",
-                 (unsigned long)s_node_resets);
+        if (s_expect_restart) {
+            ESP_LOGI(TAG, "IO node back after commanded reset: %s", text);
+        } else {
+            s_node_resets++;
+            s_pad_possible = true;
+            ESP_LOGW(TAG, "IO NODE RESTARTED: uptime %lu s -> %lu s, reset reason %s (%lu since boot)",
+                     (unsigned long)s_node_uptime_s, (unsigned long)uptime, rst ? rst + 5 : "?",
+                     (unsigned long)s_node_resets);
+            event_log_add(EVT_NODE_RESET, "IO node restarted, rst=%.20s", rst ? rst + 5 : "?");
+        }
+        __atomic_store_n(&s_hello_pending, true, __ATOMIC_RELEASE);
+    } else if (s_node_proto == 0) {
+        __atomic_store_n(&s_hello_pending, true, __ATOMIC_RELEASE);   // HELLO unanswered: retry every poll
     }
+    s_expect_restart = false;
     s_node_seen = true;
     s_node_uptime_s = uptime;
     if (up) {
         *up = '\0';
     }
     snprintf(s_node_version, sizeof(s_node_version), "%s", text);
+    link_service_hello();
     return ESP_OK;
 }
 
@@ -675,7 +835,237 @@ bool remote_io_is_connected(void)
 
 esp_err_t remote_io_reset_node(void)
 {
+    s_expect_restart = true;    // a commanded restart is not counted as a node restart
+    s_node_proto = 0;           // the restarted node has not seen HELLO yet
+    s_pad_possible = true;
     return send_command_binary(MSG_RESET, MSG_OK, NULL, 0, NULL, NULL, NULL, CMD_TIMEOUT_MS);
+}
+
+/*******************************************************************************
+ * v2.1: HELLO, 1-Wire search, node OTA, link health
+ ******************************************************************************/
+
+// Called from main (boot) or from whichever task services a queued HELLO
+esp_err_t remote_io_hello(uint8_t *node_proto, uint8_t *node_caps)
+{
+    uint8_t version = PROTOCOL_VERSION;
+    uint8_t resp_type = 0;
+    uint8_t data[COBS_MAX_PAYLOAD_SIZE];
+    size_t resp_len = sizeof(data) - 1;
+
+    esp_err_t ret = send_command_binary(MSG_HELLO, MSG_HELLO_RESP, &version, 1, &resp_type, data, &resp_len,
+                                        CMD_TIMEOUT_MS);
+    if (ret == ESP_OK && resp_type == MSG_HELLO_RESP && resp_len >= 2) {
+        data[resp_len < sizeof(data) - 1 ? resp_len : sizeof(data) - 1] = '\0';
+        s_node_proto = data[0];
+        s_pad_possible = (s_node_proto < 2);    // a protocol 2 node stops padding after HELLO
+        s_node_caps = data[1];
+        ESP_LOGI(TAG, "HELLO: node protocol %u, caps 0x%02X (%s%s), %s", s_node_proto, s_node_caps,
+                 (s_node_caps & NODE_CAP_SEARCH) ? "search " : "", (s_node_caps & NODE_CAP_OTA) ? "ota" : "",
+                 resp_len > 2 ? (const char *)&data[2] : "?");
+    } else if (ret == ESP_FAIL && resp_type == MSG_ERROR && resp_len >= 1 && data[0] == ERR_INVALID_CMD) {
+        // Protocol 1 node: no HELLO and it keeps padding; cobs_parse_frame tolerates the pad
+        s_node_proto = 1;
+        s_pad_possible = true;
+        s_node_caps = 0;
+        ret = ESP_OK;
+        ESP_LOGI(TAG, "HELLO: node protocol 1 (no HELLO), caps 0x00");
+    } else {
+        ret = (ret == ESP_OK || ret == ESP_FAIL) ? ESP_ERR_INVALID_RESPONSE : ret;
+        ESP_LOGW(TAG, "HELLO failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    if (node_proto) *node_proto = s_node_proto;
+    if (node_caps) *node_caps = s_node_caps;
+    return ret;
+}
+
+// Called from the sensors task (sensor_roles search)
+esp_err_t remote_ds18b20_search(uint8_t roms[][8], int max, int *count)
+{
+    if (count) *count = 0;
+    if (!(s_node_caps & NODE_CAP_SEARCH)) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    uint8_t resp_type = 0;
+    uint8_t data[1 + ONEWIRE_SEARCH_MAX_ROMS * 8];
+    size_t resp_len = sizeof(data);
+    esp_err_t ret = send_command_binary(MSG_ONEWIRE_SEARCH, MSG_ROM_LIST, NULL, 0, &resp_type, data, &resp_len,
+                                        SEARCH_TIMEOUT_MS);
+    if (ret != ESP_OK || resp_type != MSG_ROM_LIST || resp_len < 1) {
+        return ret == ESP_OK ? ESP_ERR_INVALID_RESPONSE : ret;
+    }
+    int n = data[0];
+    if (n > ONEWIRE_SEARCH_MAX_ROMS || resp_len < 1 + (size_t)n * 8) {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    if (n > max) n = max;
+    for (int i = 0; i < n; i++) {
+        memcpy(roms[i], &data[1 + i * 8], 8);
+    }
+    if (count) *count = n;
+    return ESP_OK;
+}
+
+// One OTA command; ESP_OK only for an OTA_ACK, with its state and byte count
+static esp_err_t ota_command(uint8_t cmd, const uint8_t *payload, size_t len, int timeout_ms,
+                             uint8_t *state, uint32_t *bytes)
+{
+    uint8_t resp_type = 0;
+    uint8_t data[8];
+    size_t resp_len = sizeof(data);
+    esp_err_t ret = send_command_binary(cmd, MSG_OTA_ACK, payload, len, &resp_type, data, &resp_len, timeout_ms);
+    if (ret == ESP_FAIL && resp_type == MSG_ERROR && resp_len >= 1) {
+        ESP_LOGW(TAG, "%s: node error %u", cmd_name(cmd), data[0]);
+        return ESP_FAIL;
+    }
+    if (ret != ESP_OK || resp_type != MSG_OTA_ACK || resp_len < 5) {
+        return ret == ESP_OK ? ESP_ERR_INVALID_RESPONSE : ret;
+    }
+    *state = data[0];
+    *bytes = ((uint32_t)data[1] << 24) | ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 8) | data[4];
+    return ESP_OK;
+}
+
+static void put_u32_be(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)(v >> 24);
+    p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8);
+    p[3] = (uint8_t)v;
+}
+
+static esp_err_t ota_fail(const char *step, uint32_t offset, esp_err_t err)
+{
+    ESP_LOGE(TAG, "Node OTA failed at %s (offset %lu): %s", step, (unsigned long)offset, esp_err_to_name(err));
+    event_log_add(EVT_OTA, "Node OTA failed: %s @%lu", step, (unsigned long)offset);
+    return err;
+}
+
+// Called from the OTA worker task (system OFF). Holds the link mutex per command only,
+// so the other tasks keep polling between chunks.
+esp_err_t remote_io_ota_node(const uint8_t *image, size_t len, const uint8_t sha256[32],
+                             remote_ota_progress_cb_t cb, void *ctx)
+{
+    if (image == NULL || sha256 == NULL || len == 0 || len > UINT32_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!(s_node_caps & NODE_CAP_OTA)) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    const uint32_t total = (uint32_t)len;
+    uint8_t payload[4 + OTA_DATA_MAX];
+    uint8_t state = 0;
+    uint32_t bytes = 0;
+    uint32_t t_start = get_time_ms();
+
+    ESP_LOGI(TAG, "Node OTA: %lu bytes", (unsigned long)total);
+    event_log_add(EVT_OTA, "Node OTA start, %lu bytes", (unsigned long)total);
+
+    put_u32_be(payload, total);
+    memcpy(&payload[4], sha256, 32);
+    esp_err_t ret = ota_command(MSG_OTA_BEGIN, payload, 4 + 32, OTA_SLOW_TIMEOUT_MS, &state, &bytes);
+    if (ret == ESP_OK && state != OTA_STATE_RECEIVING) ret = ESP_ERR_INVALID_STATE;
+    if (ret != ESP_OK) return ota_fail("BEGIN", 0, ret);
+
+    uint32_t offset = 0;
+    int last_pct = -1;
+    int retries = 0;
+    while (offset < total) {
+        uint32_t n = (total - offset < OTA_DATA_MAX) ? total - offset : OTA_DATA_MAX;
+        put_u32_be(payload, offset);
+        memcpy(&payload[4], &image[offset], n);
+        ret = ota_command(MSG_OTA_DATA, payload, 4 + n, OTA_CMD_TIMEOUT_MS, &state, &bytes);
+        if (ret == ESP_ERR_TIMEOUT || ret == ESP_ERR_INVALID_RESPONSE) {
+            // The chunk may have landed with its ACK lost: continue where the node says it is
+            if (++retries > 3) return ota_fail("DATA", offset, ret);
+            if (ota_command(MSG_OTA_STATUS, NULL, 0, OTA_CMD_TIMEOUT_MS, &state, &bytes) == ESP_OK &&
+                state == OTA_STATE_RECEIVING && bytes <= total) {
+                offset = bytes;
+            }
+            continue;
+        }
+        if (ret == ESP_OK && (state != OTA_STATE_RECEIVING || bytes != offset + n)) ret = ESP_ERR_INVALID_STATE;
+        if (ret != ESP_OK) return ota_fail("DATA", offset, ret);
+        retries = 0;
+        offset += n;
+        int pct = (int)((uint64_t)offset * 100 / total);
+        if (cb && pct != last_pct) {
+            last_pct = pct;
+            cb(offset, total, ctx);
+        }
+    }
+
+    ret = ota_command(MSG_OTA_END, NULL, 0, OTA_SLOW_TIMEOUT_MS, &state, &bytes);
+    if (ret == ESP_OK && state != OTA_STATE_READY) ret = ESP_ERR_INVALID_CRC;
+    if (ret != ESP_OK) return ota_fail("END", offset, ret);
+    ESP_LOGI(TAG, "Node OTA: %lu bytes sent and verified in %lu ms, restarting node", (unsigned long)total,
+             (unsigned long)(get_time_ms() - t_start));
+
+    ret = remote_io_reset_node();
+    if (ret != ESP_OK) return ota_fail("RESET", offset, ret);
+    vTaskDelay(pdMS_TO_TICKS(200));     // let the node go down before pinging it
+    ret = remote_io_wait_ready(OTA_REBOOT_WAIT_MS);
+    if (ret != ESP_OK) return ota_fail("REBOOT", offset, ret);
+    ret = remote_io_poll_node();        // VERSION confirms the new image on the node
+    if (ret != ESP_OK) return ota_fail("VERSION", offset, ret);
+    if (s_node_proto == 0) {
+        remote_io_hello(NULL, NULL);    // normally already done by poll_node
+    }
+
+    ESP_LOGI(TAG, "Node OTA done in %lu ms: %s", (unsigned long)(get_time_ms() - t_start), s_node_version);
+    event_log_add(EVT_OTA, "Node OTA ok: %.30s", s_node_version);
+    return ESP_OK;
+}
+
+// Called from the diagnostics page / web server tasks; never waits for the link
+void remote_io_get_health(remote_io_health_t *out)
+{
+    if (out == NULL) {
+        return;
+    }
+    memset(out, 0, sizeof(*out));
+    out->connected = remote_io_is_connected();
+    out->tx_frames = s_tx_frames;
+    out->rx_frames = s_rx_frames;
+    out->crc_errors = s_crc_errors;
+    out->timeouts = s_timeouts;
+    out->mismatches = s_mismatches;
+    out->node_proto = s_node_proto;
+    out->node_caps = s_node_caps;
+    snprintf(out->node_version, sizeof(out->node_version), "%.47s", s_node_version);
+    out->node_uptime_s = s_node_uptime_s;
+    out->node_restarts = s_node_resets;
+
+    uint32_t hist[RTT_BUCKETS] = {0};
+    uint32_t count = 0, max_us = 0;
+    uint32_t now_id = get_time_ms() / RTT_SLOT_MS;
+    portENTER_CRITICAL(&s_rtt_lock);
+    out->rtt_last_us = s_rtt_last_us;
+    for (int i = 0; i < RTT_SLOTS; i++) {
+        const rtt_slot_t *slot = &s_rtt[i];
+        if (slot->id + RTT_SLOTS <= now_id) continue;   // older than the last minute
+        out->timeouts_last_min += slot->timeouts;
+        for (int b = 0; b < RTT_BUCKETS; b++) {
+            hist[b] += slot->hist[b];
+            count += slot->hist[b];
+        }
+        if (slot->max_us > max_us) max_us = slot->max_us;
+    }
+    portEXIT_CRITICAL(&s_rtt_lock);
+
+    if (count > 0) {
+        uint32_t rank = (count * 95 + 99) / 100;    // ceil(0.95 * count)
+        uint32_t seen = 0;
+        for (int b = 0; b < RTT_BUCKETS; b++) {
+            seen += hist[b];
+            if (seen >= rank) {
+                uint32_t upper = (b == RTT_BUCKETS - 1) ? max_us : rtt_bucket_upper_us(b);
+                out->rtt_p95_us = upper < max_us ? upper : max_us;
+                break;
+            }
+        }
+    }
 }
 
 #endif // USE_REMOTE_IO

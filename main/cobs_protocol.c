@@ -146,11 +146,8 @@ size_t cobs_decode(const uint8_t *input, size_t input_len, uint8_t *output)
         }
     }
     
-    // Remove the trailing zero that was added for the last block
-    if (write_idx > 0 && output[write_idx - 1] == 0) {
-        write_idx--;
-    }
-    
+    // No trailing-zero strip (S-11): the last block never adds a zero, so a message
+    // whose CRC ends in 0x00 is decoded intact. Old nodes' pad is handled in cobs_parse_frame.
     return write_idx;
 }
 
@@ -220,7 +217,9 @@ bool cobs_parse_frame(const uint8_t *frame, size_t frame_len,
         return false;
     }
     
-    // Verify CRC
+    // Verify CRC. A padded reply (protocol 1 node, or before HELLO) is CRC-valid here too,
+    // one byte long; the link layer strips the pad while padding is possible (strip_pad()
+    // in remote_io_binary.c), because only it knows the node's protocol.
     if (!cobs_verify_crc(decoded, decoded_len)) {
         return false;
     }
