@@ -94,7 +94,7 @@ typedef enum {
     SET_DEF_RESTORES_AC,        /* bool, default yes: leaving DEF restores the A/C choice from before DEF */
 
     /* Fan */
-    SET_FAN_MIN_DUTY,           /* int %, 0..100, default 30 (= LOW) */
+    SET_FAN_MIN_DUTY,           /* int %, 5..100, default 30: manual LOW and the AUTO floor */
     SET_FAN_MAX_DUTY,           /* int %, 30..100, default 100 */
     SET_AUTO_CURVE,             /* enum set_curve_t, default NORMAL */
     SET_QUIET_NIGHT_CAP,        /* int %, 0 = off .. 100, default 0: fan cap while NIGHT is selected */
@@ -195,6 +195,52 @@ void settings_format(setting_id_t id, char *buf, size_t len);
 
 /** Label in the current language. */
 const char *settings_label(setting_id_t id);
+
+/* ---- Cross-field rules (data and checker in settings_table.c, host-tested) ----
+ * A chain lists operands, each a setting or a fixed value, with op[i] + gap <= op[i+1].
+ * A set that would break a chain is clamped to the nearest legal value; the other setting
+ * is never moved. The setter leaves a note (settings_last_note). settings_init applies the
+ * chains to stored values: the lower setting moves down, or the upper one up when the lower
+ * one is fixed or would leave its range. */
+typedef struct {
+    setting_id_t id;                /* SET_COUNT: the fixed value k */
+    float k;
+    const char *name_en, *name_da;  /* fixed values only */
+} setting_operand_t;
+
+typedef struct {
+    const setting_operand_t *ops;
+    uint8_t n;
+    float gap;
+} setting_chain_t;
+
+typedef struct {
+    const setting_chain_t *chain;   /* NULL: no rule changed the value */
+    const setting_operand_t *other; /* the operand that bounds the value */
+    bool other_above;               /* true: the value had to stay below other */
+} setting_rule_hit_t;
+
+extern const setting_chain_t g_settings_chains[];
+extern const size_t g_settings_chain_count;
+
+/* Manual fan levels Low..High in %: the one source for the controller and the fan chain. */
+#define SETTINGS_FAN_LEVELS 5
+extern const setting_operand_t g_fan_levels[SETTINGS_FAN_LEVELS];
+
+/** Pure: v (already range-clamped) for id, clamped so every chain holds against vals[]. */
+float settings_rules_clamp(setting_id_t id, float v, const float vals[SET_COUNT], setting_rule_hit_t *hit);
+
+/** Pure: make stored values obey every chain (see above). Returns the number of values changed. */
+int settings_rules_fix(float vals[SET_COUNT]);
+
+/** Operand value: the setting's current value or the fixed value. */
+float settings_operand_value(const setting_operand_t *op);
+
+#define SETTINGS_NOTE_MAX 128
+/** Note left by the last set/step/reset of id when a rule changed the value, e.g.
+ * "Set to 63 %RH: must be at least 2 %RH below Humidity A/C on (65 %RH)". Returns false
+ * (buf = "") when the last change of any setting was not this id or was not clamped by a rule. */
+bool settings_last_note(setting_id_t id, char *buf, size_t len);
 
 /** Increments on every change; lets readers redraw only on change. */
 uint32_t settings_seq(void);

@@ -100,7 +100,7 @@ typedef struct {
     float outside_temp_c;           // Role OUTSIDE, NaN if not assigned
     float coolant_temp_c;           // Role COOLANT, NaN if not assigned
     float duct_target_c;            // Cascade: duct temperature target, NaN in classic
-    char ac_reason[32];             // Why the compressor is on/off, e.g. "Interlock: blower below LOW"
+    char ac_reason[32];             // Why the compressor is on/off, e.g. "Interlock: blower below 30 %"
 } hvac_state_t;
 
 /**

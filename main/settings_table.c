@@ -7,6 +7,7 @@
  */
 
 #include "settings.h"
+#include "bts7960_driver.h"
 #include "tb6612fng_driver.h"
 #include "hvac_controller.h"
 #include "wifi_ap.h"
@@ -84,7 +85,7 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     BOOL(SET_DEF_RESTORES_AC,  CL, "DEF restores A/C", "DEF gendanner A/C", 1, "def_restore_ac", apply_controller),
 
     /* Fan */
-    INT (SET_FAN_MIN_DUTY,     FN, "Fan minimum", "Blæser minimum", 0, 100, 5, 30, "%", "fan_min", apply_controller),
+    INT (SET_FAN_MIN_DUTY,     FN, "Fan minimum", "Blæser minimum", 5, 100, 5, 30, "%", "fan_min", apply_controller),
     INT (SET_FAN_MAX_DUTY,     FN, "Fan maximum", "Blæser maksimum", 30, 100, 5, 100, "%", "fan_max", apply_controller),
     ENUM(SET_AUTO_CURVE,       FN, "AUTO fan curve", "AUTO blæserkurve", 3, SET_CURVE_NORMAL, k_curve_en, k_curve_da, "auto_curve", apply_controller),
     INT (SET_QUIET_NIGHT_CAP,  FN, "Night fan cap", "Blæsergrænse nat", 0, 100, 5, 0, "%", "quiet_cap", apply_controller),
@@ -138,3 +139,69 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     ACTION(SET_FACTORY_RESET,  SY, "Factory reset", "Fabriksnulstil", settings_factory_reset_cb),
     ACTION(SET_NODE_REBOOT,    SY, "Restart IO node", "Genstart IO-node", apply_node_reboot),
 };
+
+/* ---- Cross-field rules (see settings.h) ---- */
+
+#define SETTING(i)          { .id = (i) }
+#define FIXED(v, en, da)    { .id = SET_COUNT, .k = (v), .name_en = (en), .name_da = (da) }
+
+/* Low = fan minimum, High = fan maximum; the middle levels are fixed for now. */
+const setting_operand_t g_fan_levels[SETTINGS_FAN_LEVELS] = {
+    SETTING(SET_FAN_MIN_DUTY),
+    FIXED(BTS7960_FAN_PERCENT_MEDIUM_LOW, "Med-low", "Mellem-lav"),
+    FIXED(BTS7960_FAN_PERCENT_MEDIUM, "Medium", "Mellem"),
+    FIXED(BTS7960_FAN_PERCENT_MEDIUM_HIGH, "Med-high", "Mellem-høj"),
+    SETTING(SET_FAN_MAX_DUTY),
+};
+
+const setting_chain_t g_settings_chains[] = {
+    { g_fan_levels, SETTINGS_FAN_LEVELS, 0 },
+};
+const size_t g_settings_chain_count = sizeof(g_settings_chains) / sizeof(g_settings_chains[0]);
+
+static float op_val(const setting_operand_t *op, const float vals[SET_COUNT])
+{
+    return op->id < SET_COUNT ? vals[op->id] : op->k;
+}
+
+float settings_rules_clamp(setting_id_t id, float v, const float vals[SET_COUNT], setting_rule_hit_t *hit)
+{
+    setting_rule_hit_t h = { 0 };
+    for (size_t c = 0; c < g_settings_chain_count; c++) {
+        const setting_chain_t *ch = &g_settings_chains[c];
+        for (int i = 0; i < ch->n; i++) {
+            if (ch->ops[i].id != id) continue;
+            if (i + 1 < ch->n && v > op_val(&ch->ops[i + 1], vals) - ch->gap) {
+                v = op_val(&ch->ops[i + 1], vals) - ch->gap;
+                h = (setting_rule_hit_t){ ch, &ch->ops[i + 1], true };
+            }
+            if (i > 0 && v < op_val(&ch->ops[i - 1], vals) + ch->gap) {
+                v = op_val(&ch->ops[i - 1], vals) + ch->gap;
+                h = (setting_rule_hit_t){ ch, &ch->ops[i - 1], false };
+            }
+        }
+    }
+    if (hit) *hit = h;
+    return v;
+}
+
+int settings_rules_fix(float vals[SET_COUNT])
+{
+    int changed = 0;
+    for (size_t c = 0; c < g_settings_chain_count; c++) {
+        const setting_chain_t *ch = &g_settings_chains[c];
+        for (int i = 0; i + 1 < ch->n; i++) {
+            const setting_operand_t *lo = &ch->ops[i], *hi = &ch->ops[i + 1];
+            float want_lo = op_val(hi, vals) - ch->gap;
+            if (op_val(lo, vals) <= want_lo) continue;
+            if (lo->id < SET_COUNT && want_lo >= g_settings_table[lo->id].min) {
+                vals[lo->id] = want_lo;
+                changed++;
+            } else if (hi->id < SET_COUNT) {
+                vals[hi->id] = op_val(lo, vals) + ch->gap;
+                changed++;
+            }
+        }
+    }
+    return changed;
+}

@@ -13,9 +13,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// Fan speed percentage mapping
+// Fan speed percentage mapping (Low and High are SET_FAN_MIN_DUTY / SET_FAN_MAX_DUTY, see g_fan_levels)
 #define BTS7960_FAN_PERCENT_OFF          0
-#define BTS7960_FAN_PERCENT_LOW          30
 #define BTS7960_FAN_PERCENT_MEDIUM_LOW   45
 #define BTS7960_FAN_PERCENT_MEDIUM       60
 #define BTS7960_FAN_PERCENT_MEDIUM_HIGH  80

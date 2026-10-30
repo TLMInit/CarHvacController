@@ -342,9 +342,13 @@ static esp_err_t settings_post(httpd_req_t *req)
     if (err != ESP_OK) {
         return reply(req, "400 Bad Request", false, esp_err_to_name(err));
     }
-    char fmt[48], msg[200];
+    char fmt[48], rule[SETTINGS_NOTE_MAX], msg[200 + SETTINGS_NOTE_MAX];
     settings_format(d->id, fmt, sizeof(fmt));
-    snprintf(msg, sizeof(msg), "%s: %s", note, d->type == SET_TYPE_STRING ? "********" : fmt);
+    if (settings_last_note(d->id, rule, sizeof(rule))) {
+        snprintf(msg, sizeof(msg), "Saved. %s", rule);     /* a cross-field rule limited the value */
+    } else {
+        snprintf(msg, sizeof(msg), "%s: %s", note, d->type == SET_TYPE_STRING ? "********" : fmt);
+    }
     return reply(req, "200 OK", true, msg);
 }
 

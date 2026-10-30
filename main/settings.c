@@ -43,6 +43,8 @@ static volatile bool s_halt;            /* factory reset in progress: no more wr
 static nvs_handle_t s_nvs;
 static TaskHandle_t s_persist_task;
 static char s_ap_default[11];   /* AP password used while the user has set none; written once by settings_init */
+static setting_id_t s_note_id = SET_COUNT;     /* setting the note belongs to */
+static char s_note[SETTINGS_NOTE_MAX];          /* written by the setter, read by settings_last_note (both under s_lock) */
 
 const setting_def_t *settings_def(setting_id_t id)
 {
@@ -75,6 +77,23 @@ const char *settings_label(setting_id_t id)
 }
 
 /* ---- getters ---- */
+
+float settings_operand_value(const setting_operand_t *op)
+{
+    return op->id < SET_COUNT ? s_val[op->id] : op->k;
+}
+
+bool settings_last_note(setting_id_t id, char *buf, size_t len)
+{
+    if (!buf || len == 0) {
+        return false;
+    }
+    taskENTER_CRITICAL(&s_lock);
+    bool have = s_note_id == id && s_note[0];
+    snprintf(buf, len, "%s", have ? s_note : "");
+    taskEXIT_CRITICAL(&s_lock);
+    return have;
+}
 
 int32_t settings_get_int(setting_id_t id)
 {
@@ -160,6 +179,43 @@ static void after_change(setting_id_t id)
     }
 }
 
+static bool fahrenheit(const setting_def_t *d)
+{
+    return d->unit && strcmp(d->unit, "°C") == 0 && lroundf(s_val[SET_TEMP_UNIT]) == SET_UNIT_F;
+}
+
+/* Number with the row's unit, in the display unit; delta = a difference (no +32 offset). */
+static void fmt_amount(const setting_def_t *d, float v, bool delta, char *buf, size_t len)
+{
+    const char *unit = d->unit;
+    if (fahrenheit(d)) {
+        unit = "°F";
+        v = delta ? v * 1.8f : v * 1.8f + 32.0f;
+    }
+    snprintf(buf, len, "%g%s%s", (double)(roundf(v * 10.0f) / 10.0f), unit ? " " : "", unit ? unit : "");
+}
+
+/* "Set to 63 %RH: must be at least 2 %RH below Humidity A/C on (65 %RH)" in the current language. */
+static void make_note(setting_id_t id, const setting_rule_hit_t *hit, char *buf, size_t len)
+{
+    const setting_def_t *d = settings_def(id);
+    const setting_operand_t *o = hit->other;
+    bool da = lang_da();
+    char val[24], other_val[24], gap[24], rel[64];
+    settings_format(id, val, sizeof(val));
+    fmt_amount(d, settings_operand_value(o), false, other_val, sizeof(other_val));
+    const char *other = o->id < SET_COUNT ? settings_label(o->id) : (da ? o->name_da : o->name_en);
+    if (hit->chain->gap > 0.0f) {
+        fmt_amount(d, hit->chain->gap, true, gap, sizeof(gap));
+        snprintf(rel, sizeof(rel), da ? "skal være mindst %s %s" : "must be at least %s %s", gap,
+                 hit->other_above ? (da ? "under" : "below") : (da ? "over" : "above"));
+    } else {
+        snprintf(rel, sizeof(rel), "%s", hit->other_above ? (da ? "må ikke være over" : "must not be above")
+                                                          : (da ? "må ikke være under" : "must not be below"));
+    }
+    snprintf(buf, len, "%s %s: %s %s (%s)", da ? "Sat til" : "Set to", val, rel, other, other_val);
+}
+
 static esp_err_t set_value(setting_id_t id, float value)
 {
     if (id >= SET_COUNT) {
@@ -179,7 +235,9 @@ static esp_err_t set_value(setting_id_t id, float value)
     float v = sanitize(d, value);
     bool changed, other_changed = false;
     setting_id_t other = id;
+    setting_rule_hit_t hit;
     taskENTER_CRITICAL(&s_lock);
+    v = settings_rules_clamp(id, v, s_val, &hit);
     /* Humidity hysteresis: OFF stays at least 2 %RH below ON. */
     if (id == SET_HUMIDITY_OFF && v > s_val[SET_HUMIDITY_ON] - 2.0f) {
         v = s_val[SET_HUMIDITY_ON] - 2.0f;
@@ -189,6 +247,16 @@ static esp_err_t set_value(setting_id_t id, float value)
         other = SET_HUMIDITY_OFF;
         other_changed = store_locked(other, sanitize(settings_def(other), v - 2.0f));
     }
+    taskEXIT_CRITICAL(&s_lock);
+
+    char note[SETTINGS_NOTE_MAX] = "";
+    if (hit.chain) {
+        make_note(id, &hit, note, sizeof(note));
+        ESP_LOGI(TAG, "%s: %s", d->nvs_key, note);
+    }
+    taskENTER_CRITICAL(&s_lock);
+    s_note_id = id;
+    memcpy(s_note, note, sizeof(s_note));
     taskEXIT_CRITICAL(&s_lock);
 
     if (changed) {
@@ -598,6 +666,11 @@ esp_err_t settings_init(void)
                 v = (float)iv;
             }
         }
+        if (e == ESP_OK && i == SET_FAN_MIN_DUTY && v == 0.0f) {
+            v = d->def;     /* 0 is no longer allowed; older firmware ran a stored 0 as the default 30 */
+            ESP_LOGW(TAG, "%s: stored 0 read as %g", d->nvs_key, (double)v);
+            mark_dirty_locked((setting_id_t)i);
+        }
         if (e == ESP_OK) {
             s_val[i] = sanitize(d, v);     /* a range or step changed by a newer firmware is clamped, not dropped */
             loaded++;
@@ -607,6 +680,18 @@ esp_err_t settings_init(void)
     }
     if (s_val[SET_HUMIDITY_OFF] > s_val[SET_HUMIDITY_ON] - 2.0f) {
         s_val[SET_HUMIDITY_OFF] = s_val[SET_HUMIDITY_ON] - 2.0f;
+    }
+    /* Values stored by older firmware may break a cross-field rule: fix, log and write back. */
+    float before[SET_COUNT];
+    memcpy(before, s_val, sizeof(before));
+    if (settings_rules_fix(s_val) > 0) {
+        for (int i = 0; i < SET_COUNT; i++) {
+            if (s_val[i] != before[i]) {
+                ESP_LOGW(TAG, "%s: stored %g breaks a rule, using %g", g_settings_table[i].nvs_key,
+                         (double)before[i], (double)s_val[i]);
+                mark_dirty_locked((setting_id_t)i);
+            }
+        }
     }
     load_ap_default();
     s_seq++;

@@ -75,6 +75,7 @@ static bool s_wifi_rows;
 /* Editor modal (INT / FLOAT). */
 static setting_id_t s_ed_id = SET_COUNT;
 static ui_label_t s_ed_value;
+static ui_label_t s_ed_note;     /* why a cross-field rule limited the value, else empty */
 
 static const char *tr(const char *en, const char *da)
 {
@@ -147,18 +148,32 @@ static void editor_closed(lv_event_t *e)
     (void)e;
     s_ed_id = SET_COUNT;
     s_ed_value.obj = NULL;
+    s_ed_note.obj = NULL;
+}
+
+static void editor_note(void)
+{
+    char note[SETTINGS_NOTE_MAX];
+    (void)settings_last_note(s_ed_id, note, sizeof(note));
+    if (s_ed_note.obj) ui_label_set(&s_ed_note, note);
 }
 
 static void editor_step(lv_event_t *e)
 {
     intptr_t dir = (intptr_t)ui_button_user_data(e);
-    if (s_ed_id < SET_COUNT) chk(settings_step(s_ed_id, (int)dir));
+    if (s_ed_id < SET_COUNT) {
+        chk(settings_step(s_ed_id, (int)dir));
+        editor_note();
+    }
 }
 
 static void editor_default(lv_event_t *e)
 {
     (void)e;
-    if (s_ed_id < SET_COUNT) chk(settings_reset(s_ed_id));
+    if (s_ed_id < SET_COUNT) {
+        chk(settings_reset(s_ed_id));
+        editor_note();
+    }
 }
 
 static void editor_ok(lv_event_t *e)
@@ -169,7 +184,7 @@ static void editor_ok(lv_event_t *e)
 
 static void open_editor(setting_id_t id)
 {
-    lv_obj_t *m = ui_modal_open(UI_COLOR_ACCENT, 312, 148);
+    lv_obj_t *m = ui_modal_open(UI_COLOR_ACCENT, 312, 184);   /* 148 + two lines for the rule note */
     if (!m) return;
     s_ed_id = id;
 
@@ -201,6 +216,8 @@ static void open_editor(setting_id_t id)
                          editor_default, UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
     (void)ui_make_button(m, LV_SYMBOL_OK, 232, 84, 72, 48, UI_FONT_16, editor_ok,
                          UI_COLOR_ACCENT, UI_COLOR_ACCENT);
+    (void)ui_make_label(m, &s_ed_note, "", 8, 138, 296, 38, UI_FONT_14, UI_COLOR_WARNING, LV_TEXT_ALIGN_CENTER);
+    lv_label_set_long_mode(s_ed_note.obj, LV_LABEL_LONG_WRAP);
 }
 
 static void row_tap(lv_event_t *e)

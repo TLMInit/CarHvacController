@@ -162,6 +162,10 @@ static int cmd_set(int argc, char **argv)
         return 1;
     }
     print_row(d);      /* shows the value after clamping/snapping */
+    char note[SETTINGS_NOTE_MAX];
+    if (settings_last_note(d->id, note, sizeof(note))) {
+        printf("note: %s\n", note);
+    }
     return 0;
 }
 

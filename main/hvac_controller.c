@@ -68,6 +68,9 @@ static const char *TAG = "HVAC_CTRL";
 
 #define DEFOG_EXIT_HYSTERESIS_C      2.0f   // Dew-point defog releases this far below its trigger
 #define DEFOG_MIN_WINDSCREEN_PCT     50     // Windscreen valve floor while the defog is active
+// Evaporator icing guard: the compressor needs this much airflow. Fixed on purpose, not the
+// fan minimum, so a lower fan minimum (or night cap) drops the A/C rather than icing it.
+#define AC_MIN_BLOWER_PCT            30
 #define ECO_FAN_CAP_PCT              BTS7960_FAN_PERCENT_MEDIUM  // ECO preset: AUTO blower cap
 
 /*******************************************************************************
@@ -213,7 +216,7 @@ static void cfg_refresh(void)   // caller holds state_mutex (or runs before the 
     n.recirc_fitted = settings_get_bool(SET_RECIRC_FITTED);
     n.def_restores_ac = settings_get_bool(SET_DEF_RESTORES_AC);
     n.recirc_cancel_min = cfg_i(SET_RECIRC_AUTO_CANCEL_MIN, 0, 0, 60);
-    n.fan_min = cfg_i(SET_FAN_MIN_DUTY, BTS7960_FAN_PERCENT_LOW, 1, 100);
+    n.fan_min = cfg_i(SET_FAN_MIN_DUTY, 30, 5, 100);
     n.fan_max = cfg_i(SET_FAN_MAX_DUTY, 100, 30, 100);
     if (n.fan_max < n.fan_min) {
         n.fan_max = n.fan_min;
@@ -265,11 +268,9 @@ static bool is_defrost(hvac_mode_t mode)
 static uint8_t fan_level_pct(hvac_fan_speed_t level)
 {
     switch (level) {
-        case HVAC_FAN_LOW:         return BTS7960_FAN_PERCENT_LOW;
-        case HVAC_FAN_MEDIUM_LOW:  return BTS7960_FAN_PERCENT_MEDIUM_LOW;
-        case HVAC_FAN_MEDIUM:      return BTS7960_FAN_PERCENT_MEDIUM;
-        case HVAC_FAN_MEDIUM_HIGH: return BTS7960_FAN_PERCENT_MEDIUM_HIGH;
-        case HVAC_FAN_HIGH:        return BTS7960_FAN_PERCENT_HIGH;
+        case HVAC_FAN_LOW: case HVAC_FAN_MEDIUM_LOW: case HVAC_FAN_MEDIUM:
+        case HVAC_FAN_MEDIUM_HIGH: case HVAC_FAN_HIGH:   // Low = fan minimum, High = fan maximum
+            return (uint8_t)lroundf(settings_operand_value(&g_fan_levels[level - HVAC_FAN_LOW]));
         case HVAC_FAN_AUTO:        return BTS7960_FAN_PERCENT_AUTO_DEFAULT;
         default:                   return BTS7960_FAN_PERCENT_OFF;
     }
@@ -761,7 +762,7 @@ static void run_temperature_control(void)
     if (hvac_state.fan_level == HVAC_FAN_AUTO) {
         // Compute a continuous blower speed between LOW and 100% based on temperature error
         float abs_error = fabsf(error);
-        float min_speed = (float)cfg.fan_min;  // default 30 = manual LOW
+        float min_speed = (float)cfg.fan_min;  // = manual LOW
         float auto_speed_f;
 
         if (abs_error <= 0.5f) {
@@ -983,10 +984,10 @@ compressor:
     if (hvac_state.mode == HVAC_MODE_OFF) {
         interlock = true;
         ac_reason = "System OFF";
-    } else if (bts7960_get_speed() < BTS7960_FAN_PERCENT_LOW) {
+    } else if (bts7960_get_speed() < AC_MIN_BLOWER_PCT) {
         // No airflow over the evaporator: it ices up
         interlock = true;
-        ac_reason = "Interlock: blower below LOW";
+        ac_reason = "Interlock: blower below 30 %";
     } else {
         // Crude freeze protection: duct air near 0 C while the heater adds no heat
         static bool freeze_lock = false;
