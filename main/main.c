@@ -471,7 +471,10 @@ void app_main(void)
 
     // A freshly updated image is kept only after 30 s of running UI with the node link up
     ota_display_start_validation();
-    ESP_ERROR_CHECK(wifi_ap_init());
+    // The phone page is optional: a failure here must never stop the climate control
+    if (wifi_ap_init() != ESP_OK) {
+        ESP_LOGW(TAG, "Phone access point unavailable this boot");
+    }
 
     // Last: a console "set" runs the apply callbacks of everything above at once
     console_cmds_start();
