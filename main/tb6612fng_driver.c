@@ -357,12 +357,16 @@ static void queue_motor(int valve, tb6612_direction_t direction, uint8_t speed)
     motor_link_want(&motor_link[valve], direction, speed);
 }
 
-// Sends what is not acknowledged yet, and re-asserts every commanded valve once a second
-static void apply_motor(int valve, uint32_t now_ms)
+// Down as soon as any task's last command timed out: the 3 s connected window alone would
+// let every valve wait out a 200 ms timeout per command until it closes
+static bool valve_link_up(void)
 {
-    // Down as soon as any task's last command timed out: the 3 s connected window alone would
-    // let every valve wait out a 200 ms timeout per command until it closes
-    bool link_up = remote_io_is_connected() && !remote_io_last_command_timed_out();
+    return remote_io_is_connected() && !remote_io_last_command_timed_out();
+}
+
+// Sends what is not acknowledged yet, and re-asserts every commanded valve once a second
+static void apply_motor(int valve, uint32_t now_ms, bool link_up)
+{
     unsigned mask = motor_link_due(&motor_link[valve], now_ms, link_up);
     if (mask) {
         motor_send(valve, mask, valve_states[valve].position);
@@ -1165,8 +1169,18 @@ void tb6612fng_valve_task(void *pvParameters)
                     valve_save_calibration(i);
                 }
             }
+            static uint32_t link_down_since_ms;     // 0 = link up
+            bool link_up = valve_link_up();
             for (int i = 0; i < HVAC_VALVE_MAX; i++) {
-                apply_motor(i, now_ms);
+                apply_motor(i, now_ms, link_up && valve_link_up());
+            }
+            if (!link_up && link_down_since_ms == 0) {
+                link_down_since_ms = now_ms | 1;
+                ESP_LOGW(TAG, "Link down: valve commands paused");
+            } else if (link_up && link_down_since_ms != 0) {
+                ESP_LOGI(TAG, "Link back after %lu ms: every commanded valve re-sent in this pass",
+                         (unsigned long)(now_ms - link_down_since_ms));
+                link_down_since_ms = 0;
             }
         }
 
