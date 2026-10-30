@@ -65,6 +65,13 @@ esp_err_t bts7960_set_speed_ramp(uint8_t speed_percent, uint32_t ramp_time_ms);
 uint8_t bts7960_get_speed(void);
 
 /**
+ * @brief True when the blower's current duty is at least that of percent. Exact, unlike
+ * bts7960_get_speed() >= percent: the duty -> % conversion rounds down, so a blower at exactly
+ * percent reads percent - 1 (e.g. 30 % = duty 306 reads 29 %).
+ */
+bool bts7960_speed_at_least(uint8_t percent);
+
+/**
  * @brief Get target blower speed
  * @return Target speed 0-100%
  */

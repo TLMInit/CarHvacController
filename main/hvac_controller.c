@@ -678,7 +678,7 @@ static void electric_cycle(float demand, const char *request_reason)
         lock = "Electric: node lacks PWM_HZ";
     } else if (out_state != AC_OUT_READY) {
         lock = "Electric: output not ready";
-    } else if (bts7960_get_speed() < cfg.fan_min) {
+    } else if (!bts7960_speed_at_least((uint8_t)cfg.fan_min)) {   // exact: Low itself passes
         lock = "Interlock: blower below Low";
     } else if (isnan(hvac_state.evap_c) && duct_freeze_update()) {
         lock = "Interlock: duct freeze (<3 C)";

@@ -161,6 +161,16 @@ uint8_t bts7960_get_speed(void)
     return speed;
 }
 
+bool bts7960_speed_at_least(uint8_t percent)
+{
+    bool at_least = false;
+    if (xSemaphoreTake(blower_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        at_least = blower_state.current_speed >= percent_to_duty(percent);
+        xSemaphoreGive(blower_mutex);
+    }
+    return at_least;
+}
+
 uint8_t bts7960_get_target_speed(void)
 {
     uint8_t speed = 0;
