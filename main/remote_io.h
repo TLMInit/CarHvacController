@@ -14,6 +14,12 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+/* The link counts as "connected" this long after the node's last reply. HELLO sends it to the
+ * node, which uses it as its link watchdog (node protocol_server.c, clamped to LINK_WINDOW_MIN_MS
+ * ..LINK_WINDOW_MAX_MS in cobs_protocol.h). Re-assert periods must stay at most half of it:
+ * MOTOR_LINK_REFRESH_MS (motor_link.h) and CTRL_REASSERT_MS (hvac_controller.c), both asserted. */
+#define REMOTE_IO_LINK_WINDOW_MS    3000u
+
 #ifndef REMOTE_IO_LOG_ENABLE
 #define REMOTE_IO_LOG_ENABLE 0
 #endif
@@ -40,7 +46,7 @@ bool remote_io_is_connected(void);
 
 /** True when the most recent command on the link, from any task, timed out. Turns false
  *  again with the next answered command (the sensors task polls every 100 ms), so it
- *  reports a broken link within one command instead of after the 3 s window. */
+ *  reports a broken link within one command instead of after REMOTE_IO_LINK_WINDOW_MS. */
 bool remote_io_last_command_timed_out(void);
 
 /** Snapshot command counters. Any output pointer may be NULL. */
@@ -168,10 +174,12 @@ void remote_io_get_node_info(const char **version, uint32_t *uptime_s, uint32_t 
 // ==================== v2.1 interfaces (implemented by WP-C) ====================
 
 /**
- * @brief HELLO handshake: sends PROTOCOL_VERSION, records the node's protocol and
- * capability bits. Sent by the link layer at every connect (boot, link recovered,
- * node restart); callable directly. A node without HELLO answers ERR_INVALID_CMD:
- * then node_proto = 1, caps = 0 and the decoder keeps tolerating the trailing pad.
+ * @brief HELLO handshake: sends PROTOCOL_VERSION and REMOTE_IO_LINK_WINDOW_MS (u16 BE), records
+ * the node's protocol and capability bits. Sent by the link layer at every connect (boot, link
+ * recovered, node restart); callable directly. A node without HELLO answers ERR_INVALID_CMD:
+ * then node_proto = 1, caps = 0 and the decoder keeps tolerating the trailing pad. A 2.3 node
+ * answers the window with ERR_INVALID_ARGS: HELLO is repeated with the version byte only and
+ * that node keeps its own LINK_WATCHDOG_MS (until it restarts).
  */
 esp_err_t remote_io_hello(uint8_t *node_proto, uint8_t *node_caps);
 
@@ -195,7 +203,7 @@ esp_err_t remote_io_ota_node(const uint8_t *image, size_t len, const uint8_t sha
 
 /** @brief Link health snapshot for the diagnostics page and /api/diag. */
 typedef struct {
-    bool connected;                 /* a valid frame within the last 3 s */
+    bool connected;                 /* a valid frame within REMOTE_IO_LINK_WINDOW_MS */
     uint32_t rtt_last_us;           /* last completed round trip */
     uint32_t rtt_p95_us;            /* 95th percentile over the last minute */
     uint32_t timeouts_last_min;

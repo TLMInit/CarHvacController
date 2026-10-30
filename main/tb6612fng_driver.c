@@ -21,6 +21,9 @@
 
 #include "remote_io.h"
 
+_Static_assert(MOTOR_LINK_REFRESH_MS * 2 <= REMOTE_IO_LINK_WINDOW_MS,
+               "valve re-assert at most half the link window (remote_io.h), which is also the node's watchdog");
+
 static const char *TAG = "TB6612FNG";
 
 /*******************************************************************************

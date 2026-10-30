@@ -33,6 +33,9 @@ static const char *TAG = "HVAC_CTRL";
  * Constants
  ******************************************************************************/
 #define HVAC_TASK_PERIOD_MS     100         // Control loop period
+#define CTRL_REASSERT_MS        1000u       // relay and blower re-sent this often (reassert_outputs)
+_Static_assert(CTRL_REASSERT_MS * 2 <= REMOTE_IO_LINK_WINDOW_MS,
+               "re-assert at most half the link window (remote_io.h), which is also the node's watchdog");
 #define TEMP_MIN_C              16.0f       // Minimum temperature setting
 #define TEMP_MAX_C              30.0f       // Maximum temperature setting
 #define NVS_NAMESPACE           "hvac"
@@ -374,7 +377,7 @@ static void reassert_outputs(void)
 {
     static uint32_t last_ms = 0;
     uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    if (now_ms - last_ms < 1000) {
+    if (now_ms - last_ms < CTRL_REASSERT_MS) {
         return;
     }
     last_ms = now_ms;

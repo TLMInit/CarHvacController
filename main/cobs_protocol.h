@@ -37,6 +37,13 @@ extern "C" {
 // CRC ends in 0x00 (protocol 1 displays strip one trailing zero when decoding).
 #define PROTOCOL_VERSION        2
 
+// Link window: the display calls the link "connected" for this long after a reply and sends
+// its value in HELLO (u16 BE ms); the node uses it as its link watchdog, clamped to these
+// bounds (both above twice the display's 1 s re-assert). Display: REMOTE_IO_LINK_WINDOW_MS
+// (remote_io.h); node: LINK_WATCHDOG_MS (node_config.h) until a HELLO carries the window.
+#define LINK_WINDOW_MIN_MS      2000
+#define LINK_WINDOW_MAX_MS      10000
+
 // HELLO_RESP capability bits
 #define NODE_CAP_SEARCH         0x01    // ONEWIRE_SEARCH supported
 #define NODE_CAP_OTA            0x02    // OTA_BEGIN/DATA/END/STATUS supported
@@ -52,7 +59,7 @@ extern "C" {
 typedef enum {
     MSG_PING            = 0x01,     // No data, expects PONG response
     MSG_VERSION         = 0x02,     // No data, expects version string
-    MSG_HELLO           = 0x03,     // display PROTOCOL_VERSION(1), expects HELLO_RESP
+    MSG_HELLO           = 0x03,     // display PROTOCOL_VERSION(1) [, link window ms u16 BE], expects HELLO_RESP
     MSG_GPIO_SET        = 0x10,     // pin(1), level(1)
     MSG_GPIO_GET        = 0x11,     // pin(1), expects GPIO_VALUE response
     MSG_GPIO_MODE       = 0x12,     // pin(1), mode(1)

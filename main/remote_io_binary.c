@@ -90,6 +90,10 @@ static uint8_t s_node_proto = 0;            // 0 until HELLO answered; 1 = node 
 static uint8_t s_node_caps = 0;
 static bool s_hello_pending = false;        // serviced by the next caller, outside the mutex
 static bool s_pad_possible = true;          // node may pad replies: no protocol >= 2 HELLO_RESP since its start
+static bool s_node_no_window = false;       // this node refused the link window in HELLO (2.3 node)
+
+_Static_assert(REMOTE_IO_LINK_WINDOW_MS >= LINK_WINDOW_MIN_MS && REMOTE_IO_LINK_WINDOW_MS <= LINK_WINDOW_MAX_MS,
+               "the node clamps the HELLO link window to LINK_WINDOW_MIN_MS..LINK_WINDOW_MAX_MS");
 
 typedef struct {
     uint32_t id;                            // now_ms / RTT_SLOT_MS this slot belongs to
@@ -674,6 +678,7 @@ esp_err_t remote_io_poll_node(void)
         } else {
             s_node_resets++;
             s_pad_possible = true;
+            s_node_no_window = false;
             ESP_LOGW(TAG, "IO NODE RESTARTED: uptime %lu s -> %lu s, reset reason %s (%lu since boot)",
                      (unsigned long)s_node_uptime_s, (unsigned long)uptime, rst ? rst + 5 : "?",
                      (unsigned long)s_node_resets);
@@ -738,7 +743,7 @@ bool remote_io_last_command_timed_out(void)
 bool remote_io_is_connected(void)
 {
     if (!s_initialized || !s_has_response) return false;
-    return (uint32_t)(get_time_ms() - s_last_response_ms) < 3000U;
+    return (uint32_t)(get_time_ms() - s_last_response_ms) < REMOTE_IO_LINK_WINDOW_MS;
 }
 
 esp_err_t remote_io_reset_node(void)
@@ -746,6 +751,7 @@ esp_err_t remote_io_reset_node(void)
     s_expect_restart = true;    // a commanded restart is not counted as a node restart
     s_node_proto = 0;           // the restarted node has not seen HELLO yet
     s_pad_possible = true;
+    s_node_no_window = false;   // it may come back as another version (node OTA)
     return send_command_binary(MSG_RESET, MSG_OK, NULL, 0, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
@@ -756,13 +762,24 @@ esp_err_t remote_io_reset_node(void)
 // Called from main (boot) or from whichever task services a queued HELLO
 esp_err_t remote_io_hello(uint8_t *node_proto, uint8_t *node_caps)
 {
-    uint8_t version = PROTOCOL_VERSION;
+    // version, then the link window u16 BE: the node's watchdog uses it (one number for both ends)
+    const uint8_t req[3] = { PROTOCOL_VERSION, (uint8_t)(REMOTE_IO_LINK_WINDOW_MS >> 8),
+                             (uint8_t)(REMOTE_IO_LINK_WINDOW_MS & 0xFFu) };
     uint8_t resp_type = 0;
     uint8_t data[COBS_MAX_PAYLOAD_SIZE];
     size_t resp_len = sizeof(data) - 1;
 
-    esp_err_t ret = send_command_binary(MSG_HELLO, MSG_HELLO_RESP, &version, 1, &resp_type, data, &resp_len,
-                                        CMD_TIMEOUT_MS);
+    esp_err_t ret = send_command_binary(MSG_HELLO, MSG_HELLO_RESP, req, s_node_no_window ? 1 : 3, &resp_type,
+                                        data, &resp_len, CMD_TIMEOUT_MS);
+    if (!s_node_no_window && ret == ESP_FAIL && resp_type == MSG_ERROR && resp_len >= 1 &&
+        data[0] == ERR_INVALID_ARGS) {
+        // 2.3 node: HELLO takes the version byte only; its watchdog stays its own LINK_WATCHDOG_MS
+        s_node_no_window = true;
+        ESP_LOGW(TAG, "HELLO: node takes no link window, its watchdog stays its own; HELLO repeated without it");
+        resp_type = 0;
+        resp_len = sizeof(data) - 1;
+        ret = send_command_binary(MSG_HELLO, MSG_HELLO_RESP, req, 1, &resp_type, data, &resp_len, CMD_TIMEOUT_MS);
+    }
     if (ret == ESP_OK && resp_type == MSG_HELLO_RESP && resp_len >= 2) {
         data[resp_len < sizeof(data) - 1 ? resp_len : sizeof(data) - 1] = '\0';
         s_node_proto = data[0];

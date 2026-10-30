@@ -20,7 +20,8 @@ extern "C" {
 #endif
 
 #define MOTOR_LINK_UNKNOWN      (-1)    /* nothing wanted yet / not acknowledged */
-#define MOTOR_LINK_REFRESH_MS   1000u   /* re-assert period for every wanted command */
+#define MOTOR_LINK_REFRESH_MS   1000u   /* re-assert period for every wanted command; at most half of
+                                           REMOTE_IO_LINK_WINDOW_MS (remote_io.h), asserted in tb6612fng_driver.c */
 #define MOTOR_SEND_DIR          0x1u
 #define MOTOR_SEND_SPEED        0x2u
 #define MOTOR_DIR_STOP          0       /* tb6612_direction_t values: STOP, FORWARD, REVERSE, BRAKE */
