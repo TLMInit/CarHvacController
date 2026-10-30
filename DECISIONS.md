@@ -61,5 +61,15 @@ Decisions taken without stopping, per the brief. Newest at the bottom of each se
 - `strip_pad()` is static in the display link layer, so the host test checks a reference copy of the rule plus the real `cobs_parse_frame` on the documented byte sequences. The node's HELLO handling is not host-tested (needs ESP-IDF).
 - CI is written for GitHub Actions (host tests on ubuntu, firmware build in `espressif/idf:v6.1` failing on any `main/` warning) but has not run: neither repo is pushed.
 
+## v2.2-display / v2.3-node — the eleven review findings
+
+Step A (safety; tags v2.1.1-display / v2.2.1-node):
+- 1: the bookkeeping moved into `motor_link.c` (pure) so the requested host test exercises the real code instead of a copy. The 1 s re-assert lives in the valve task (owner of the motors) rather than in the controller's S-05 re-assert. Calibration and service sends are tracked too, because they also drive the node directly. While the link is down a retry waits for the 1 s re-assert: the link layer does not fail fast, and five valves retrying every 25 ms would hold the valve task in 200 ms timeouts. Cost: 10 small frames per second for idle valves.
+- 2: rule exactly as specified; reasons in the log say which branch fired.
+- 3: both boards check the same 288 header bytes with the same pure `ota_image.c`. `esp_ota_begin` (the slot erase) moved behind the check on both boards, so "rejected before any flash write" holds literally. The display also checks a node image before sending it; the node returns the new `ERR_OTA_IMAGE` (12) if it ever receives one anyway (e.g. from `ionode_cli.py`).
+- 5: the calibration tick switches fast reads on for learn-direction moves too, which the scattered calls did as well.
+- 6: the diagnostics tab keeps RESET CAL and SAVE CAL at their positions; the gap stays (layout untouched).
+- 9: as specified.
+
 ## Models
 - Strongest available model (Opus) for WP-A, WP-B, WP-C, WP-G, WP-H; faster model (Sonnet) for WP-D, WP-E, WP-F, WP-T. WP-A is not named in the brief; it is the framework every package depends on, so it gets the stronger model.

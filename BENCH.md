@@ -1,5 +1,31 @@
 # Bench and car check — v2.1-display with v2.2-node
 
+## Safety fixes: v2.1.1-display with v2.2.1-node (findings 1, 2, 3, 5, 6, 9)
+
+Flash sets in `../releases/v2.1.1-display` and `../releases/v2.2.1-node`. Partition tables are
+unchanged from v2.1/v2.2, so either the full `@flash_args` set or the phone page works.
+
+1. **Lost stop (1).** System in AUTO, Diagnostics → Valve service open on one valve. Change the
+   setpoint so that valve moves; the instant it reaches its target, pull the node's RX wire
+   (display TX → node RX). Reconnect within a few seconds. The motor must stop within one
+   second of reconnecting, and the event log shows `V<n> stop resent after a lost command`.
+   (While the wire is out the node's link watchdog also stops all outputs after 500 ms; the
+   check is that the display re-asserts the stop itself.)
+2. **Stored calibration (2).** Mode OFF so every butterfly valve closes, wait until they have
+   stopped, reboot. Repeat once. Each boot logs `V<n>: accepted stored (...)` for V0–V3 and no
+   valve rotates.
+3. **Wrong image (3).** Mode OFF, blower stopped, phone page → Update → *display* box: upload
+   `CarHvacIoNode.bin`. Refused with `Wrong firmware: image is CarHvacIoNode, this board runs
+   CarHvacController`; the display keeps running, the event log shows `Display OTA refused`.
+   The reverse (display image in the node box) is refused with the same kind of message.
+4. **Calibration getter (5).** Service → Valve service → Learn direction on a valve, and keep
+   the page open: the console shows `Calibration mode enabled` once at the start and
+   `disabled` once at the end, nothing in between.
+5. **READ 1W (6).** The diagnostics tab no longer has the button; Service → Sensor roles shows
+   the live temperatures.
+6. **UI cadence (9).** With nothing touched for a minute, change the setpoint from the phone
+   page: the display shows it within half a second.
+
 Flash sets with SHA-256 sums are in `../releases/v2.1-display` and `../releases/v2.2-node`.
 Check the sums first (`Get-FileHash *.bin`) against `SHA256SUMS.txt`.
 
