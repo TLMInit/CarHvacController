@@ -128,7 +128,7 @@ at most 63 bytes. The node answers every command with exactly one frame.
 Errors come back as `0x81` with one code byte: 1 invalid command, 2 invalid
 arguments, 3 invalid pin, 4 I2C failure, 5 timeout or no device, 6 CRC mismatch,
 9 OTA command out of order, 10 OTA write failed or offset not contiguous, 11 OTA
-size or sha256 mismatch.
+size or sha256 mismatch, 12 OTA image is not an ESP32-S3 `CarHvacIoNode` build.
 
 ### Protocol 2
 
@@ -146,11 +146,15 @@ size or sha256 mismatch.
 
 ### Node OTA
 
-1. `OTA_BEGIN` size + sha256: all outputs go to their safe state, the inactive slot
-   is opened without an up-front erase. Reply OTA_ACK(RECEIVING, 0). BEGIN in any
-   state except PENDING starts over.
-2. `OTA_DATA` offset + up to 56 bytes, offsets contiguous from 0. Each 4 KB sector is
-   erased when the write first reaches it. Reply OTA_ACK(RECEIVING, bytes so far). A
+1. `OTA_BEGIN` size (at least 288) + sha256: all outputs go to their safe state.
+   Nothing is opened or written yet. Reply OTA_ACK(RECEIVING, 0). BEGIN in any state
+   except PENDING starts over.
+2. `OTA_DATA` offset + up to 56 bytes, offsets contiguous from 0. The first 288 bytes
+   (image header, first segment header, `esp_app_desc_t`) are held in RAM until they
+   show an ESP32-S3 app whose project name is `CarHvacIoNode` (`ota_image.c`, shared
+   with the display). Otherwise error 12 and state ERROR, and nothing has touched
+   flash. Once they pass, the inactive slot is opened without an up-front erase and
+   the held bytes are written. Each 4 KB sector is erased when the write first reaches it. Reply OTA_ACK(RECEIVING, bytes so far). A
    wrong offset gets error 10 and leaves the transfer intact: ask OTA_STATUS and
    resume from its byte count. A flash failure gets error 10 and state ERROR.
 3. `OTA_END`: byte count and sha256 must match (else error 11, state ERROR), then
@@ -163,8 +167,13 @@ size or sha256 mismatch.
    back too (bootloader). OTA_BEGIN is refused (error 9) while PENDING.
 
 The link watchdog keeps running during a transfer; the outputs are already safe.
-Worst-case reply times: DATA with a sector erase ~50 ms (typical flash), END
-~100 ms (image check plus otadata write), BEGIN ~50 ms (otadata sector erase).
+Worst-case reply times: DATA with a sector erase ~50 ms (typical flash), the DATA that
+opens the slot ~50 ms (otadata sector erase), END ~100 ms (image check plus otadata write).
+A lost link mid-transfer leaves the node in RECEIVING with its outputs safe and the
+running image and boot slot untouched; the display resumes from OTA_STATUS or starts
+over with a new BEGIN.
+
+The firmware is built at `-O2` (`CONFIG_COMPILER_OPTIMIZATION_PERF` in `sdkconfig.defaults`).
 Only the carrier's outputs are on the allow-list in `node_config.h` (valve direction
 and PWM pins, blower PWM, relay); every other pin is refused with code 3.
 
