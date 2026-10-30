@@ -71,8 +71,8 @@ GPIO21, adapter RX ← node GPIO2, GND ↔ GND. `pip install pyserial`, then:
 
 ```
 python tools/ionode_cli.py -p COM8 ping           # PONG
-python tools/ionode_cli.py -p COM8 version        # ionode 2.3 (<git describe>) up=<s> rst=<reason>
-python tools/ionode_cli.py -p COM8 hello          # protocol 2, caps 0x03 (search ota), ionode 2.3 (<git describe>)
+python tools/ionode_cli.py -p COM8 version        # ionode 2.4 (<git describe>) up=<s> rst=<reason>
+python tools/ionode_cli.py -p COM8 hello          # protocol 2, caps 0x03 (search ota), ionode 2.4 (<git describe>)
 python tools/ionode_cli.py -p COM8 search         # 1 ROM(s), then e.g. 28 ff 64 1e 0f 21 03 5a
 python tools/ionode_cli.py -p COM8 ota-status     # IDLE, 0 bytes
 python tools/ionode_cli.py -p COM8 ota build/CarHvacIoNode.bin   # ~15 s, then reboot and confirm
@@ -153,7 +153,7 @@ size or sha256 mismatch, 12 OTA image is not an ESP32-S3 `CarHvacIoNode` build.
 - **Handshake.** A protocol 2 display sends HELLO with its protocol version on every
   connect (from display v2.3 followed by its link window, see Link watchdog). HELLO_RESP
   carries the node's protocol version, the capability bits and the same
-  `ionode 2.3 (<git describe>)` text as VERSION. A 2.1 node answers HELLO
+  `ionode 2.4 (<git describe>)` text as VERSION. A 2.1 node answers HELLO
   with error 1, which tells the display it is talking to protocol 1.
 - **Pad rule.** Until the first HELLO since boot, replies whose CRC ends in 0x00
   get the compatibility pad described below. From that HELLO on (HELLO_RESP

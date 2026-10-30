@@ -16,7 +16,7 @@
 #include "driver/uart.h"
 #include "driver/i2c_master.h"
 
-#define NODE_VERSION_STRING     "ionode 2.3"   /* protocol_server.c appends the build's git describe */
+#define NODE_VERSION_STRING     "ionode 2.4"   /* protocol_server.c appends the build's git describe */
 
 /* A new OTA image must answer PING and VERSION within this time, or it rolls back */
 #define OTA_CONFIRM_TIMEOUT_MS  60000   /* above the display's remote_io_binary.c OTA_REBOOT_WAIT_MS (30 s) */
