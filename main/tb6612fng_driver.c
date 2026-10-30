@@ -691,6 +691,45 @@ void tb6612fng_stop_all_valves(void)
 }
 
 #define VALVE_PASS_EVENT_MS     1000    // a pass this long writes an event (task watchdog is 10 s)
+#define LINK_EVT_WINDOW_MS      60000   // link pause/resume events: per minute...
+#define LINK_EVT_PER_WINDOW     2       // ...the first two pauses (with their returns) are logged, the rest counted
+
+// Event-log entries for the valve task's link pauses (N-2). A bouncing link would fill the
+// 50-entry log, so after LINK_EVT_PER_WINDOW pauses in a minute the rest are counted and
+// written as one summary when the minute ends.
+static uint32_t s_lnk_window_start_ms;     // 0 = no window open
+static uint8_t s_lnk_logged, s_lnk_suppressed;
+static bool s_lnk_cur_logged;               // the pause being resumed was logged: log its return too
+
+// Every pass: closes a minute that has ended and writes its summary
+static void link_pause_tick(uint32_t now_ms)
+{
+    if (s_lnk_window_start_ms && now_ms - s_lnk_window_start_ms >= LINK_EVT_WINDOW_MS) {
+        if (s_lnk_suppressed) {
+            event_log_add(EVT_TIMEOUT, "Valve link paused %u more times in 60 s", (unsigned)s_lnk_suppressed);
+        }
+        s_lnk_window_start_ms = 0;
+        s_lnk_logged = s_lnk_suppressed = 0;
+    }
+}
+
+static void link_pause_event(bool paused, const char *cause, uint32_t down_ms, uint32_t now_ms)
+{
+    if (paused) {
+        if (!s_lnk_window_start_ms) {
+            s_lnk_window_start_ms = now_ms | 1;
+        }
+        s_lnk_cur_logged = s_lnk_logged < LINK_EVT_PER_WINDOW;
+        if (s_lnk_cur_logged) {
+            s_lnk_logged++;
+            event_log_add(EVT_TIMEOUT, "Valve link paused: %s", cause);
+        } else if (s_lnk_suppressed < UINT8_MAX) {
+            s_lnk_suppressed++;
+        }
+    } else if (s_lnk_cur_logged) {
+        event_log_add(EVT_INFO, "Valve link back after %lu ms", (unsigned long)down_ms);
+    }
+}
 _Static_assert(VALVE_PASS_EVENT_MS * 10 <= CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000,
                "slow-pass event at most a tenth of the task watchdog (sdkconfig)");
 
@@ -1201,16 +1240,21 @@ void tb6612fng_valve_task(void *pvParameters)
                 }
             }
             static uint32_t link_down_since_ms;     // 0 = link up
+            link_pause_tick(now_ms);
             bool link_up = valve_link_up();
             for (int i = 0; i < HVAC_VALVE_MAX; i++) {
                 apply_motor(i, now_ms, link_up && valve_link_up());
             }
             if (!link_up && link_down_since_ms == 0) {
                 link_down_since_ms = now_ms | 1;
-                ESP_LOGW(TAG, "Link down: valve commands paused");
+                const char *cause = remote_io_is_connected() ? "a command timed out" : "no reply for 3 s";
+                ESP_LOGW(TAG, "Link down (%s): valve commands paused", cause);
+                link_pause_event(true, cause, 0, now_ms);
             } else if (link_up && link_down_since_ms != 0) {
+                uint32_t down_ms = now_ms - link_down_since_ms;
                 ESP_LOGI(TAG, "Link back after %lu ms: every commanded valve re-sent in this pass",
-                         (unsigned long)(now_ms - link_down_since_ms));
+                         (unsigned long)down_ms);
+                link_pause_event(false, NULL, down_ms, now_ms);
                 link_down_since_ms = 0;
             }
         }
