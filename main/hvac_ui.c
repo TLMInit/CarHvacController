@@ -1112,10 +1112,20 @@ static void update_diagnostics(const hvac_state_t *state, bool link_ok)
                  hvac_controller_get_mode_name(state->mode),
                  hvac_controller_get_fan_level_name(state->fan_level),
                  (unsigned)state->blower_speed);
-    ui_label_format(&lbl_diag_rows[2], "A/C REQ %s  COMP %s  RECIRC %s",
-                 state->ac_enabled ? "ON" : "OFF",
-                 state->ac_compressor_on ? "ON" : "OFF",
-                 state->recirculate ? "ON" : "OFF");
+    if (state->compressor_type == SET_AC_ELECTRIC) {
+        /* worst case "A/C ELEC dem 100% out 100% EN ev -2.0C" is 294 px of the 308 px row */
+        char evap_text[12];
+        if (isnan(state->evap_c)) snprintf(evap_text, sizeof(evap_text), "--");
+        else snprintf(evap_text, sizeof(evap_text), "%.1fC", (double)state->evap_c);
+        ui_label_format(&lbl_diag_rows[2], "A/C ELEC dem %.0f%% out %.0f%% %s ev %s",
+                        (double)state->ac_demand_pct, (double)state->ac_output_pct,
+                        state->ac_enable ? "EN" : "--", evap_text);
+    } else {
+        ui_label_format(&lbl_diag_rows[2], "A/C REQ %s  COMP %s  RECIRC %s",
+                     state->ac_enabled ? "ON" : "OFF",
+                     state->ac_compressor_on ? "ON" : "OFF",
+                     state->recirculate ? "ON" : "OFF");
+    }
 
     const uint8_t actuals[HVAC_VALVE_MAX] = {
         state->center_valve_pos, state->center2_valve_pos, state->foot_valve_pos,

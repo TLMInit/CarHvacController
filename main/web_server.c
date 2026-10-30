@@ -146,13 +146,14 @@ static esp_err_t state_get(httpd_req_t *req)
     char why[64] = "";
     bool ota_ok = ota_allowed(why, sizeof(why));
 
-    char sp[12], cab[12], duct[12], out[12], cool[12], hum[12], dew[12];
+    char sp[12], cab[12], duct[12], out[12], cool[12], hum[12], dew[12], evap[12];
     char e_reason[80], e_dv[48], e_nv[100], e_why[100], e_ssid[24];
-    char buf[1100];
+    char buf[1250];
     snprintf(buf, sizeof(buf),
              "{\"mode\":\"%s\",\"mode_id\":%d,\"fan\":\"%s\",\"fan_id\":%d,\"blower_pct\":%u,"
              "\"setpoint\":%s,\"cabin\":%s,\"duct\":%s,\"outside\":%s,\"coolant\":%s,"
              "\"humidity\":%s,\"dew_point\":%s,\"ac\":%s,\"ac_on\":%s,\"ac_reason\":\"%s\","
+             "\"compressor_type\":\"%s\",\"ac_demand\":%.0f,\"ac_output\":%.0f,\"ac_enable\":%s,\"evap_c\":%s,"
              "\"recirc\":%s,\"preset\":\"%s\",\"defog\":%s,\"heater_delay\":%s,"
              "\"sensor_fault\":%s,\"valve_fault\":%s,\"link\":%s,"
              "\"ver_display\":\"%s\",\"ver_node\":\"%s\",\"ota_pending\":%s,"
@@ -165,6 +166,8 @@ static esp_err_t state_get(httpd_req_t *req)
              jnum(dew, sizeof(dew), s.dew_point_c, 1),
              s.ac_enabled ? "true" : "false", s.ac_compressor_on ? "true" : "false",
              jesc(e_reason, sizeof(e_reason), s.ac_reason),
+             s.compressor_type == SET_AC_ELECTRIC ? "electric" : "clutch", (double)s.ac_demand_pct,
+             (double)s.ac_output_pct, s.ac_enable ? "true" : "false", jnum(evap, sizeof(evap), s.evap_c, 1),
              s.recirculate ? "true" : "false", hvac_controller_preset_name(s.preset),
              s.defog_active ? "true" : "false", s.heater_delay_active ? "true" : "false",
              s.sensor_fault ? "true" : "false", s.valve_fault ? "true" : "false",

@@ -124,6 +124,7 @@ static void check_roles(void)
     static const struct { sensor_role_t role; const char *name; } optional[] = {
         { SENSOR_ROLE_COOLANT, "Coolant sensor" },
         { SENSOR_ROLE_OUTSIDE, "Outside sensor" },
+        { SENSOR_ROLE_EVAPORATOR, "Evaporator sensor" },
     };
     for (size_t i = 0; i < sizeof(optional) / sizeof(optional[0]); i++) {
         float t = sensor_roles_get_temp(optional[i].role);
