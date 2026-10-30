@@ -264,11 +264,14 @@ with PD = 0). Output = value / 4096 × Vdd.
   shifter (e.g. PCA9306 or a BSS138 module) between the node's bus and the DAC. Most MCP4725
   breakout boards also pull SDA/SCL up to their own Vdd: at 5 V that puts 5 V on GPIO8/9, which
   are not 5 V tolerant. Remove those pull-ups or keep them on the 5 V side of the shifter.
-- The node's safe state does not touch I2C: a link loss, RESET or OTA_BEGIN leaves the DAC at
-  its last value, and at power-up the MCP4725 outputs its EEPROM value (factory default 0x800,
-  half scale). The display should store 0 in the EEPROM once (write DAC and EEPROM:
-  `reg = 0x60, len = 2, data = [D11..D4] [D3..D0 0000]`, i.e. payload `60 60 02 00 00`) and must
-  not rely on the node to zero the DAC; use the relay or another enable for a hard stop.
+- **Safe state.** The node remembers every 0x60/0x61 address that received a fast write. A link
+  loss, RESET, OTA_BEGIN or rollback marks them, and the link task writes 0 to each within about
+  100 ms (I2C cannot run in the watchdog's timer callback, so it is not instantaneous like the
+  LEDC outputs). At power-up the MCP4725 outputs its EEPROM value (factory default 0x800, half
+  scale) until the display writes it: the display stores 0 in the EEPROM once (write DAC and
+  EEPROM: `reg = 0x60, len = 2, data = [D11..D4] [D3..D0 0000]`, i.e. payload `60 60 02 00 00`).
+  Wire the relay output (GPIO6) to the compressor's enable as well: it drops instantly with every
+  safe state.
 
 ### Behaviour worth knowing
 
