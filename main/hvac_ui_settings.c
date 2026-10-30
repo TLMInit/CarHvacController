@@ -66,6 +66,7 @@ static const menu_item_t k_diag_menu[] = {
 static const menu_item_t k_service_menu[] = {
     {"Valve service", "Ventilservice", &ui_page_valves},
     {"Sensor roles", "Sensorroller", &ui_page_sensors},
+    {"Compressor test", "Kompressortest", &ui_page_compressor},
 };
 
 /* Home list entries: >= 0 is a settings group; negative values are the others. */
@@ -114,7 +115,8 @@ static void go_back(lv_event_t *e)
     (void)e;
     switch (s_view) {
     case V_PAGE:
-        open_view(s_page == &ui_page_valves || s_page == &ui_page_sensors ? V_SERVICE_MENU : V_DIAG_MENU, 0, NULL);
+        open_view(s_page == &ui_page_valves || s_page == &ui_page_sensors || s_page == &ui_page_compressor
+                  ? V_SERVICE_MENU : V_DIAG_MENU, 0, NULL);
         break;
     case V_GROUP:
         if (s_group == SET_GROUP_SERVICE) open_view(V_PAGE, 0, &ui_page_valves);

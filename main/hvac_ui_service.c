@@ -1,7 +1,7 @@
 /**
  * @file hvac_ui_service.c
- * @brief Service sub-pages: valve service (jog, recalibrate, learn direction)
- *        and 1-Wire sensor role assignment.
+ * @brief Service sub-pages: valve service (jog, recalibrate, learn direction),
+ *        1-Wire sensor role assignment and the electric compressor test.
  */
 #include "hvac_ui_priv.h"
 #include "sensor_roles.h"
@@ -363,3 +363,139 @@ static void sensors_update(void)
 }
 
 const ui_page_t ui_page_sensors = { "Sensor roles", "Sensorroller", sensors_open, sensors_update, NULL };
+
+/* ================= compressor test ================= */
+
+/* Electric type with mode OFF only (the valve page's gating). The test overrides the controller's
+ * demand; the blower interlock, minimum off time, freeze limits and link checks stay, so the
+ * compressor runs only with air over the evaporator: BLOWER LOW runs the blower at Low for the
+ * test. The controller ends it 60 s after the last touch (dead-man), on a mode change, on STOP
+ * and when the page closes. */
+#define COMP_REFRESH_MS 250U
+#define COMP_STEP_PCT   10
+
+static int s_comp_demand;
+static bool s_comp_blower;
+static bool s_comp_seen;            /* the controller reported the test running */
+static bool s_comp_ended;           /* ...and then ended it */
+static uint32_t s_comp_last;
+static ui_label_t s_c_info[3];
+static lv_obj_t *s_btn_c_minus, *s_btn_c_plus, *s_btn_c_stop, *s_btn_c_blower;
+
+static bool comp_allowed(const hvac_state_t *st)
+{
+    return st->mode == HVAC_MODE_OFF && st->compressor_type == SET_AC_ELECTRIC;
+}
+
+static void comp_send(void)
+{
+    hvac_state_t st;
+    ui_get_state(&st);
+    if (comp_allowed(&st) && hvac_controller_ac_test((float)s_comp_demand, s_comp_blower) == ESP_OK) {
+        s_comp_ended = false;
+    }
+    s_comp_last -= COMP_REFRESH_MS;
+}
+
+static void comp_step(lv_event_t *e)
+{
+    s_comp_demand += (int)(intptr_t)ui_button_user_data(e) * COMP_STEP_PCT;
+    s_comp_demand = s_comp_demand < 0 ? 0 : (s_comp_demand > 100 ? 100 : s_comp_demand);
+    comp_send();
+}
+
+static void comp_stop(lv_event_t *e)
+{
+    (void)e;
+    s_comp_demand = 0;
+    hvac_controller_ac_test_end();
+    s_comp_last -= COMP_REFRESH_MS;
+}
+
+static void comp_blower(lv_event_t *e)
+{
+    (void)e;
+    s_comp_blower = !s_comp_blower;
+    comp_send();
+}
+
+static void comp_open(lv_obj_t *hdr, lv_obj_t *body)
+{
+    (void)hdr;
+    lv_obj_clear_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+    s_comp_demand = 0;
+    s_comp_blower = false;
+    s_comp_seen = false;
+    s_comp_ended = false;
+    for (int i = 0; i < 3; ++i) {
+        (void)ui_make_label(body, &s_c_info[i], "", 8, 12 + i * 20, 304, 18, UI_FONT_14,
+                            UI_COLOR_TEXT, LV_TEXT_ALIGN_LEFT);
+    }
+    s_btn_c_minus = ui_make_button(body, LV_SYMBOL_MINUS, 4, 96, 100, 48, UI_FONT_16, NULL,
+                                   UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
+    s_btn_c_stop = ui_make_button(body, "STOP", 108, 96, 100, 48, UI_FONT_16, comp_stop,
+                                  UI_COLOR_FAULT, UI_COLOR_FAULT);
+    s_btn_c_plus = ui_make_button(body, LV_SYMBOL_PLUS, 212, 96, 100, 48, UI_FONT_16, NULL,
+                                  UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
+    ui_button_set_action(s_btn_c_minus, comp_step, (void *)(intptr_t)-1);
+    ui_button_set_action(s_btn_c_plus, comp_step, (void *)(intptr_t)1);
+    ui_button_set_repeat(s_btn_c_minus, comp_step);
+    ui_button_set_repeat(s_btn_c_plus, comp_step);
+    s_btn_c_blower = ui_make_button(body, ui_lang_da() ? "BL\xC3\x86SER LAV" : "BLOWER LOW", 4, 144, 308, 48,
+                                    UI_FONT_16, comp_blower, UI_COLOR_SURFACE, UI_COLOR_ACCENT);
+    s_comp_last = now_ms() - COMP_REFRESH_MS;
+    ui_page_compressor.update();
+}
+
+static void comp_update(void)
+{
+    if (!refresh_due(&s_comp_last, COMP_REFRESH_MS)) return;
+    hvac_state_t st;
+    ui_get_state(&st);
+    if (st.ac_test) {
+        s_comp_seen = true;
+    } else if (s_comp_seen) {           /* ended by STOP, the dead-man or a mode change */
+        s_comp_seen = false;
+        s_comp_ended = true;
+        s_comp_demand = 0;
+        s_comp_blower = false;
+    }
+    const bool allowed = comp_allowed(&st);
+
+    ui_label_format(&s_c_info[0], "Demand %.0f%%  Output %.0f%%  Enable %s", (double)st.ac_demand_pct,
+                    (double)st.ac_output_pct, st.ac_enable ? "ON" : "off");
+    if (isnan(st.evap_c)) {
+        ui_label_format(&s_c_info[1], "Evaporator --  Blower %u%%", (unsigned)st.blower_speed);
+    } else {
+        ui_label_format(&s_c_info[1], "Evaporator %.1f\xC2\xB0""C  Blower %u%%", (double)st.evap_c,
+                        (unsigned)st.blower_speed);
+    }
+    if (st.compressor_type != SET_AC_ELECTRIC) {
+        ui_label_set(&s_c_info[2], "Clutch compressor: no test");
+        ui_label_set_color(&s_c_info[2], UI_COLOR_TEXT_DIM);
+    } else if (st.mode != HVAC_MODE_OFF) {
+        ui_label_set(&s_c_info[2], "Set airflow mode OFF to test");
+        ui_label_set_color(&s_c_info[2], UI_COLOR_WARNING);
+    } else if (st.ac_test) {
+        ui_label_set(&s_c_info[2], st.ac_reason);
+        ui_label_set_color(&s_c_info[2], st.ac_enable || s_comp_demand == 0 ? UI_COLOR_TEXT : UI_COLOR_WARNING);
+    } else if (s_comp_ended) {
+        ui_label_set(&s_c_info[2], "Test ended, demand 0");
+        ui_label_set_color(&s_c_info[2], UI_COLOR_TEXT_DIM);
+    } else {
+        ui_label_set(&s_c_info[2], "- / + demand; 60 s idle ends it");
+        ui_label_set_color(&s_c_info[2], UI_COLOR_TEXT_DIM);
+    }
+    ui_set_checked(s_btn_c_blower, st.ac_test_blower);
+    ui_set_enabled(s_btn_c_minus, allowed);
+    ui_set_enabled(s_btn_c_plus, allowed);
+    ui_set_enabled(s_btn_c_stop, allowed);
+    ui_set_enabled(s_btn_c_blower, allowed);
+}
+
+static void comp_close(void)
+{
+    hvac_controller_ac_test_end();
+}
+
+const ui_page_t ui_page_compressor = { "Compressor test", "Kompressortest", comp_open, comp_update, comp_close };

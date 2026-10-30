@@ -56,7 +56,7 @@ typedef struct {
 } ui_page_t;
 
 extern const ui_page_t ui_page_events, ui_page_link, ui_page_selftest, ui_page_chart;
-extern const ui_page_t ui_page_valves, ui_page_sensors;
+extern const ui_page_t ui_page_valves, ui_page_sensors, ui_page_compressor;
 
 /* hvac_ui.c */
 void ui_get_state(hvac_state_t *state);
