@@ -36,8 +36,8 @@ static const char *TAG = "HVAC_CTRL";
 #define CTRL_REASSERT_MS        1000u       // relay and blower re-sent this often (reassert_outputs)
 _Static_assert(CTRL_REASSERT_MS * 2 <= REMOTE_IO_LINK_WINDOW_MS,
                "re-assert at most half the link window (remote_io.h), which is also the node's watchdog");
-#define TEMP_MIN_C              16.0f       // Minimum temperature setting
-#define TEMP_MAX_C              30.0f       // Maximum temperature setting
+#define TEMP_MIN_C              ((float)SETTINGS_SETPOINT_MIN_C)    // setpoint limits: one source with the
+#define TEMP_MAX_C              ((float)SETTINGS_SETPOINT_MAX_C)    // setpoint and preset ranges (settings_table.c)
 #define NVS_NAMESPACE           "hvac"
 #define NVS_KEY_SETTINGS        "settings"
 #define NVS_KEY_THERMAL_CAL     "thermal_cal"
@@ -58,6 +58,7 @@ _Static_assert(CTRL_REASSERT_MS * 2 <= REMOTE_IO_LINK_WINDOW_MS,
 // SET_AUTO_FAN_NO_SENSOR) and the defog release/windscreen floor (SET_DEFOG_*) are settings.
 // Evaporator icing guard: the compressor needs this much airflow. Fixed on purpose, not the
 // fan minimum, so a lower fan minimum (or night cap) drops the A/C rather than icing it.
+// Pair: SET_FAN_MIN_DUTY default (settings_table.c) is 30, so manual Low keeps the A/C with defaults.
 #define AC_MIN_BLOWER_PCT            30
 
 /*******************************************************************************

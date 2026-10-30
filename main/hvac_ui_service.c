@@ -22,7 +22,8 @@ static void set_hidden(lv_obj_t *obj, bool hidden)
 
 /* ================= valve service ================= */
 
-#define JOG_REPEAT_MS    150U   /* the driver's dead-man stops a jog after 300 ms */
+#define JOG_REPEAT_MS    150U   /* below the driver's dead-man SERVICE_JOG_TIMEOUT_MS (tb6612fng_driver.h) */
+_Static_assert(JOG_REPEAT_MS < SERVICE_JOG_TIMEOUT_MS, "a held jog must be resent before the dead-man stops it");
 #define VALVE_REFRESH_MS 250U
 
 static const char *const k_valve_names[HVAC_VALVE_MAX] = {

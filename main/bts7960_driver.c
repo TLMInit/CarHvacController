@@ -81,7 +81,7 @@ esp_err_t bts7960_init(void)
     blower_state.is_enabled = false;
     blower_state.is_ramping = false;
     
-    // Configure PWM channel on IO Node (25kHz, 10-bit resolution)
+    // Configure PWM channel on IO Node (25kHz, 10-bit resolution); 25 kHz = node node_config.h NODE_BOOT_PWM_PINS {48, 25}
     ESP_LOGI(TAG, "Configuring remote PWM for blower...");
     esp_err_t ret = remote_pwm_configure(BTS7960_RPWM, 25000, 10);
     if (ret != ESP_OK) {

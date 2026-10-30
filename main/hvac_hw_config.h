@@ -89,6 +89,8 @@
      * - 1x Coolant valve (Motor A on TB6612FNG #3)
      ******************************************************************************/
 
+    // IO-node pins below (valves, relay, blower): copied in node node_config.h NODE_BOOT_OUTPUT_PINS,
+    // NODE_BOOT_PWM_PINS and NODE_ALLOWED_PINS (and node tools/ionode_cli.py); change both repos.
     // TB6612FNG #1: Center Valves (2x) - STBY tied to 3V3 (always enabled)
     // TB6612FNG #1: Center Valves (2 motors) - STBY tied to 3V3 (always enabled)
     #define TB6612_1_AIN1           GPIO_NUM_4
@@ -147,7 +149,7 @@
     #define REMOTE_IO_UART_NUM      UART_NUM_1
     #define REMOTE_IO_TX_PIN        GPIO_NUM_10     // Controller TX -> IO Node RX (GPIO21)
     #define REMOTE_IO_RX_PIN        GPIO_NUM_11     // Controller RX <- IO Node TX (GPIO2)  
-    #define REMOTE_IO_BAUD_RATE     921600
+    #define REMOTE_IO_BAUD_RATE     921600          // = node node_config.h LINK_BAUD (and its LINK_TX/RX_PIN)
 
     /*******************************************************************************
      * ADS1115 ADC Configuration (I2C) - ON REMOTE IO NODE

@@ -97,6 +97,7 @@ static TaskHandle_t valve_task_handle = NULL;
 _Static_assert(VALVE_WRAP_CLEAR_NEAR_PCT < VALVE_ADC_WRAPAROUND_THRESH,
                "VALVE_WRAP_CLEAR_NEAR_PCT must stay below VALVE_ADC_WRAPAROUND_THRESH");
 #define VALVE_BOUNDARY_SAFE_MARGIN  1       // Safety margin from calibrated boundaries (1% = range 1-99%)
+                                            // until settings apply; = SET_SAFE_MARGIN_PCT default (settings_table.c)
 
 // Coolant valve specific settings (linear valve, different motor characteristics)
 #define COOLANT_MOTOR_SPEED         255     // Maximum motor speed for coolant valve (0-255)
@@ -213,7 +214,6 @@ static volatile bool valve_have_reading[HVAC_VALVE_MAX];       // update_feedbac
 static volatile bool valve_boot_wait[HVAC_VALVE_MAX];          // boot: waiting for the first reading
 static bool valve_boot_force_cal[HVAC_VALVE_MAX];              // boot: calibrate even if a record exists
 
-#define SERVICE_JOG_TIMEOUT_MS  300     // A jog not repeated within this stops (dead-man)
 static volatile bool valve_svc_active[HVAC_VALVE_MAX];         // excluded from normal control
 static volatile int8_t valve_svc_jog_dir[HVAC_VALVE_MAX];
 static uint32_t valve_svc_jog_ms[HVAC_VALVE_MAX];
@@ -691,6 +691,8 @@ void tb6612fng_stop_all_valves(void)
 }
 
 #define VALVE_PASS_EVENT_MS     1000    // a pass this long writes an event (task watchdog is 10 s)
+_Static_assert(VALVE_PASS_EVENT_MS * 10 <= CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000,
+               "slow-pass event at most a tenth of the task watchdog (sdkconfig)");
 
 static volatile uint32_t s_pass_max_ms;    // longest pass since tb6612fng_take_max_pass_ms()
 
@@ -1848,7 +1850,7 @@ void tb6612fng_apply_settings(void)
         event_log_add(EVT_INFO, "V%d %s", i, fit ? "fitted" : "not fitted");
     }
     int32_t margin = settings_get_int(SET_SAFE_MARGIN_PCT);
-    g_safe_margin = (uint8_t)(margin < 0 ? 0 : margin > 10 ? 10 : margin);
+    g_safe_margin = (uint8_t)(margin < 0 ? 0 : margin > 10 ? 10 : margin);   // 10 = SET_SAFE_MARGIN_PCT max
     if (locked) {
         xSemaphoreGive(valve_mutex);
     }

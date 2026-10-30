@@ -36,7 +36,7 @@ static const char *TAG = "WEB";
 #define SETTINGS_BODY_MAX   256
 #define EXPORT_MAX          8192        /* about 4 KB today */
 #define IMPORT_BODY_MAX     (16 * 1024)
-#define NODE_IMAGE_MAX      (1024 * 1024)
+#define NODE_IMAGE_MAX      NODE_OTA_SLOT_SIZE  /* one source with the node's OTA slot (remote_io.h) */
 #define RECV_CHUNK          4096
 #define RECV_RETRIES        3
 
@@ -590,7 +590,7 @@ static void node_ota_task(void *arg)
 static esp_err_t ota_node_post(httpd_req_t *req)
 {
     if (req->content_len == 0 || req->content_len > NODE_IMAGE_MAX) {
-        return reply(req, "413 Content Too Large", false, "Node image must be 1 byte .. 1 MB");
+        return reply(req, "413 Content Too Large", false, "Node image must be 1 byte .. 960 KB (the node's OTA slot)");
     }
     if (!ota_claim(req)) {
         return ESP_OK;

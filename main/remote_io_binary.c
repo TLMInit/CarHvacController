@@ -42,13 +42,13 @@ static const char *TAG = "REMOTE_IO";
 #define UART_RX_BUF_SIZE        512     // UART RX ring buffer
 #define UART_TX_BUF_SIZE        256     // UART TX buffer
 #define UART_EVENT_QUEUE_SIZE   16      // UART event queue depth
-#define CMD_TIMEOUT_MS          200     // Response timeout (ADS needs ~5-10ms)
-#define FRAME_TIMEOUT_MS        20      // Timeout to reset frame receiver state
+#define CMD_TIMEOUT_MS          200     // Response timeout; above the node's slowest reply (io_i2c.c ADS_POLL_MAX_STEPS ~20 ms, io_onewire.c DS18B20_READ_ATTEMPTS)
+#define FRAME_TIMEOUT_MS        20      // Timeout to reset frame receiver state; = node node_config.h LINK_FRAME_TIMEOUT_MS
 #define LINK_LOCK_TIMEOUT_MS    1000    // Max wait for another task's command to finish
-#define SEARCH_TIMEOUT_MS       500     // 1-Wire search of up to 4 ROMs on the node
+#define SEARCH_TIMEOUT_MS       500     // 1-Wire search of up to 4 ROMs; above node io_onewire.c ONEWIRE_SEARCH_BUDGET_US + one ROM
 #define OTA_CMD_TIMEOUT_MS      1000    // OTA_DATA may wait for a 4 KB sector erase
 #define OTA_SLOW_TIMEOUT_MS     5000    // OTA_BEGIN / OTA_END (erase, sha256 + boot slot)
-#define OTA_REBOOT_WAIT_MS      30000   // new image boot, incl. a possible bootloader check
+#define OTA_REBOOT_WAIT_MS      30000   // new image boot, incl. a possible bootloader check; below node node_config.h OTA_CONFIRM_TIMEOUT_MS
 #define TIMEOUT_EVENT_PERIOD_MS 10000   // EVT_TIMEOUT at most this often, with a count
 
 // Link health over the last minute: 6 slots of 10 s, each an RTT histogram.
@@ -877,6 +877,11 @@ esp_err_t remote_io_ota_node(const uint8_t *image, size_t len, const uint8_t sha
     }
     if (!(s_node_caps & NODE_CAP_OTA)) {
         return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (len > NODE_OTA_SLOT_SIZE) {
+        ESP_LOGE(TAG, "Node OTA refused: %lu bytes, the node's slot holds %lu", (unsigned long)len,
+                 (unsigned long)NODE_OTA_SLOT_SIZE);
+        return ESP_ERR_INVALID_SIZE;
     }
     char why[96];
     if (!ota_image_check(image, len, NODE_PROJECT_NAME, why, sizeof(why))) {

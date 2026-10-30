@@ -26,6 +26,8 @@
 #include "remote_io.h"
 #include "cobs_protocol.h"
 #include "sensor_roles.h"
+
+_Static_assert(SENSOR_ROLES_MAX_ROMS == ONEWIRE_SEARCH_MAX_ROMS, "one role slot per ROM the node's search can return");
 #include "nvs.h"
 #include <stdio.h>
 

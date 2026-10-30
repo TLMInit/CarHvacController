@@ -195,9 +195,11 @@ typedef void (*remote_ota_progress_cb_t)(uint32_t done, uint32_t total, void *ct
  * to come back and answer PING and VERSION (which confirms the image on the node).
  * Blocking; call from a worker task, never from the LVGL task. Needs NODE_CAP_OTA.
  * ESP_ERR_INVALID_VERSION: the image is not an ESP32-S3 NODE_PROJECT_NAME build
- * (checked here before BEGIN, and again by the node).
+ * (checked here before BEGIN, and again by the node). ESP_ERR_INVALID_SIZE: larger than
+ * NODE_OTA_SLOT_SIZE (the node also checks its real slot at OTA_BEGIN).
  */
-#define NODE_PROJECT_NAME "CarHvacIoNode"
+#define NODE_PROJECT_NAME "CarHvacIoNode"   /* = project() in the node's CMakeLists.txt */
+#define NODE_OTA_SLOT_SIZE 0xF0000u         /* 960 KB = ota_0 / ota_1 size in the node's partitions.csv */
 esp_err_t remote_io_ota_node(const uint8_t *image, size_t len, const uint8_t sha256[32],
                              remote_ota_progress_cb_t cb, void *ctx);
 

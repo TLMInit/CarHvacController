@@ -77,7 +77,7 @@ const setting_def_t g_settings_table[SET_COUNT] = {
 
     /* Climate */
     FLT (SET_SETPOINT_STEP,    CL, "Setpoint step", "Trin for setpunkt", 0.1f, 1.0f, 0.1f, 0.5f, "°C", "sp_step", apply_controller),
-    FLT (SET_DEFAULT_SETPOINT, CL, "Default setpoint", "Standard setpunkt", 16, 30, 0.5f, 22, "°C", "sp_default", apply_controller),
+    FLT (SET_DEFAULT_SETPOINT, CL, "Default setpoint", "Standard setpunkt", SETTINGS_SETPOINT_MIN_C, SETTINGS_SETPOINT_MAX_C, 0.5f, 22, "°C", "sp_default", apply_controller),
     ENUM(SET_POWER_UP_STATE,   CL, "At power-up", "Ved opstart", 3, SET_POWERUP_RESTORE, k_powerup_en, k_powerup_da, "power_up", apply_controller),
     BOOL(SET_AUTO_REQUESTS_AC, CL, "AUTO uses A/C", "AUTO bruger A/C", 0, "auto_ac", apply_controller),
     FLT (SET_HUMIDITY_ON,      CL, "Humidity A/C on", "Fugt A/C til", 50, 90, 1, 65, "%RH", "hum_on", apply_controller),
@@ -87,6 +87,7 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     BOOL(SET_DEF_RESTORES_AC,  CL, "DEF restores A/C", "DEF gendanner A/C", 1, "def_restore_ac", apply_controller),
 
     /* Fan */
+    /* default 30 = hvac_controller.c AC_MIN_BLOWER_PCT: manual Low keeps the A/C with defaults */
     INT (SET_FAN_MIN_DUTY,     FN, "Fan minimum", "Blæser minimum", 5, 100, 5, 30, "%", "fan_min", apply_controller),
     INT (SET_FAN_MAX_DUTY,     FN, "Fan maximum", "Blæser maksimum", 30, 100, 5, 100, "%", "fan_max", apply_controller),
     ENUM(SET_AUTO_CURVE,       FN, "AUTO fan curve", "AUTO blæserkurve", 3, SET_CURVE_NORMAL, k_curve_en, k_curve_da, "auto_curve", apply_controller),
@@ -123,6 +124,7 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     ENUM(SET_VALVE_DIR_2,      VL, "Direction foot", "Retning fod", 3, SET_VDIR_AUTO, k_vdir_en, k_vdir_da, "vdir2", apply_valves),
     ENUM(SET_VALVE_DIR_3,      VL, "Direction windscreen", "Retning rude", 3, SET_VDIR_AUTO, k_vdir_en, k_vdir_da, "vdir3", apply_valves),
     ENUM(SET_VALVE_DIR_4,      VL, "Direction coolant", "Retning kølevand", 3, SET_VDIR_AUTO, k_vdir_en, k_vdir_da, "vdir4", apply_valves),
+    /* default and max = tb6612fng_driver.c VALVE_BOUNDARY_SAFE_MARGIN (boot value) and the clamp in tb6612fng_apply_settings */
     INT (SET_SAFE_MARGIN_PCT,  VL, "End-stop margin", "Margin til endestop", 0, 10, 1, 1, "%", "safe_margin", apply_valves),
     ACTION(SET_CAL_VALVE_0,    VL, "Calibrate center 1", "Kalibrér midt 1", apply_cal_valve),
     ACTION(SET_CAL_VALVE_1,    VL, "Calibrate center 2", "Kalibrér midt 2", apply_cal_valve),
@@ -147,8 +149,8 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     INT (SET_AUTO_WS_RH,        CL, "Windscreen air above", "Rudeluft over", 50, 95, 5, 70, "%RH", "auto_ws_rh", apply_controller),
     INT (SET_SENSOR_FALLBACK_HEAT, CL, "Heat w/o cabin sensor", "Varme u. kabinesensor", 0, 100, 5, 50, "%", "fallback_heat", apply_controller),
     /* read when a preset is applied */
-    FLT (SET_PRESET_HEAT_C,     CL, "Max heat preset", "Maks varme forvalg", 25, 30, 0.5f, 30, "°C", "preset_heat", NULL),
-    FLT (SET_PRESET_COOL_C,     CL, "Max cool preset", "Maks kold forvalg", 16, 22, 0.5f, 16, "°C", "preset_cool", NULL),
+    FLT (SET_PRESET_HEAT_C,     CL, "Max heat preset", "Maks varme forvalg", 25, SETTINGS_SETPOINT_MAX_C, 0.5f, SETTINGS_SETPOINT_MAX_C, "°C", "preset_heat", NULL),
+    FLT (SET_PRESET_COOL_C,     CL, "Max cool preset", "Maks kold forvalg", SETTINGS_SETPOINT_MIN_C, 22, 0.5f, SETTINGS_SETPOINT_MIN_C, "°C", "preset_cool", NULL),
     FLT (SET_COLD_START_BELOW,  CF, "Cold start below", "Koldstart under", 0, 20, 1, 15, "°C", "cold_below", apply_controller),
     INT (SET_COLD_START_MIN_S,  CF, "Cold start minimum", "Koldstart minimum", 0, 600, 30, 60, "s", "cold_min_s", apply_controller),
     INT (SET_COLD_START_MAX_MIN, CF, "Cold start maximum", "Koldstart maksimum", 1, 15, 1, 5, "min", "cold_max_min", apply_controller),

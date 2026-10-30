@@ -26,7 +26,7 @@
 extern "C" {
 #endif
 
-#define SENSOR_ROLES_MAX_ROMS   4
+#define SENSOR_ROLES_MAX_ROMS   4       /* = ONEWIRE_SEARCH_MAX_ROMS (cobs_protocol.h), asserted in hvac_sensors.c */
 
 typedef enum {
     SENSOR_ROLE_UNUSED = 0,

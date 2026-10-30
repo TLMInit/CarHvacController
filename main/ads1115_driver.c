@@ -97,7 +97,7 @@ esp_err_t ads1115_read_mv(ads1115_channel_t channel, ads1115_mv_t *voltage)
         // Negative readings shouldn't happen with single-ended, treat as 0
         mv = 0;
     } else {
-        // Positive: scale raw value to mV using 4.096V full scale
+        // Positive: scale raw value to mV using 4.096V full scale (= node io_i2c.c ADS_CFG_PGA_4V096)
         // raw 32767 = 4096mV, so: mv = raw * 4096 / 32767
         mv = ((int32_t)raw * 4096) / 32767;
     }

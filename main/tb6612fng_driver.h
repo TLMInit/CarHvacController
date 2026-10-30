@@ -20,6 +20,8 @@
 // Calibration timing. Each valve runs its own state machine (valves calibrate in parallel):
 // seek the marker (<= SET_CAL_TIMEOUT_S), settle, rotate once (<= SET_CAL_TIMEOUT_S).
 #define CALIB_SETTLE_TIME_MS        500     // Wait for motor to settle after direction change
+// A service jog not repeated within this stops (dead-man); hvac_ui_service.c JOG_REPEAT_MS must stay below it
+#define SERVICE_JOG_TIMEOUT_MS      300
 
 #ifdef __cplusplus
 extern "C" {

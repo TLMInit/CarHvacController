@@ -35,6 +35,8 @@ extern "C" {
 #define SETTINGS_NAMESPACE      "hvac_cfg"
 #define SETTINGS_SCHEMA         1
 #define SETTINGS_STR_MAX        33      /* longest string value incl. NUL (AP password: 8..32 chars) */
+#define SETTINGS_SETPOINT_MIN_C 16      /* degC: setpoint limits (hvac_controller.c TEMP_MIN_C / TEMP_MAX_C), the */
+#define SETTINGS_SETPOINT_MAX_C 30      /* default setpoint range and the preset ranges' outer ends */
 #define SETTINGS_HUMIDITY_GAP   2.0f    /* %RH: Humidity A/C off stays at least this far below on (a chain rule) */
 #define SETTINGS_DUCT_GAP       5.0f    /* degC: duct minimum stays at least this far below the maximum (a chain rule) */
 #define SETTINGS_COLD_START_GAP 1.0f    /* degC: cold start ends at least this far above where it starts (a chain rule) */

@@ -10,6 +10,9 @@
  * 
  * Payload format (before COBS encoding):
  *   [1 byte: message type][N bytes: data][2 bytes: CRC16-CCITT]
+ *
+ * Coupled: byte-identical in both repos (display main/cobs_protocol.h, node main/cobs_protocol.h);
+ * the node's tools/ionode_cli.py ERR_NAMES mirrors cobs_error_t.
  */
 
 #ifndef COBS_PROTOCOL_H
@@ -110,7 +113,7 @@ typedef enum {
     COBS_GPIO_INPUT_PULLDOWN= 3,
 } cobs_gpio_mode_t;
 
-// Error codes
+// Error codes (mirrored in the node's tools/ionode_cli.py ERR_NAMES)
 typedef enum {
     ERR_NONE            = 0,
     ERR_INVALID_CMD     = 1,

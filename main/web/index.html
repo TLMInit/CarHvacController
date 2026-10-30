@@ -59,7 +59,7 @@ progress{width:100%;height:14px}
  <div class="card"><h3>Display firmware (.bin)</h3>
   <input type="file" id="f-display" accept=".bin"><p><button class="go" id="b-display">Upload</button></p>
   <progress id="p-display" max="1" value="0"></progress><p id="m-display" class="mut"></p></div>
- <div class="card"><h3>IO node firmware (.bin, max 1 MB)</h3>
+ <div class="card"><h3>IO node firmware (.bin, max 960 KB)</h3>
   <input type="file" id="f-node" accept=".bin"><p><button class="go" id="b-node">Upload</button></p>
   <progress id="p-node" max="1" value="0"></progress><p id="m-node" class="mut"></p></div>
 </section>
@@ -153,7 +153,7 @@ let poll=null;
 function upload(target){
  const f=$("f-"+target).files[0],m=$("m-"+target),p=$("p-"+target),b=$("b-"+target);
  if(!f){m.textContent="Choose a .bin file first";m.className="bad";return}
- if(target==="node"&&f.size>1048576){m.textContent="Node image is larger than 1 MB";m.className="bad";return}
+ if(target==="node"&&f.size>983040){m.textContent="Node image is larger than the node's 960 KB slot";m.className="bad";return}
  b.disabled=true;m.className="mut";m.textContent="Uploading…";
  const x=new XMLHttpRequest();x.open("POST","/api/ota/"+target);
  x.upload.onprogress=e=>{if(e.lengthComputable){p.max=e.total;p.value=e.loaded}};
