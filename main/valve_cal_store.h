@@ -49,7 +49,8 @@ esp_err_t valve_cal_store_save(hvac_valve_id_t valve, const valve_cal_record_t *
 esp_err_t valve_cal_store_erase(hvac_valve_id_t valve);
 esp_err_t valve_cal_store_erase_all(void);
 
-/** Plausibility at boot: current ADC inside [adc_min, adc_max] and outside both deadzones. */
+/** Plausibility at boot: current ADC within [adc_min - 3, adc_max + 3]. Both ends mean
+ *  closed, so a reading in a deadzone is fine. */
 bool valve_cal_store_plausible(const valve_cal_record_t *rec, uint8_t current_adc);
 
 #ifdef __cplusplus

@@ -551,7 +551,7 @@ static void valve_boot_decide(int i)
         valve_cal_source[i] = VALVE_CAL_SRC_STORED;
         valve_filter_init[i] = false;
         valve_adc_last_stable[i] = adc;
-        ESP_LOGI(TAG, "V%d: using stored calibration (adc %d-%d, center %d, inverted=%s, saved boot #%lu, now adc=%d%%)",
+        ESP_LOGI(TAG, "V%d: accepted stored (adc %d-%d, center %d, inverted=%s, saved boot #%lu, now adc=%d%%)",
                  i, rec.adc_min, rec.adc_max, rec.adc_center, rec.is_inverted ? "yes" : "no",
                  (unsigned long)rec.boot_counter, adc);
         event_log_add(EVT_CAL, "V%d stored cal used %d-%d", i, rec.adc_min, rec.adc_max);
@@ -561,9 +561,9 @@ static void valve_boot_decide(int i)
     if (valve_boot_force_cal[i])        why = "recalibrate-all requested";
     else if (err == ESP_ERR_NOT_FOUND)  why = "no stored calibration";
     else if (err == ESP_ERR_INVALID_CRC) why = "stored record corrupt";
-    else if (err == ESP_OK)             why = "stored record does not fit current position";
+    else if (err == ESP_OK)             why = "position outside the stored range";
     else                                why = "store unavailable";
-    ESP_LOGI(TAG, "V%d: calibrating (%s, adc=%d%%)", i, why, adc);
+    ESP_LOGI(TAG, "V%d: recalibrating: %s (adc=%d%%)", i, why, adc);
     event_log_add(EVT_CAL, "V%d calibrating: %s", i, why);
     if (tb6612fng_start_calibration((hvac_valve_id_t)i) != ESP_OK) {
         valve_cal_source[i] = VALVE_CAL_SRC_DEFAULT;

@@ -8,7 +8,7 @@
 
 #define MAX_NS 8
 #define MAX_ENT 128
-enum { T_U16 = 1, T_U32, T_I32, T_STR };
+enum { T_U16 = 1, T_U32, T_I32, T_STR, T_BLOB };
 typedef struct { char ns[16]; } ns_t;
 typedef struct { int used, ns, type; char key[16]; uint32_t v; char s[64]; } ent_t;
 static ns_t s_ns[MAX_NS];
@@ -96,6 +96,25 @@ esp_err_t nvs_get_str(nvs_handle_t h, const char *k, char *out, size_t *len)
     if (out && *len < n) { *len = n; return ESP_ERR_INVALID_SIZE; }
     if (out) memcpy(out, e->s, n);
     *len = n;
+    return ESP_OK;
+}
+
+/* Blobs up to 64 bytes: bytes in s, length in v */
+esp_err_t nvs_set_blob(nvs_handle_t h, const char *k, const void *v, size_t len)
+{
+    if (len > sizeof(s_ent[0].s)) return ESP_ERR_NVS_VALUE_TOO_LONG;
+    esp_err_t err = put(h, k, T_BLOB, (uint32_t)len, NULL);
+    if (err == ESP_OK) memcpy(find(h, k)->s, v, len);
+    return err;
+}
+esp_err_t nvs_get_blob(nvs_handle_t h, const char *k, void *out, size_t *len)
+{
+    ent_t *e = find(h, k);
+    if (!e) return ESP_ERR_NVS_NOT_FOUND;
+    if (e->type != T_BLOB) return ESP_ERR_NVS_TYPE_MISMATCH;
+    if (out && *len < e->v) { *len = e->v; return ESP_ERR_INVALID_SIZE; }
+    if (out) memcpy(out, e->s, e->v);
+    *len = e->v;
     return ESP_OK;
 }
 

@@ -132,9 +132,10 @@ esp_err_t valve_cal_store_erase_all(void)
     return result;
 }
 
+// Range only, with 3 % slack: a closed valve rests at either end of the pot, often in a
+// deadzone, so the deadzones must not reject a record (finding 2)
 bool valve_cal_store_plausible(const valve_cal_record_t *rec, uint8_t current_adc)
 {
     return rec != NULL
-        && current_adc >= rec->adc_min && current_adc <= rec->adc_max
-        && current_adc >= rec->low_deadzone && current_adc <= rec->high_deadzone;
+        && current_adc + 3 >= rec->adc_min && current_adc <= rec->adc_max + 3;
 }
