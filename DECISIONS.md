@@ -39,5 +39,22 @@ Decisions taken without stopping, per the brief. Newest at the bottom of each se
 - WP-C: p95 RTT is computed from six 10 s histograms (100 µs buckets to 2 ms, 1 ms to 30 ms) instead of a sample ring (would be ~24 KB). Unassigned ROMs are read too, at most 4/s, so the role page can show which sensor is which. Commanded resets (boot, OTA, node reboot) do not count as node restarts.
 - Merge order kept: A → D, E, H → rc1. B and C wait for F (rc2), as the brief orders.
 
+## rc2 (WP-F)
+- Page order main <-> diagnostics <-> settings. Inside a settings sub-page swipes do nothing and BACK is explicit, so a held valve jog cannot be cut off by a swipe.
+- Presets from a long press on AUTO and from the first settings row.
+- Danish needs æ/ø/å, which the built-in Montserrat lacks: Montserrat-Medium 14 and 16 px subsets (ASCII, °, æøåÆØÅ, the symbols used) generated with lv_font_conv 1.5.2 from the TTF shipped in the LVGL package, ~19 KB flash. Diagnostics, valve service and sensor pages stay English; the main page is unchanged.
+- DAY/NIGHT now toggles `SET_NIGHT_MODE`; the 2.0 private "night_mode" key is not migrated (one tap after updating). Brightness, auto-dim and night screen-off settings are applied by the UI; a transparent overlay swallows the touch that wakes a dark screen.
+- Button-context pool 32 -> 64 (the Valves group alone has 17 rows).
+
+## rc3 (WP-B, WP-C, WP-G)
+- Display partition table: nvs kept at 0x9000/0x6000 so settings, calibration and thermal learning survive; otadata 0x10000, ota_0 0x20000 and ota_1 0x420000 (4 MB each). First flash of rc3 must write bootloader, table and otadata (the archived flash_args does).
+- Node partition table on 2 MB: ota_0 0x10000, ota_1 0x100000 (960 KB each). Same first-flash rule.
+- Internal RAM: with Wi-Fi linked, static DIRAM was 78 % used. LVGL's 128 KB pool now comes from one malloc in PSRAM (lv_conf macros via build-wide compile definitions; LVGL 8 has no Kconfig entry). Static DIRAM 267 KB -> 136 KB. Wi-Fi IRAM optimisations off (WP-G, 18 KB). `wifi_ap.c` logs the free internal heap on every AP start.
+- `wifi_ap_init()` failing is a warning, never a reboot: the phone page is optional, the climate control is not.
+- Phone access: anyone with the WPA2 password can read and change settings (not the action rows) and upload firmware, the latter only with mode OFF and the blower stopped. No separate web login: the WPA2 password is the gate. In 10 min mode an AP that timed out stays off until the setting is chosen again or the next boot.
+- Display OTA is kept after 30 s of running UI with the node link up; with no link at all it reboots after 5 min and the bootloader rolls back. Node OTA: kept after one PING and one VERSION within 60 s, else rollback.
+- Node OTA_DATA with a wrong offset returns ERR_OTA_WRITE but keeps the transfer, so the display resumes from OTA_STATUS.
+- Archived flash sets: `flash_args` rewritten to the flat file names of the archive (earlier sets fixed in place, sums regenerated).
+
 ## Models
 - Strongest available model (Opus) for WP-A, WP-B, WP-C, WP-G, WP-H; faster model (Sonnet) for WP-D, WP-E, WP-F, WP-T. WP-A is not named in the brief; it is the framework every package depends on, so it gets the stronger model.
