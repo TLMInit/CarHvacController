@@ -84,5 +84,12 @@ Step D:
 - 10: `sdkconfig` regenerated from the defaults; it differs from the -Og one only in the optimisation choice and `CONFIG_FREERTOS_TASK_FUNCTION_WRAPPER`, which IDF offers only at -Og. Assertions stay on. Display app 0x169f70 → 0x1662c0 (−1.0 %), node 0x4a780 → 0x46840 (−5 %). No new warnings at -O2. `hvac_ui_update` timing needs the board; BENCH.md asks for the log line from both builds.
 - The node's VERSION/HELLO prefix is now `ionode 2.3`, matching the release.
 
+## v2.3-display / v2.4-node — hotfix and settings release
+
+- The brief named the starting points `v2.2-display (74b89da)` and `v2.3-node (3a6a1e8)`; those hashes are `v2.1-display` and `v2.2-node`. The tags were used: `v2.2-display` = d068015, `v2.3-node` = 630a6e4.
+
+Step A (hotfix; tags v2.2.1-display / v2.3.1-node):
+- 1: while the link is down no valve command is due, not even the 1 s re-assert; on the first tick it is back, both parts of every commanded valve are sent once. Skipped refreshes neither mark a stop lost nor write an event. Idle cost: 15 frames/s with the link up (two GPIO_SET and one PWM_SET per valve per second), 0 while it is down. "Down" for the valve task is the link layer's 3 s window **or** the last command on the link (any task) having timed out (`remote_io_last_command_timed_out()`); the sensors task polls every 100 ms, so the valve task notices a broken link within one command instead of after 3 s, and sees it back with the first answered poll. A direction send stops after its first failed GPIO command and the speed is not tried in that pass, so the pass in which the link breaks costs at most one command timeout (200 ms) plus a wait for the link mutex if another task's command is timing out at that moment.
+
 ## Models
 - Strongest available model (Opus) for WP-A, WP-B, WP-C, WP-G, WP-H; faster model (Sonnet) for WP-D, WP-E, WP-F, WP-T. WP-A is not named in the brief; it is the framework every package depends on, so it gets the stronger model.

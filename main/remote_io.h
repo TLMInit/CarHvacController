@@ -38,6 +38,11 @@ esp_err_t remote_io_wait_ready(int timeout_ms);
 /** True when a CRC-valid response has arrived within the last 3 seconds. */
 bool remote_io_is_connected(void);
 
+/** True when the most recent command on the link, from any task, timed out. Turns false
+ *  again with the next answered command (the sensors task polls every 100 ms), so it
+ *  reports a broken link within one command instead of after the 3 s window. */
+bool remote_io_last_command_timed_out(void);
+
 /** Snapshot command counters. Any output pointer may be NULL. */
 void remote_io_get_stats(uint32_t *tx_frames, uint32_t *rx_frames,
                          uint32_t *crc_errors, uint32_t *timeouts);

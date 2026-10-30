@@ -268,22 +268,22 @@ static bool set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *
     switch (direction) {
         case TB6612_DIR_STOP:
             ret1 = remote_gpio_set_level(config->in1, 0);
-            ret2 = remote_gpio_set_level(config->in2, 0);
+            ret2 = ret1 == ESP_OK ? remote_gpio_set_level(config->in2, 0) : ret1;
             dir_str = "STOP";
             break;
         case TB6612_DIR_FORWARD:
             ret1 = remote_gpio_set_level(config->in1, 1);
-            ret2 = remote_gpio_set_level(config->in2, 0);
+            ret2 = ret1 == ESP_OK ? remote_gpio_set_level(config->in2, 0) : ret1;
             dir_str = "FWD";
             break;
         case TB6612_DIR_REVERSE:
             ret1 = remote_gpio_set_level(config->in1, 0);
-            ret2 = remote_gpio_set_level(config->in2, 1);
+            ret2 = ret1 == ESP_OK ? remote_gpio_set_level(config->in2, 1) : ret1;
             dir_str = "REV";
             break;
         case TB6612_DIR_BRAKE:
             ret1 = remote_gpio_set_level(config->in1, 1);
-            ret2 = remote_gpio_set_level(config->in2, 1);
+            ret2 = ret1 == ESP_OK ? remote_gpio_set_level(config->in2, 1) : ret1;
             dir_str = "BRAKE";
             break;
         default:
@@ -330,6 +330,9 @@ static void motor_send(int valve, unsigned mask, int position)
     bool dir_ok = true, speed_ok = true;
     if (mask & MOTOR_SEND_DIR) {
         dir_ok = set_motor_direction((hvac_valve_id_t)valve, config, (tb6612_direction_t)m->want_dir, position);
+        if (!dir_ok) {
+            mask &= ~MOTOR_SEND_SPEED;      // one failed command per pass is enough; the speed stays pending
+        }
     }
     if (mask & MOTOR_SEND_SPEED) {
         speed_ok = set_motor_speed(config, (uint8_t)m->want_speed);
@@ -356,7 +359,10 @@ static void queue_motor(int valve, tb6612_direction_t direction, uint8_t speed)
 // Sends what is not acknowledged yet, and re-asserts every commanded valve once a second
 static void apply_motor(int valve, uint32_t now_ms)
 {
-    unsigned mask = motor_link_due(&motor_link[valve], now_ms, remote_io_is_connected());
+    // Down as soon as any task's last command timed out: the 3 s connected window alone would
+    // let every valve wait out a 200 ms timeout per command until it closes
+    bool link_up = remote_io_is_connected() && !remote_io_last_command_timed_out();
+    unsigned mask = motor_link_due(&motor_link[valve], now_ms, link_up);
     if (mask) {
         motor_send(valve, mask, valve_states[valve].position);
     }

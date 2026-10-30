@@ -358,6 +358,8 @@ static void log_link_result(uint8_t cmd, const uint8_t *payload, size_t payload_
 // Runs in the caller's context under s_link_mutex, so no pointer outlives its call.
 static void link_service_hello(void);
 
+static volatile bool s_last_cmd_timed_out;
+
 static esp_err_t send_command_binary(uint8_t cmd, uint8_t expect, const uint8_t *payload, size_t payload_len,
                                      uint8_t *resp_type, uint8_t *resp_data, size_t *resp_len,
                                      int timeout_ms)
@@ -377,6 +379,7 @@ static esp_err_t send_command_binary(uint8_t cmd, uint8_t expect, const uint8_t 
     esp_err_t result = execute_command_internal(cmd, expect, payload, payload_len, resp_type, resp_data,
                                                 resp_len, resp_len ? *resp_len : 0, timeout_ms);
     log_link_result(cmd, payload, payload_len, result, t1 - t0, get_time_ms() - t1);
+    s_last_cmd_timed_out = (result == ESP_ERR_TIMEOUT);
     xSemaphoreGive(s_link_mutex);
     if (cmd != MSG_HELLO) {
         link_service_hello();
@@ -725,6 +728,11 @@ void remote_io_get_stats(uint32_t *tx_frames, uint32_t *rx_frames,
     if (rx_frames) *rx_frames = s_rx_frames;
     if (crc_errors) *crc_errors = s_crc_errors;
     if (timeouts) *timeouts = s_timeouts;
+}
+
+bool remote_io_last_command_timed_out(void)
+{
+    return s_last_cmd_timed_out;
 }
 
 bool remote_io_is_connected(void)

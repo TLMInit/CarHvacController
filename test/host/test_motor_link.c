@@ -61,16 +61,32 @@ static void test_reassert_once_a_second(void)
     CHECK(motor_link_due(&m, 10000 + MOTOR_LINK_REFRESH_MS, true) == (MOTOR_SEND_DIR | MOTOR_SEND_SPEED));
 }
 
-/* Link down: a NAKed stop waits for the re-assert period instead of costing a timeout per tick. */
-static void test_link_down_waits_for_reassert(void)
+/* Link down: nothing is due, not even the 1 s re-assert, and no skipped refresh marks a stop
+ * lost. On the first tick with the link back, both parts of every commanded valve are due,
+ * idle ones included, and only once. */
+static void test_link_down_waits_for_link(void)
 {
-    motor_link_t m;
-    motor_link_init(&m);
-    motor_link_want(&m, MOTOR_DIR_STOP, 0);
-    motor_link_sent(&m, motor_link_due(&m, 2000, true), false, false, 2000);
-    CHECK(motor_link_due(&m, 2025, false) == 0);
-    CHECK(motor_link_due(&m, 2000 + MOTOR_LINK_REFRESH_MS, false) == (MOTOR_SEND_DIR | MOTOR_SEND_SPEED));
-    CHECK(motor_link_due(&m, 2025, true) == (MOTOR_SEND_DIR | MOTOR_SEND_SPEED));
+    motor_link_t idle, lost;
+    motor_link_init(&idle);
+    motor_link_init(&lost);
+    motor_link_want(&idle, MOTOR_DIR_STOP, 0);
+    CHECK(!motor_link_sent(&idle, motor_link_due(&idle, 2000, true), true, true, 2000));
+    motor_link_want(&lost, MOTOR_DIR_STOP, 0);
+    motor_link_sent(&lost, motor_link_due(&lost, 2000, true), false, false, 2000);  /* lost as the link broke */
+
+    for (uint32_t t = 2025; t < 2000 + 30000; t += 25) {
+        CHECK(motor_link_due(&idle, t, false) == 0);
+        CHECK(motor_link_due(&lost, t, false) == 0);
+    }
+    CHECK(!idle.stop_lost);
+
+    uint32_t back = 2000 + 30000;
+    CHECK(motor_link_due(&idle, back, true) == (MOTOR_SEND_DIR | MOTOR_SEND_SPEED));
+    CHECK(!motor_link_sent(&idle, MOTOR_SEND_DIR | MOTOR_SEND_SPEED, true, true, back));   /* no event */
+    CHECK(motor_link_due(&lost, back, true) == (MOTOR_SEND_DIR | MOTOR_SEND_SPEED));
+    CHECK(motor_link_sent(&lost, MOTOR_SEND_DIR | MOTOR_SEND_SPEED, true, true, back));     /* the real one */
+    CHECK(motor_link_due(&idle, back + 25, true) == 0);
+    CHECK(motor_link_due(&lost, back + 25, true) == 0);
 }
 
 /* A NAK on a moving command is not reported as a resent stop. */
@@ -88,7 +104,7 @@ int main(void)
     RUN(test_nak_on_stop_resends_next_tick);
     RUN(test_partial_ack_resends_missing_part);
     RUN(test_reassert_once_a_second);
-    RUN(test_link_down_waits_for_reassert);
+    RUN(test_link_down_waits_for_link);
     RUN(test_moving_nak_not_reported);
     T_DONE();
 }

@@ -31,15 +31,17 @@ typedef struct {
     int16_t sent_dir, sent_speed;       /* last value the node acknowledged */
     uint32_t sent_ms;                   /* last send attempt */
     bool stop_lost;                     /* a stop was not acknowledged and is being resent */
+    bool link_was_down;                 /* nothing sent while down: resend both parts on return */
 } motor_link_t;
 
 void motor_link_init(motor_link_t *m);
 void motor_link_want(motor_link_t *m, int dir, int speed);
 
 /** MOTOR_SEND_* bits to send now: anything not acknowledged, or both once a second.
- *  While the link is down a retry waits for the re-assert period, because every
- *  failed command costs a full link timeout. */
-unsigned motor_link_due(const motor_link_t *m, uint32_t now_ms, bool link_up);
+ *  While the link is down nothing is due (every failed command costs a full link
+ *  timeout); on the first call with the link back, both parts of every commanded valve
+ *  are due. Skipped refreshes neither mark a stop lost nor count as sends. */
+unsigned motor_link_due(motor_link_t *m, uint32_t now_ms, bool link_up);
 
 /** Record the node's answers for the parts in @p mask. Returns true when a stop that
  *  had been lost is now acknowledged (the caller logs it once). */
