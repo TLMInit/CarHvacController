@@ -238,9 +238,9 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     INT (SET_VALVE_FILTER,      SV, "Feedback filter", "Positionsfilter", 32, 255, 16, 128, NULL, "v_filter", apply_valves),
     INT (SET_COOLANT_MIN_PWM,   SV, "Coolant min speed", "Kølevand min. fart", 10, 255, 5, 100, NULL, "c_min_pwm", apply_valves),
     INT (SET_COOLANT_RAMP_PCT,  SV, "Coolant slow band", "Kølevand bremsebånd", 5, 60, 5, 20, "%", "c_ramp", apply_valves),
-    INT (SET_JOG_PWM,           SV, "Jog speed", "Jog-fart", 20, 255, 5, 40, NULL, "jog_pwm", apply_valves),
+    INT (SET_JOG_PWM,           SV, "Jog speed", "Jog-fart", 20, 255, 5, 60, NULL, "jog_pwm", apply_valves),
     INT (SET_LEARN_MS,          SV, "Learn-direction move", "Lær-retning bevægelse", 300, 3000, 100, 800, "ms", "learn_ms", apply_valves),
-    INT (SET_CAL_SPEED_PWM,     SV, "Calibration speed", "Kalibreringsfart", 20, 255, 5, 50, NULL, "cal_pwm", apply_valves),
+    INT (SET_CAL_SPEED_PWM,     SV, "Calibration speed", "Kalibreringsfart", 20, 255, 5, 75, NULL, "cal_pwm", apply_valves),
     INT (SET_CAL_TIMEOUT_S,     SV, "Calibration timeout", "Kalibreringstimeout", 30, 300, 10, 120, "s", "cal_timeout_s", apply_valves),
 
     /* A/C: defaults = the clutch as before; electric rows are hidden unless electric (k_visible) */

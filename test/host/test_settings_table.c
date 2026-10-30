@@ -200,9 +200,9 @@ static void test_service_defaults(void)
         { SET_VALVE_FILTER, 128, "VALVE_EMA_ALPHA" },
         { SET_COOLANT_MIN_PWM, 100, "COOLANT_MIN_SPEED" },
         { SET_COOLANT_RAMP_PCT, 20, "COOLANT_RAMP_START_ERROR" },
-        { SET_JOG_PWM, 40, "SERVICE_JOG_SPEED" },
+        { SET_JOG_PWM, 60, "SERVICE_JOG_SPEED (40; raised to 60 in v2.4.1)" },
         { SET_LEARN_MS, 800, "SERVICE_LEARN_MS" },
-        { SET_CAL_SPEED_PWM, 50, "CALIB_MOTOR_SPEED" },
+        { SET_CAL_SPEED_PWM, 75, "CALIB_MOTOR_SPEED (50; raised to 75 in v2.4.1)" },
         { SET_CAL_TIMEOUT_S, 120, "CALIB_MAX_ROTATION_TIME 120000" },
     };
     for (size_t i = 0; i < sizeof(k) / sizeof(k[0]); i++) {

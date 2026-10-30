@@ -80,7 +80,7 @@ static TaskHandle_t valve_task_handle = NULL;
 // Tolerance, hysteresis, stall/move/retry times, ramp floors and bands, filter, jog, learn and
 // calibration speed/timeout are SERVICE settings (s_vc, tb6612fng_apply_settings)
 #define VALVE_TASK_PERIOD_MS        25      // Task update period (faster for better response)
-#define VALVE_MOTOR_SPEED           80     // Maximum motor speed (0-255)
+#define VALVE_MOTOR_SPEED           120    // Maximum motor speed (0-255); 80 until v2.4.1
 #define VALVE_WRAP_BLOCK_MS         5000     // A direction blocked after a pot wrap-around is released after this
 #define VALVE_WRAP_CLEAR_NEAR_PCT   9        // ...or as soon as the valve is within this of its target
 #define VALVE_MOVEMENT_THRESHOLD    2       // Minimum change considered movement

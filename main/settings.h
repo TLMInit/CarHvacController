@@ -240,9 +240,9 @@ typedef enum {
     SET_VALVE_FILTER,           /* int /256, 32..255 step 16, default 128: position EMA weight of a new reading */
     SET_COOLANT_MIN_PWM,        /* int PWM, 10..255 step 5, default 100: coolant ramp floor; floor of SET_VALVE_SPEED_4 */
     SET_COOLANT_RAMP_PCT,       /* int %, 5..60 step 5, default 20 */
-    SET_JOG_PWM,                /* int PWM, 20..255 step 5, default 40: service jog */
+    SET_JOG_PWM,                /* int PWM, 20..255 step 5, default 60 (40 until v2.4.1): service jog */
     SET_LEARN_MS,               /* int ms, 300..3000 step 100, default 800: learn-direction move */
-    SET_CAL_SPEED_PWM,          /* int PWM, 20..255 step 5, default 50; >= SET_VALVE_MIN_PWM (a chain rule) */
+    SET_CAL_SPEED_PWM,          /* int PWM, 20..255 step 5, default 75 (50 until v2.4.1); >= SET_VALVE_MIN_PWM (a chain rule) */
     SET_CAL_TIMEOUT_S,          /* int s, 30..300 step 10, default 120: per calibration phase */
 
     /* A/C (v2.4). Display order: SET_AC_COMPRESSOR first, then the electric block, the freeze
