@@ -7,6 +7,7 @@
  * history exists before the page is first opened. It is never fed from the
  * 100 ms update.
  */
+#include "freertos/FreeRTOS.h"
 #include "hvac_ui_priv.h"
 #include "event_log.h"
 #include "remote_io.h"
@@ -247,8 +248,12 @@ const ui_page_t ui_page_selftest = { "Self-test", "Selvtest", st_open, st_update
 
 enum { SER_CABIN, SER_DUCT, SER_SETPOINT, SER_COUNT };
 
-/* Newest point is last; values are tenths of degC. */
+_Static_assert(CHART_POINTS == HVAC_UI_TREND_POINTS && SER_COUNT == HVAC_UI_TREND_SERIES, "phone trend = chart ring");
+
+/* Newest point is last; values are tenths of degC. Written in the LVGL task; s_ring_lock only
+ * guards against the phone page's copy (httpd task), the chart reads it in the LVGL task. */
 static lv_coord_t s_ring[SER_COUNT][CHART_POINTS];
+static portMUX_TYPE s_ring_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool s_ring_init;
 static lv_obj_t *s_chart;
 static lv_chart_series_t *s_series[SER_COUNT];
@@ -304,11 +309,23 @@ static void chart_feed_timer(lv_timer_t *t)
     const lv_coord_t v[SER_COUNT] = {
         to_tenths(st.cabin_temp_c), to_tenths(st.duct_temp_c), to_tenths(st.target_temp_c)
     };
+    taskENTER_CRITICAL(&s_ring_lock);
     for (int s = 0; s < SER_COUNT; ++s) {
         memmove(&s_ring[s][0], &s_ring[s][1], (CHART_POINTS - 1) * sizeof(lv_coord_t));
         s_ring[s][CHART_POINTS - 1] = v[s];
     }
+    taskEXIT_CRITICAL(&s_ring_lock);
     chart_refresh_view();
+}
+
+bool hvac_ui_trend_copy(lv_coord_t out[HVAC_UI_TREND_SERIES][HVAC_UI_TREND_POINTS], uint32_t *interval_s)
+{
+    *interval_s = (uint32_t)settings_get_int(SET_CHART_INTERVAL_S);
+    if (!s_ring_init) return false;
+    taskENTER_CRITICAL(&s_ring_lock);
+    memcpy(out, s_ring, sizeof(s_ring));
+    taskEXIT_CRITICAL(&s_ring_lock);
+    return true;
 }
 
 void ui_diag_init(void)

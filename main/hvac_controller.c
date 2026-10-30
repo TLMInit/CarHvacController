@@ -1777,6 +1777,18 @@ const char* hvac_controller_get_mode_name(hvac_mode_t mode)
     return mode_names[mode];
 }
 
+hvac_fan_speed_t hvac_controller_fan_step(hvac_fan_speed_t level, int step)
+{
+    int current = (int)level;
+    /* AUTO is outside the manual Off..High sequence: +/- exits AUTO at an
+     * unambiguous adjacent manual endpoint (Off for minus, Low for plus). */
+    if (current == HVAC_FAN_AUTO) return step < 0 ? HVAC_FAN_OFF : HVAC_FAN_LOW;
+    current += step;
+    if (current < HVAC_FAN_OFF) current = HVAC_FAN_OFF;
+    if (current > HVAC_FAN_HIGH) current = HVAC_FAN_HIGH;
+    return (hvac_fan_speed_t)current;
+}
+
 const char* hvac_controller_get_fan_level_name(hvac_fan_speed_t level)
 {
     if (level >= HVAC_FAN_MAX) {

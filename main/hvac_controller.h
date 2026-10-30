@@ -201,6 +201,10 @@ hvac_mode_t hvac_controller_get_mode(void);
  */
 esp_err_t hvac_controller_set_fan_level(hvac_fan_speed_t level);
 
+/** @brief Fan level one step up (+1) or down (-1) from level, as the fan -/+ buttons step:
+ * Off..High clamped; from AUTO, - goes to Off and + to Low. Pure. */
+hvac_fan_speed_t hvac_controller_fan_step(hvac_fan_speed_t level, int step);
+
 /**
  * @brief Set target temperature
  * @param temp_c Temperature in Celsius

@@ -713,24 +713,12 @@ static const char *fan_level_short_name(hvac_fan_speed_t level)
     }
 }
 
-static int fan_step(hvac_fan_speed_t level, int step)
-{
-    int current = (int)level;
-    /* AUTO is outside the manual Off..High sequence: +/- exits AUTO at an
-     * unambiguous adjacent manual endpoint (Off for minus, Low for plus). */
-    if (current == HVAC_FAN_AUTO) return step < 0 ? HVAC_FAN_OFF : HVAC_FAN_LOW;
-    current += step;
-    if (current < HVAC_FAN_OFF) current = HVAC_FAN_OFF;
-    if (current > HVAC_FAN_HIGH) current = HVAC_FAN_HIGH;
-    return current;
-}
-
 static void fan_down_handler(lv_event_t *e)
 {
     hvac_state_t state;
     (void)e;
     ui_get_state(&state);
-    (void)hvac_controller_set_fan_level((hvac_fan_speed_t)fan_step(state.fan_level, -1));
+    (void)hvac_controller_set_fan_level(hvac_controller_fan_step(state.fan_level, -1));
 }
 
 static void fan_up_handler(lv_event_t *e)
@@ -738,7 +726,7 @@ static void fan_up_handler(lv_event_t *e)
     hvac_state_t state;
     (void)e;
     ui_get_state(&state);
-    (void)hvac_controller_set_fan_level((hvac_fan_speed_t)fan_step(state.fan_level, +1));
+    (void)hvac_controller_set_fan_level(hvac_controller_fan_step(state.fan_level, +1));
 }
 
 static void fan_auto_handler(lv_event_t *e)

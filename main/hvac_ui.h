@@ -53,6 +53,16 @@ void hvac_ui_show_error(const char *message);
  */
 void hvac_ui_show_info(const char *message);
 
+#define HVAC_UI_TREND_POINTS 60     /* the trend chart's ring: cabin, duct, setpoint */
+#define HVAC_UI_TREND_SERIES 3
+
+/**
+ * @brief Copy the trend chart's ring (tenths of degC, oldest first, LV_CHART_POINT_NONE = no
+ * reading) for the phone page. Any task. False (out untouched) before the UI started it.
+ * @param interval_s seconds between points (SET_CHART_INTERVAL_S)
+ */
+bool hvac_ui_trend_copy(lv_coord_t out[HVAC_UI_TREND_SERIES][HVAC_UI_TREND_POINTS], uint32_t *interval_s);
+
 #ifdef __cplusplus
 }
 #endif
