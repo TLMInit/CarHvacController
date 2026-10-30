@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HVAC</title>
 <style>
-:root{--bg:#f4f5f7;--card:#fff;--fg:#1d2330;--mut:#6b7280;--acc:#0b6bcb;--bad:#c62828;--ok:#2e7d32;--line:#e3e6ea}
-@media(prefers-color-scheme:dark){:root{--bg:#111418;--card:#1b1f25;--fg:#e8eaed;--mut:#9aa0a6;--acc:#5aa6f0;--bad:#ef6b6b;--ok:#6cc070;--line:#2c323a}}
+:root{--bg:#f4f5f7;--card:#fff;--fg:#1d2330;--mut:#6b7280;--acc:#0b6bcb;--bad:#c62828;--ok:#2e7d32;--line:#e3e6ea;--heat:#d9622b}
+@media(prefers-color-scheme:dark){:root{--bg:#111418;--card:#1b1f25;--fg:#e8eaed;--mut:#9aa0a6;--acc:#5aa6f0;--bad:#ef6b6b;--ok:#6cc070;--line:#2c323a;--heat:#ff9a52}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 header{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:12px;align-items:center;z-index:1}
@@ -26,17 +26,44 @@ section{display:none}section.on{display:block}
 .row small{display:block;color:var(--mut)}
 input,select{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px;max-width:150px}
 input[type=checkbox]{width:22px;height:22px}
+input[type=range]{max-width:none;width:100%}
 button.go{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:8px 14px;font:inherit}
-button.go:disabled{opacity:.5}
+button.go:disabled,.tb:disabled{opacity:.45}
+.grid{display:grid;gap:8px;margin:6px 0}.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr 1fr}.g4{grid-template-columns:repeat(4,1fr)}
+.tb{min-height:52px;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:10px;font:600 16px system-ui,sans-serif;padding:4px;touch-action:manipulation}
+.tb.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.tb.stop{background:var(--bad);color:#fff;border-color:var(--bad)}
+.jog{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.sp{display:grid;grid-template-columns:64px 1fr 64px;gap:8px;align-items:center;text-align:center}
+.sp b{font-size:40px;display:block}
 .mut{color:var(--mut)}.bad{color:var(--bad)}.ok{color:var(--ok)}
 progress{width:100%;height:14px}
 .log{font-size:13px}.log div{padding:4px 0;border-top:1px solid var(--line)}
+table.air{width:100%;border-collapse:collapse;text-align:center;font-size:13px}
+table.air td,table.air th{padding:3px 1px;border-top:1px solid var(--line)}
+table.air th{color:var(--mut);font-weight:normal}
+table.air b{display:block;font-size:16px}
+table.air button{width:30px;height:34px;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:6px;font:inherit}
+svg{width:100%;height:auto;display:block}
 </style>
 </head>
 <body>
 <header><b id="title">HVAC</b><span id="link" class="mut"></span></header>
 <nav id="tabs"></nav>
 <main>
+<section id="s-control">
+ <div class="card"><b id="c-status">–</b> <span id="c-fault" class="bad"></span><div id="c-msg" class="bad"></div></div>
+ <div class="card"><div class="sp"><button class="tb" id="sp-dn">−</button><div><b id="c-sp">–</b><span id="c-cab" class="mut"></span></div><button class="tb" id="sp-up">+</button></div></div>
+ <div class="card"><h3>Airflow mode</h3><div class="grid g4" id="modes"></div></div>
+ <div class="card"><div class="grid g2"><button class="tb" id="q-auto">AUTO</button><button class="tb" id="q-def">DEF</button></div>
+  <h3>Presets</h3><div class="grid g2" id="presets"></div></div>
+ <div class="card"><h3>Fan</h3><div class="sp"><button class="tb" id="fan-dn">−</button><button class="tb" id="fan-auto">AUTO</button><button class="tb" id="fan-up">+</button></div></div>
+ <div class="card"><div class="grid g2"><button class="tb" id="b-ac">A/C</button><button class="tb" id="b-rc">RECIRC</button></div></div>
+ <div class="card"><h3>Display</h3><button class="tb" id="b-night" style="width:100%">DAY</button>
+  <p>Brightness day <span id="v-bd"></span><input type="range" id="r-bd" min="10" max="100" step="5"></p>
+  <p>Brightness night <span id="v-bn"></span><input type="range" id="r-bn" min="1" max="100" step="1"></p>
+  <small id="m-disp" class="mut"></small></div>
+</section>
 <section id="s-state">
  <div class="card"><h3>Climate</h3><div class="kv" id="state"></div></div>
  <div class="card"><h3>Connection</h3><div class="kv" id="conn"></div></div>
@@ -49,8 +76,28 @@ progress{width:100%;height:14px}
   <input type="file" id="f-import" accept=".json,application/json"><p><button class="go" id="b-import">Import</button></p>
   <p id="m-import" class="mut"></p></div>
 </section>
-<section id="s-log"><div class="card log" id="log"></div></section>
+<section id="s-service">
+ <div class="card"><b id="sv-mode"></b><p class="mut">Valve service and the compressor test work only with airflow mode OFF (Control tab).</p></div>
+ <div class="card"><h3>Valve service</h3><select id="sv-valve" style="max-width:none;width:100%"></select>
+  <div class="kv" id="sv-info" style="margin-top:8px"></div><p id="sv-why"></p>
+  <div class="grid g3"><button class="tb jog" id="jog-dn">− hold</button><button class="tb stop" id="sv-stop">STOP</button><button class="tb jog" id="jog-up">+ hold</button></div>
+  <div class="grid g2"><button class="tb" id="sv-recal">RECALIBRATE</button><button class="tb" id="sv-learn">LEARN DIR</button></div>
+  <p class="mut">Hold − or + to jog. While you hold, the page repeats the jog every 150 ms; the valve driver stops the motor by itself 0.3 s after the last repeat. So if the phone, this page or the Wi-Fi drops, the motor stops. Releasing also sends STOP.</p>
+  <p id="sv-msg"></p></div>
+ <div class="card"><h3>Sensor roles</h3><button class="go" id="sn-search">Search</button><div id="sn-list"></div><p id="sn-msg"></p></div>
+ <div class="card"><h3>Compressor test</h3><div class="kv" id="cp-info"></div><p id="cp-why"></p>
+  <div class="grid g3"><button class="tb" id="cp-dn">−10 %</button><button class="tb stop" id="cp-stop">STOP</button><button class="tb" id="cp-up">+10 %</button></div>
+  <button class="tb" id="cp-blower" style="width:100%">BLOWER LOW</button>
+  <p class="mut">Electric compressor only. The controller ends the test 60 s after the last command; this page repeats it every 20 s while the Service tab is open and in front, and ends it when you leave the tab. Interlocks (blower, minimum off time, freeze limits, link) stay active.</p>
+  <p id="cp-msg"></p></div>
+ <div class="card"><h3>Service settings</h3><p class="mut">Settings tab, group "Service" (changes only with mode OFF).</p></div>
+</section>
+<section id="s-log"><div class="card"><button class="go" id="b-clear">Clear log</button> <span id="m-log"></span></div><div class="card log" id="log"></div></section>
 <section id="s-diag">
+ <div class="card"><h3>Trend</h3><svg id="trend" viewBox="0 0 320 160"></svg><div id="tr-now" class="mut"></div></div>
+ <div class="card"><h3>Controller</h3><div class="kv" id="ctrl"></div>
+  <div class="grid g2"><button class="tb" id="b-rcal">RESET CAL</button><button class="tb" id="b-scal">SAVE CAL</button></div><p id="m-cal"></p></div>
+ <div class="card"><h3>Valves</h3><div class="kv" id="valves"></div></div>
  <div class="card"><h3 id="stsum">Self-test</h3><div class="kv" id="selftest"></div></div>
  <div class="card"><h3>IO link</h3><div class="kv" id="linkdiag"></div></div>
 </section>
@@ -71,26 +118,65 @@ const $=id=>document.getElementById(id);
 function el(tag,text,cls){const e=document.createElement(tag);if(text!=null)e.textContent=String(text);if(cls)e.className=cls;return e}
 function kv(box,pairs){box.replaceChildren();for(const[k,v]of pairs){box.append(el("span",k),el("span",v==null?"–":v))}}
 async function getJ(u){const r=await fetch(u,{cache:"no-store"});if(!r.ok)throw new Error(r.status);return r.json()}
+function say(m,j){if(m){m.textContent=j.msg;m.className=j.ok?"ok":"bad"}return j}
+async function post(u,o,m){if(m){m.textContent="…";m.className="mut"}
+ try{const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(o)});return say(m,await r.json())}
+ catch(e){return say(m,{ok:false,msg:"No answer"})}}
 const t1=v=>v==null?null:v.toFixed(1)+" °C";
+const VALVES=["Center 1","Center 2","Foot","Windscreen","Coolant"];
 
-const TABS=[["state","Status"],["settings","Settings"],["log","Log"],["diag","Diagnostics"],["update","Update"]];
-let cur="state";
+const TABS=[["control","Control"],["state","Status"],["settings","Settings"],["service","Service"],["log","Log"],["diag","Diagnostics"],["update","Update"]];
+let cur="control";
 for(const[id,name]of TABS){const b=el("button",name);b.onclick=()=>show(id);b.id="t-"+id;$("tabs").append(b)}
-function show(id){cur=id;for(const[t]of TABS){$("s-"+t).classList.toggle("on",t===id);$("t-"+t).classList.toggle("on",t===id)}
- if(id==="settings")loadSettings();if(id==="log")loadLog();if(id==="diag")loadDiag()}
+function show(id){if(cur==="service"&&id!=="service")leaveService();cur=id;
+ for(const[t]of TABS){$("s-"+t).classList.toggle("on",t===id);$("t-"+t).classList.toggle("on",t===id)}
+ if(id==="settings")loadSettings();if(id==="log")loadLog();if(id==="diag")loadDiag();if(id==="service")loadService()}
+
+/* ---- Control: the main screen ---- */
+const MODES=["OFF","FACE","FOOT","F+F","DEF","D+F","AUTO"],PRESETS=[[1,"DEFOG"],[2,"MAX HEAT"],[3,"MAX COOL"],[4,"ECO"]];
+async function ctl(o){const j=await post("/api/control",o,null);$("c-msg").textContent=j.ok?"":j.msg;loadState()}
+MODES.forEach((n,i)=>{const b=el("button",n,"tb");b.id="m-"+i;b.onclick=()=>ctl({mode:i});$("modes").append(b)});
+PRESETS.forEach(([i,n])=>{const b=el("button",n,"tb");b.id="p-"+i;b.onclick=()=>ctl({preset:i});$("presets").append(b)});
+$("sp-dn").onclick=()=>ctl({setpoint_step:-1});$("sp-up").onclick=()=>ctl({setpoint_step:1});
+$("fan-dn").onclick=()=>ctl({fan_step:-1});$("fan-up").onclick=()=>ctl({fan_step:1});$("fan-auto").onclick=()=>ctl({fan:6});
+$("q-auto").onclick=()=>ctl({quick:"auto"});$("q-def").onclick=()=>ctl({quick:"def"});
+$("b-ac").onclick=()=>lastState&&ctl({ac:!lastState.ac});$("b-rc").onclick=()=>lastState&&ctl({recirc:!lastState.recirc});
+$("b-night").onclick=async()=>{if(lastState){await save("night_mode",!lastState.night,$("m-disp"));loadState()}};
+$("r-bd").onchange=()=>save("bright_day",+$("r-bd").value,$("m-disp"));
+$("r-bn").onchange=()=>save("bright_night",+$("r-bn").value,$("m-disp"));
+$("r-bd").oninput=()=>$("v-bd").textContent=$("r-bd").value+" %";$("r-bn").oninput=()=>$("v-bn").textContent=$("r-bn").value+" %";
+function faultText(s){const f=[];if(!s.link)f.push("LINK LOST");if(s.sensor_fault)f.push("Sensor fault");
+ const v=VALVES.filter((n,i)=>s.valve_fault_mask&1<<i);if(v.length||s.valve_fault)f.push("Valve fault"+(v.length?": "+v.join(", "):""));return f.join("; ")}
+function renderControl(s){
+ $("c-status").textContent=s.mode+(s.preset?" | "+s.preset:"")+" | "+(s.heating?"HEATING":s.cooling?"COOLING":s.reached?"AT SETPOINT":"READY");
+ $("c-fault").textContent=faultText(s);
+ $("c-sp").textContent=s.setpoint==null?"–":s.setpoint.toFixed(1)+" °C";
+ $("c-cab").textContent="Cabin "+(s.cabin==null?"–":s.cabin.toFixed(1)+" °C")+(s.humidity==null?"":" | RH "+s.humidity+" %");
+ MODES.forEach((n,i)=>$("m-"+i).classList.toggle("on",s.mode_id===i));
+ PRESETS.forEach(([i])=>$("p-"+i).classList.toggle("on",s.preset_id===i));
+ $("q-auto").classList.toggle("on",s.mode_id===6);$("q-def").classList.toggle("on",s.mode_id===4);
+ $("fan-auto").textContent=(s.fan_id===6?"AUTO":s.fan)+" | "+s.blower_pct+" %";$("fan-auto").classList.toggle("on",s.fan_id===6);
+ $("b-ac").textContent="A/C "+(s.ac?"ON":"OFF");$("b-ac").classList.toggle("on",s.ac);
+ $("b-rc").hidden=!s.recirc_fitted;// no flap: no button, as on the screen
+ $("b-rc").textContent="RECIRC "+(s.recirc?"ON":"OFF");$("b-rc").classList.toggle("on",s.recirc);
+ $("b-night").textContent=s.night?"NIGHT":"DAY";$("b-night").classList.toggle("on",s.night);
+ if(document.activeElement!==$("r-bd")){$("r-bd").value=s.bright_day;$("v-bd").textContent=s.bright_day+" %"}
+ if(document.activeElement!==$("r-bn")){$("r-bn").value=s.bright_night;$("v-bn").textContent=s.bright_night+" %"}
+}
 
 let lastState=null;
 async function loadState(){
  try{const s=await getJ("/api/state");lastState=s;
   $("title").textContent=s.ssid||"HVAC";
   $("link").textContent=s.link?"Node online":"Node offline";$("link").className=s.link?"ok":"bad";
+  renderControl(s);
   kv($("state"),[["Mode",s.mode],["Fan",s.fan+" ("+s.blower_pct+" %)"],["Setpoint",t1(s.setpoint)],["Cabin",t1(s.cabin)],
    ["Humidity",s.humidity==null?null:s.humidity+" %"],["Duct",t1(s.duct)],["Outside",t1(s.outside)],["Coolant",t1(s.coolant)],
    ["A/C",(s.ac?"On":"Off")+(s.ac_on?" (running)":"")],["A/C reason",s.ac_reason||null],
-   ["Compressor",s.compressor_type==="electric"?"Electric: demand "+s.ac_demand+" %, output "+s.ac_output+" %, "+(s.ac_enable?"enabled":"disabled"):"Clutch"],
+   ["Compressor",s.compressor_type==="electric"?"Electric: demand "+s.ac_demand+" %, output "+s.ac_output+" %, "+(s.ac_enable?"enabled":"disabled")+(s.ac_test?" (TEST)":""):"Clutch"],
    ["Evaporator",t1(s.evap_c)],["Preset",s.preset||null],
    ["Defog",s.defog?"Active":"Off"],["Heater delay",s.heater_delay?"Active":"Off"],
-   ["Faults",(s.sensor_fault?"sensor ":"")+(s.valve_fault?"valve":"")||"None"]]);
+   ["Faults",faultText(s)||"None"]]);
   kv($("conn"),[["Phones connected",s.clients],["Wi-Fi turns off in",s.ap_left_s?Math.ceil(s.ap_left_s/60)+" min":null],
    ["Display firmware",s.ver_display+(s.ota_pending?" (validating)":"")],["Node firmware",s.ver_node]]);
   $("otawhy").textContent=s.ota_allowed?"Updates allowed (system is OFF, blower stopped).":"Updates blocked: "+s.ota_why;
@@ -98,21 +184,34 @@ async function loadState(){
  }catch(e){$("link").textContent="Not reachable";$("link").className="bad"}
 }
 
+/* ---- Settings ---- */
 const GROUPS=["Display","Climate","Fan","Comfort","Control","Valves","Connectivity","System","Service (changes only with mode OFF)","Advanced","Air distribution (per manual mode)","A/C"];
-const GROUP_ORDER=[0,1,11,2,3,4,5,6,7,8,9,10];
-async function save(key,value,msg){
- msg.textContent="Saving…";msg.className="mut";
- try{const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key,value})});
-  const j=await r.json();msg.textContent=j.msg;msg.className=j.ok?"ok":"bad"}catch(e){msg.textContent="Failed";msg.className="bad"}
-}
+const GROUP_ORDER=[0,1,11,2,3,4,5,10,6,7,8,9],G_SYSTEM=7,G_AIR=10;
+const AIR_MODES=["Face","Foot","Face+Foot","Defrost","Defrost+Foot"],AIR_VALVES=["Center 1","Center 2","Foot","Screen"];
+function save(key,value,msg){return post("/api/settings",{key,value},msg)}
+async function runAction(r,msg){
+ if(!confirm(r.label+": run now?"))return;
+ // System actions (factory reset, IO node restart) take a second confirmation
+ if(r.group===G_SYSTEM&&!confirm("Second confirmation: \""+r.label+"\" cannot be undone. Continue?"))return;
+ await post("/api/action",{action:"setting",id:r.id},msg)}
+function airGrid(card,rows){// 5 x 4 like the display: rows = manual modes, columns = valves
+ const t=el("table",null,"air"),h=el("tr");h.append(el("th"));AIR_VALVES.forEach(v=>h.append(el("th",v)));t.append(h);
+ const m=el("small");
+ AIR_MODES.forEach((name,mi)=>{const tr=el("tr");tr.append(el("th",name));
+  rows.slice(mi*4,mi*4+4).forEach(r=>{const td=el("td"),v=el("b",r.value+" %");
+   const step=async d=>{const n=Math.min(r.max,Math.max(r.min,r.value+d*r.step));const j=await save(r.key,n,m);if(j.ok){r.value=n;v.textContent=n+" %"}};
+   const mi_=el("button","−"),pl=el("button","+");mi_.onclick=()=>step(-1);pl.onclick=()=>step(1);td.append(v,mi_,pl);tr.append(td)});
+  t.append(tr)});
+ card.append(t,m)}
 async function loadSettings(){
  let rows;try{rows=await getJ("/api/settings")}catch(e){$("settings").replaceChildren(el("p","Could not load settings","bad"));return}
  const box=$("settings");box.replaceChildren();
- GROUP_ORDER.forEach(gi=>{const g=GROUPS[gi],card=el("div",null,"card");card.append(el("h3",g));
-  for(const r of rows.filter(r=>r.group===gi)){
+ GROUP_ORDER.forEach(gi=>{const g=GROUPS[gi],card=el("div",null,"card"),gr=rows.filter(r=>r.group===gi);card.append(el("h3",g));
+  if(gi===G_AIR&&gr.length===20){airGrid(card,gr);box.append(card);return}
+  for(const r of gr){
    const row=el("div",null,"row"),lab=el("label",r.label),msg=el("small",r.formatted);lab.append(msg);row.append(lab);
    let inp;
-   if(r.type==="action"){msg.textContent="Run from the display";}
+   if(r.type==="action"){inp=el("button","Run","go");inp.onclick=()=>runAction(r,msg);msg.textContent="Asks for confirmation"}
    else if(r.type==="bool"){inp=el("input");inp.type="checkbox";inp.checked=!!r.value;inp.onchange=()=>save(r.key,inp.checked,msg)}
    else if(r.type==="enum"){inp=el("select");(r.enum||[]).forEach((t,i)=>{const o=el("option",t);o.value=i;inp.append(o)});inp.value=r.value;inp.onchange=async()=>{await save(r.key,+inp.value,msg);loadSettings()}}
    else if(r.type==="string"){inp=el("input");inp.type="text";inp.value=r.value;inp.minLength=r.min;inp.maxLength=r.max;inp.autocomplete="off";
@@ -122,7 +221,7 @@ async function loadSettings(){
    if(inp)row.append(inp);
    if(r.visible===false){row.style.opacity=".45";lab.title="Not used with the current choices";if(inp)inp.disabled=true}
    card.append(row)}
-  if(gi===7)card.append(backup);// next to Factory reset
+  if(gi===G_SYSTEM)card.append(backup);// next to Factory reset
   if(card.children.length>1)box.append(card)});
 }
 const backup=$("backup");
@@ -134,6 +233,68 @@ $("b-import").onclick=async()=>{const f=$("f-import").files[0],m=$("m-import");
  try{const r=await fetch("/api/settings/import",{method:"POST",headers:{"Content-Type":"application/json"},body:await f.text()});
   const j=await r.json();m.textContent=j.ok?j.msg:"Not imported: "+j.msg;m.className=j.ok?"ok":"bad";if(j.ok)loadSettings()}
  catch(e){m.textContent="Import failed";m.className="bad"}};
+
+/* ---- Service: valve jog, sensor roles, compressor test ---- */
+let svc=null,jogDir=0,jogTimer=null,jogBusy=null;
+function valvePost(action){return post("/api/service/valve",{valve:+$("sv-valve").value,action},null)}
+function jogSend(){if(jogBusy)return;// one jog in flight at most: never queue stale jogs
+ jogBusy=valvePost(jogDir>0?"jog_plus":"jog_minus").then(j=>{jogBusy=null;if(!j.ok&&jogDir){say($("sv-msg"),j);jogStop()}})}
+function jogStart(d,e){e.preventDefault();if(jogDir)return;jogDir=d;$("sv-msg").textContent="";jogSend();jogTimer=setInterval(jogSend,150)}
+function jogStop(){if(!jogDir)return;jogDir=0;clearInterval(jogTimer);jogTimer=null;
+ valvePost("stop");if(jogBusy)jogBusy.then(()=>valvePost("stop"))}// and again after a jog still on its way
+for(const[id,d]of[["jog-dn",-1],["jog-up",1]]){const b=$(id);
+ b.addEventListener("pointerdown",e=>jogStart(d,e));
+ for(const ev of["pointerup","pointercancel","pointerleave","touchend","touchcancel"])b.addEventListener(ev,jogStop);
+ b.addEventListener("contextmenu",e=>e.preventDefault())}
+$("sv-stop").onclick=()=>{jogStop();post("/api/service/valve",{valve:+$("sv-valve").value,action:"stop"},$("sv-msg"))};
+$("sv-valve").onchange=()=>{jogStop();renderService()};
+$("sv-recal").onclick=()=>{const n=VALVES[+$("sv-valve").value];
+ if(confirm("Recalibrate "+n+"? The valve drives to both end stops."))post("/api/service/valve",{valve:+$("sv-valve").value,action:"recalibrate"},$("sv-msg"))};
+$("sv-learn").onclick=()=>post("/api/service/valve",{valve:+$("sv-valve").value,action:"learn"},$("sv-msg"));
+VALVES.forEach((n,i)=>{const o=el("option",n);o.value=i;$("sv-valve").append(o)});
+
+let cpDemand=0,cpBlower=false,cpKeep=null,cpOurs=false,cpSeen=false;
+async function cpSend(){const j=await post("/api/service/compressor",{demand:cpDemand,blower:cpBlower},$("cp-msg"));
+ if(j.ok){cpOurs=true;if(!cpKeep)cpKeep=setInterval(()=>{if(cpOurs&&!document.hidden)cpSend()},20000)}}
+function cpEnd(){clearInterval(cpKeep);cpKeep=null;cpDemand=0;cpBlower=false;cpSeen=false;
+ if(cpOurs){cpOurs=false;post("/api/service/compressor",{stop:true},$("cp-msg"))}}
+$("cp-dn").onclick=()=>{cpDemand=Math.max(0,cpDemand-10);cpSend()};$("cp-up").onclick=()=>{cpDemand=Math.min(100,cpDemand+10);cpSend()};
+$("cp-blower").onclick=()=>{cpBlower=!cpBlower;cpSend()};
+$("cp-stop").onclick=()=>{cpOurs=true;cpEnd()};
+function leaveService(){jogStop();cpEnd()}
+document.addEventListener("visibilitychange",()=>{if(document.hidden)leaveService()});
+window.addEventListener("blur",jogStop);window.addEventListener("pagehide",leaveService);
+
+let snLast="";
+function renderService(){const s=svc;if(!s)return;
+ $("sv-mode").textContent="Airflow mode: "+s.mode;$("sv-mode").className=s.mode_off?"ok":"bad";
+ const v=s.valves[+$("sv-valve").value];
+ kv($("sv-info"),[["Position / target",v.pos+" % / "+v.target+" %"],["ADC",v.adc+" %"],["Calibration",v.cal],["Inverted",v.inverted?"yes":"no"],["PWM",v.pwm],
+  ["State",v.busy?"busy (calibrating / service move)":v.moving?"moving":"still"],["Fault",v.fault||"none"]]);
+ const w=$("sv-why");w.textContent=v.can?(v.fault?"FAULT: "+v.fault:"Hold − or + to jog"):v.why;w.className=v.can&&!v.fault?"mut":"bad";
+ for(const id of["jog-dn","jog-up","sv-recal","sv-learn"])$(id).disabled=!v.can;
+ if(!v.can)jogStop();
+ $("sn-search").disabled=s.search_pending;$("sn-search").textContent=s.search_pending?"Searching…":"Search";
+ const sj=JSON.stringify([s.sensors,s.roles]),box=$("sn-list");
+ if(sj!==snLast&&!box.contains(document.activeElement)){snLast=sj;box.replaceChildren();
+  if(!s.sensors.length)box.append(el("p",s.search_pending?"Searching the 1-Wire bus…":"No sensors known. Search scans the bus.","mut"));
+  for(const r of s.sensors){const row=el("div",null,"row"),sel=el("select");
+   // rom[1..4] is the low end of the serial: the part that differs between sensors
+   row.append(el("label",r.rom.slice(2,10)+"  "+(!r.present?"missing":r.temp==null?"–":r.temp.toFixed(1)+" °C"),r.present?"":"bad"));
+   s.roles.forEach((n,i)=>{const o=el("option",n);o.value=i;sel.append(o)});sel.value=r.role;
+   sel.onchange=()=>post("/api/service/sensors",{action:"assign",rom:r.rom,role:+sel.value},$("sn-msg"));row.append(sel);box.append(row)}}
+ const c=s.comp;
+ if(c.test)cpSeen=true;else if(cpSeen&&cpOurs){cpOurs=false;cpSeen=false;clearInterval(cpKeep);cpKeep=null;cpDemand=0;cpBlower=false;
+  say($("cp-msg"),{ok:true,msg:"Test ended, demand 0"})}// by the controller: 60 s, mode change or the screen
+ kv($("cp-info"),[["Demand / output",c.demand+" % / "+c.output+" %"],["Enable",c.enable?"ON":"off"],["Evaporator",t1(c.evap)],["Blower",c.blower_pct+" %"],["Test",c.test?"running"+(c.reason?": "+c.reason:""):"off"]]);
+ $("cp-why").textContent=c.can?"":c.why;$("cp-why").className="bad";
+ for(const id of["cp-dn","cp-up","cp-stop","cp-blower"])$(id).disabled=!c.can;
+ $("cp-blower").classList.toggle("on",c.blower);
+}
+async function loadService(){try{svc=await getJ("/api/service");renderService()}catch(e){$("sv-mode").textContent="Could not load service data";$("sv-mode").className="bad"}}
+$("sn-search").onclick=()=>post("/api/service/sensors",{action:"search"},$("sn-msg")).then(loadService);
+
+/* ---- Log ---- */
 async function loadLog(){
  const box=$("log");
  try{const ev=await getJ("/api/log");box.replaceChildren();
@@ -143,17 +304,44 @@ async function loadLog(){
     el("b",e.cls+" "),el("span",e.text));box.append(d)}
  }catch(e){box.replaceChildren(el("div","Could not load the log","bad"))}
 }
+$("b-clear").onclick=async()=>{if(confirm("Clear the event log? All stored events are removed.")){await post("/api/action",{action:"log_clear"},$("m-log"));loadLog()}};
+
+/* ---- Diagnostics ---- */
+const NS="http://www.w3.org/2000/svg";
+function svgEl(tag,attrs,text){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(text!=null)e.textContent=text;return e}
+async function loadTrend(){
+ let t;try{t=await getJ("/api/trend")}catch(e){return}
+ const S=[["cabin","var(--fg)","Cabin"],["duct","var(--heat)","Duct"],["setpoint","var(--acc)","Setpoint"]],all=S.flatMap(([k])=>t[k]).filter(v=>v!=null);
+ let lo=all.length?Math.min(...all):15,hi=all.length?Math.max(...all):30;lo=(Math.floor(lo/5)-1)*5;hi=(Math.floor(hi/5)+1)*5;// as the display
+ const g=$("trend"),X=34,W=282,H=136,y=v=>(4+H-(v-lo)/(hi-lo)*H).toFixed(1),x=i=>(X+i*W/(t.points-1)).toFixed(1);
+ g.replaceChildren(svgEl("rect",{x:X,y:4,width:W,height:H,fill:"none",stroke:"var(--line)"}),
+  svgEl("text",{x:30,y:14,"text-anchor":"end","font-size":11,fill:"var(--mut)"},hi),svgEl("text",{x:30,y:H+4,"text-anchor":"end","font-size":11,fill:"var(--mut)"},lo));
+ S.forEach(([k,c,n],si)=>{let d="",pen="M";t[k].forEach((v,i)=>{if(v==null){pen="M";return}d+=pen+x(i)+" "+y(v)+" ";pen="L"});
+  g.append(svgEl("path",{d,fill:"none",stroke:c,"stroke-width":2}),svgEl("text",{x:X+si*80,y:156,"font-size":11,fill:c},n))});
+ g.append(svgEl("text",{x:X+W,y:156,"text-anchor":"end","font-size":11,fill:"var(--mut)"},Math.round(t.points*t.interval_s/60)+" min"));
+ const last=k=>{const v=t[k][t.points-1];return v==null?"–":v.toFixed(1)};
+ $("tr-now").textContent="Now: cabin "+last("cabin")+", duct "+last("duct")+", setpoint "+last("setpoint")+" °C";
+}
 async function loadDiag(){
- try{const d=await getJ("/api/diag"),l=d.link;
+ loadTrend();
+ try{const d=await getJ("/api/diag"),l=d.link,th=d.thermal,s=lastState||{};
   $("stsum").textContent=d.selftest_summary||"Self-test";
   kv($("selftest"),d.selftest.map(i=>[i.name,i.result.toUpperCase()+(i.detail?" – "+i.detail:"")]));
+  kv($("ctrl"),[["Heat / cool / at setpoint",(s.heating?"ON":"off")+" / "+(s.cooling?"ON":"off")+" / "+(s.reached?"yes":"no")],
+   ["Thermal model",th.calibrated?"calibrated":"learning"],["Heating rate",th.heat_rate.toFixed(2)+" °C/min"],["Cooling rate",th.cool_rate.toFixed(2)+" °C/min"],
+   ["Adaptive gain",th.gain.toFixed(2)],["Samples",th.samples],["Uptime",Math.floor(d.uptime_s/3600)+" h "+Math.floor(d.uptime_s/60)%60+" min"]]);
   kv($("linkdiag"),[["Connected",l.connected?"Yes":"No"],["RTT last / p95",(l.rtt_last_us/1000).toFixed(1)+" / "+(l.rtt_p95_us/1000).toFixed(1)+" ms"],
    ["Timeouts last min",l.timeouts_last_min],["Frames tx / rx",l.tx+" / "+l.rx],["CRC errors",l.crc_errors],["Timeouts",l.timeouts],
    ["Mismatches",l.mismatches],["Node",l.node_version+" (proto "+l.node_proto+")"],["Node uptime",Math.floor(l.node_uptime_s/60)+" min"],
    ["Node restarts",l.node_restarts],["Free internal RAM",Math.round(d.heap_internal/1024)+" KB"],["Free PSRAM",Math.round(d.heap_psram/1024)+" KB"]]);
  }catch(e){$("stsum").textContent="Could not load diagnostics"}
+ try{const v=(await getJ("/api/service")).valves;
+  kv($("valves"),v.map(x=>[x.name,!x.fitted?"not fitted":"act "+x.pos+" % / target "+x.target+" %"+(x.fault?" – "+x.fault:"")]))}catch(e){}
 }
+$("b-rcal").onclick=async()=>{if(confirm("Reset thermal calibration? Clears the learned model.")){await post("/api/action",{action:"thermal_reset"},$("m-cal"));loadDiag()}};
+$("b-scal").onclick=async()=>{await post("/api/action",{action:"thermal_save"},$("m-cal"));loadDiag()};
 
+/* ---- Update ---- */
 let poll=null;
 function upload(target){
  const f=$("f-"+target).files[0],m=$("m-"+target),p=$("p-"+target),b=$("b-"+target);
@@ -177,7 +365,9 @@ function pollNode(){
 $("b-display").onclick=()=>upload("display");
 $("b-node").onclick=()=>upload("node");
 
-show("state");loadState();setInterval(()=>{if(cur==="state"||cur==="update")loadState()},2000);
+show("control");loadState();
+setInterval(()=>{if(document.hidden)return;if(cur==="control"||cur==="state"||cur==="update")loadState();if(cur==="service")loadService()},1500);
+setInterval(()=>{if(!document.hidden&&cur==="diag")loadDiag()},5000);
 </script>
 </body>
 </html>
