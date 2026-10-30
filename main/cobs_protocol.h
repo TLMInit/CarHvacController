@@ -37,6 +37,13 @@ extern "C" {
 // CRC ends in 0x00 (protocol 1 displays strip one trailing zero when decoding).
 #define PROTOCOL_VERSION        2
 
+// Link window: the display calls the link "connected" for this long after a reply and sends
+// its value in HELLO (u16 BE ms); the node uses it as its link watchdog, clamped to these
+// bounds (both above twice the display's 1 s re-assert). Display: REMOTE_IO_LINK_WINDOW_MS
+// (remote_io.h); node: LINK_WATCHDOG_MS (node_config.h) until a HELLO carries the window.
+#define LINK_WINDOW_MIN_MS      2000
+#define LINK_WINDOW_MAX_MS      10000
+
 // HELLO_RESP capability bits
 #define NODE_CAP_SEARCH         0x01    // ONEWIRE_SEARCH supported
 #define NODE_CAP_OTA            0x02    // OTA_BEGIN/DATA/END/STATUS supported
@@ -239,13 +246,6 @@ bool cobs_receiver_feed(cobs_receiver_t *rx, const uint8_t *data, size_t len,
  * @return Frame length, or 0 if no frame ready
  */
 size_t cobs_receiver_get_frame(cobs_receiver_t *rx, uint8_t *frame, size_t max_len);
-
-/**
- * @brief Check for frame timeout and reset if needed
- * @param rx Receiver state
- * @param now_ms Current time in milliseconds
- */
-void cobs_receiver_check_timeout(cobs_receiver_t *rx, uint32_t now_ms);
 
 /**
  * @brief Reset receiver state (call after processing frame or on timeout)

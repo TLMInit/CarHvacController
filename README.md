@@ -190,7 +190,8 @@ and PWM pins, blower PWM, relay); every other pin is refused with code 3.
 - **Link watchdog.** After the link window without a valid frame (only once a frame
   has been seen), every PWM goes to 0 and every output pin low. A display from v2.3 on
   sends its link window (the time it calls the link "connected", 3000 ms) in HELLO and
-  the node uses that value, clamped to 2000..10000 ms, so both ends share one number.
+  the node uses that value, clamped to 2000..10000 ms (`LINK_WINDOW_MIN_MS` / `_MAX_MS` in
+  `cobs_protocol.h`), so both ends share one number.
   Before any HELLO, or with an older display, it is `LINK_WATCHDOG_MS` (3000) in
   `node_config.h`; 0 disables the watchdog. A 2.3 node answers the 3-byte HELLO with
   error 2 and the display repeats HELLO without the window. The check runs from an esp_timer, so it still fires

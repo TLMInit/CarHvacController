@@ -7,9 +7,11 @@
  * waits (2 ms grace, then up to 200 ms) for exactly one reply, so this task
  * never sends anything unsolicited.
  *
- * Link watchdog: when LINK_WATCHDOG_MS passes without a valid frame after at
- * least one has been seen, every PWM goes to 0 and every output pin low. The
- * display re-commands everything when it returns, so recovery is automatic.
+ * Link watchdog: when the link window passes without a valid frame after at
+ * least one has been seen, every PWM goes to 0 and every output pin low. The window is
+ * the display's REMOTE_IO_LINK_WINDOW_MS from HELLO, clamped to LINK_WINDOW_MIN_MS..
+ * LINK_WINDOW_MAX_MS, and LINK_WATCHDOG_MS before any HELLO. The display re-commands
+ * everything when it returns, so recovery is automatic.
  *
  * Protocol 2: a display that sends HELLO decodes standard COBS, so from then on
  * replies are no longer padded for the protocol 1 trailing-zero strip.
@@ -37,6 +39,8 @@
 static const char *TAG = "LINK";
 
 extern bool cobs_pad_trailing_zero;     /* cobs_protocol.c; cobs_protocol.h is shared and unchanged */
+/* cobs_protocol.c, node only: not in cobs_protocol.h, which stays byte-identical to the display's */
+extern void cobs_receiver_check_timeout(cobs_receiver_t *rx, uint32_t now_ms);
 
 #define LINK_TASK_STACK         6144
 #define LINK_TASK_PRIORITY      10
@@ -50,6 +54,10 @@ static cobs_receiver_t s_rx;
 static protocol_stats_t s_stats;
 /* The display's link window from HELLO, else LINK_WATCHDOG_MS; one source for both ends */
 static volatile uint32_t s_watchdog_ms = LINK_WATCHDOG_MS;
+#if LINK_WATCHDOG_MS > 0
+_Static_assert(LINK_WATCHDOG_MS >= LINK_WINDOW_MIN_MS && LINK_WATCHDOG_MS <= LINK_WINDOW_MAX_MS,
+               "LINK_WATCHDOG_MS outside the HELLO window range (cobs_protocol.h)");
+#endif
 
 /* Written by the link task, read by the watchdog timer */
 static volatile uint32_t s_last_valid_ms;
@@ -168,7 +176,7 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
 #if LINK_WATCHDOG_MS > 0
         if (len == 3) {
             uint32_t w = ((uint32_t)p[1] << 8) | p[2];
-            w = w < LINK_WATCHDOG_MIN_MS ? LINK_WATCHDOG_MIN_MS : w > LINK_WATCHDOG_MAX_MS ? LINK_WATCHDOG_MAX_MS : w;
+            w = w < LINK_WINDOW_MIN_MS ? LINK_WINDOW_MIN_MS : w > LINK_WINDOW_MAX_MS ? LINK_WINDOW_MAX_MS : w;
             if (w != s_watchdog_ms) {
                 ESP_LOGI(TAG, "Link watchdog %u ms (display's link window)", (unsigned)w);
                 s_watchdog_ms = w;
