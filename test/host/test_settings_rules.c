@@ -31,6 +31,19 @@ static void boot_with_i32(const char *k1, int32_t v1, const char *k2, int32_t v2
     CHECK(settings_init() == ESP_OK);
 }
 
+/* Boot with these float keys stored (u32 bit pattern, as settings.c writes them). */
+static void boot_with_f(const char *k1, float v1, const char *k2, float v2)
+{
+    fake_nvs_reset();
+    nvs_handle_t h;
+    uint32_t b;
+    nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &h);
+    nvs_set_u16(h, "schema", SETTINGS_SCHEMA);
+    memcpy(&b, &v1, 4); nvs_set_u32(h, k1, b);
+    memcpy(&b, &v2, 4); nvs_set_u32(h, k2, b);
+    CHECK(settings_init() == ESP_OK);
+}
+
 static void test_fan_chain_pure(void)
 {
     float vals[SET_COUNT] = { 0 };
@@ -99,6 +112,32 @@ static void test_valve_speed_floor(void)
     CHECK(settings_get_int(SET_VALVE_SPEED_3) == 30);
 }
 
+static void test_humidity_gap(void)
+{
+    fresh();                                                    /* ON 65, OFF 58 */
+    CHECK(settings_set_float(SET_HUMIDITY_OFF, 64) == ESP_OK);  /* ON - 1 */
+    CHECK(settings_get_float(SET_HUMIDITY_OFF) == 65 - SETTINGS_HUMIDITY_GAP);
+    CHECKM(noted(SET_HUMIDITY_OFF, "must be at least 2 %RH below Humidity A/C on (65 %RH)"), "note '%s'", s_note);
+
+    /* Lowering ON stops at OFF + gap; OFF is never moved */
+    CHECK(settings_set_float(SET_HUMIDITY_ON, 60) == ESP_OK);
+    CHECK(settings_get_float(SET_HUMIDITY_ON) == 63 + SETTINGS_HUMIDITY_GAP);
+    CHECK(settings_get_float(SET_HUMIDITY_OFF) == 63);
+    CHECKM(noted(SET_HUMIDITY_ON, "must be at least 2 %RH above Humidity A/C off (63 %RH)"), "note '%s'", s_note);
+    CHECK(settings_step(SET_HUMIDITY_ON, -1) == ESP_OK);
+    CHECK(settings_get_float(SET_HUMIDITY_ON) - settings_get_float(SET_HUMIDITY_OFF) >= SETTINGS_HUMIDITY_GAP);
+
+    /* reset_all lands on the defaults although ON is reset while OFF is still high */
+    CHECK(settings_set_float(SET_HUMIDITY_ON, 85) == ESP_OK && settings_set_float(SET_HUMIDITY_OFF, 80) == ESP_OK);
+    CHECK(settings_get_float(SET_HUMIDITY_OFF) == 80);
+    CHECK(settings_reset_all() == ESP_OK);
+    CHECK(settings_get_float(SET_HUMIDITY_ON) == 65 && settings_get_float(SET_HUMIDITY_OFF) == 58);
+
+    boot_with_f("hum_on", 60, "hum_off", 70);                  /* stored by older firmware */
+    CHECK(settings_get_float(SET_HUMIDITY_ON) == 60);
+    CHECK(settings_get_float(SET_HUMIDITY_OFF) == 60 - SETTINGS_HUMIDITY_GAP);
+}
+
 int main(void)
 {
     RUN(test_fan_chain_pure);
@@ -106,5 +145,6 @@ int main(void)
     RUN(test_fan_set_time);
     RUN(test_fan_load_time);
     RUN(test_valve_speed_floor);
+    RUN(test_humidity_gap);
     T_DONE();
 }

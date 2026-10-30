@@ -103,7 +103,7 @@ static void test_decision_defaults(void)
     CHECK(settings_def(SET_RECIRC_FITTED)->def == 0);
     CHECK(settings_def(SET_DEF_RESTORES_AC)->def == 1);
     CHECK(settings_def(SET_QUIET_NIGHT_CAP)->def == 0);          /* "quiet-night cap off" */
-    CHECK(settings_def(SET_HUMIDITY_OFF)->def < settings_def(SET_HUMIDITY_ON)->def - 2.0f);
+    CHECK(settings_def(SET_HUMIDITY_OFF)->def <= settings_def(SET_HUMIDITY_ON)->def - SETTINGS_HUMIDITY_GAP);
 }
 
 int main(void)

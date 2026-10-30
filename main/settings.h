@@ -35,6 +35,7 @@ extern "C" {
 #define SETTINGS_NAMESPACE      "hvac_cfg"
 #define SETTINGS_SCHEMA         1
 #define SETTINGS_STR_MAX        33      /* longest string value incl. NUL (AP password: 8..32 chars) */
+#define SETTINGS_HUMIDITY_GAP   2.0f    /* %RH: Humidity A/C off stays at least this far below on (a chain rule) */
 
 typedef enum {
     SET_TYPE_BOOL = 0,
@@ -88,7 +89,7 @@ typedef enum {
     SET_POWER_UP_STATE,         /* enum set_powerup_t, default RESTORE */
     SET_AUTO_REQUESTS_AC,       /* bool, default no: AUTO asks for A/C when cooling (interlocks still apply) */
     SET_HUMIDITY_ON,            /* float %RH, 50..90, default 65 */
-    SET_HUMIDITY_OFF,           /* float %RH, 40..85, default 58 (kept < ON by the setter) */
+    SET_HUMIDITY_OFF,           /* float %RH, 40..85, default 58 (<= ON - SETTINGS_HUMIDITY_GAP, a chain rule) */
     SET_RECIRC_FITTED,          /* bool, default no: no recirc flap -> button hidden, presets leave it alone */
     SET_RECIRC_AUTO_CANCEL_MIN, /* int min, 0 = off .. 60, default 0 */
     SET_DEF_RESTORES_AC,        /* bool, default yes: leaving DEF restores the A/C choice from before DEF */

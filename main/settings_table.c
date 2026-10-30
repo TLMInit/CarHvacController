@@ -165,8 +165,11 @@ const setting_floor_t g_settings_floors[] = {
 };
 const size_t g_settings_floor_count = sizeof(g_settings_floors) / sizeof(g_settings_floors[0]);
 
+static const setting_operand_t k_humidity[] = { SETTING(SET_HUMIDITY_OFF), SETTING(SET_HUMIDITY_ON) };
+
 const setting_chain_t g_settings_chains[] = {
     { g_fan_levels, SETTINGS_FAN_LEVELS, 0 },
+    { k_humidity, 2, SETTINGS_HUMIDITY_GAP },
 };
 const size_t g_settings_chain_count = sizeof(g_settings_chains) / sizeof(g_settings_chains[0]);
 

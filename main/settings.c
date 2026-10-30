@@ -239,20 +239,10 @@ static esp_err_t set_value(setting_id_t id, float value)
     }
 
     float v = sanitize(d, value);
-    bool changed, other_changed = false;
-    setting_id_t other = id;
     setting_rule_hit_t hit;
     taskENTER_CRITICAL(&s_lock);
     v = settings_rules_clamp(id, v, s_val, &hit);
-    /* Humidity hysteresis: OFF stays at least 2 %RH below ON. */
-    if (id == SET_HUMIDITY_OFF && v > s_val[SET_HUMIDITY_ON] - 2.0f) {
-        v = s_val[SET_HUMIDITY_ON] - 2.0f;
-    }
-    changed = store_locked(id, v);
-    if (id == SET_HUMIDITY_ON && s_val[SET_HUMIDITY_OFF] > v - 2.0f) {
-        other = SET_HUMIDITY_OFF;
-        other_changed = store_locked(other, sanitize(settings_def(other), v - 2.0f));
-    }
+    bool changed = store_locked(id, v);
     taskEXIT_CRITICAL(&s_lock);
 
     char note[SETTINGS_NOTE_MAX] = "";
@@ -267,9 +257,6 @@ static esp_err_t set_value(setting_id_t id, float value)
 
     if (changed) {
         after_change(id);
-    }
-    if (other_changed) {
-        after_change(other);
     }
     return ESP_OK;
 }
@@ -344,9 +331,12 @@ esp_err_t settings_reset(setting_id_t id)
 
 esp_err_t settings_reset_all(void)
 {
-    /* Id order resets HUMIDITY_ON before HUMIDITY_OFF, so the default pair is never clamped. */
-    for (int i = 0; i < SET_COUNT; i++) {
-        settings_reset((setting_id_t)i);
+    /* Twice: a rule can clamp a default against a partner not yet reset (e.g. ON back to 65
+     * while OFF is still 80); the second pass then lands on the defaults, which obey every rule. */
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < SET_COUNT; i++) {
+            settings_reset((setting_id_t)i);
+        }
     }
     return ESP_OK;
 }
@@ -683,9 +673,6 @@ esp_err_t settings_init(void)
         } else if (e != ESP_ERR_NVS_NOT_FOUND) {
             rejected++;         /* e.g. type changed between firmware versions */
         }
-    }
-    if (s_val[SET_HUMIDITY_OFF] > s_val[SET_HUMIDITY_ON] - 2.0f) {
-        s_val[SET_HUMIDITY_OFF] = s_val[SET_HUMIDITY_ON] - 2.0f;
     }
     /* Values stored by older firmware may break a cross-field rule: fix, log and write back. */
     float before[SET_COUNT];

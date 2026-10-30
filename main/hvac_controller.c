@@ -206,8 +206,8 @@ static void cfg_refresh(void)   // caller holds state_mutex (or runs before the 
     memset(&n, 0, sizeof(n));
     n.hum_on = cfg_f(SET_HUMIDITY_ON, 65.0f, 50.0f, 90.0f);
     n.hum_off = cfg_f(SET_HUMIDITY_OFF, 58.0f, 40.0f, 85.0f);
-    if (n.hum_off >= n.hum_on) {
-        n.hum_off = n.hum_on - 1.0f;
+    if (n.hum_off > n.hum_on - SETTINGS_HUMIDITY_GAP) {     // the settings rule already keeps this
+        n.hum_off = n.hum_on - SETTINGS_HUMIDITY_GAP;
     }
     n.step = cfg_f(SET_SETPOINT_STEP, 0.5f, 0.1f, 1.0f);
     n.default_setpoint = cfg_f(SET_DEFAULT_SETPOINT, 22.0f, TEMP_MIN_C, TEMP_MAX_C);
