@@ -248,7 +248,9 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     ENUM(SET_AC_OUT_TYPE,       AC, "Speed output", "Hastighedsudgang", 3, SET_AC_OUT_PWM, k_acout_en, k_acout_en, "ac_out_type", apply_controller),
     ENUM(SET_AC_OUT_PIN,        AC, "Output pin (node)", "Udgangsben (node)", 1, 0, k_acpin_en, k_acpin_en, "ac_out_pin", apply_controller),
     INT (SET_AC_OUT_FREQ_HZ,    AC, "PWM frequency", "PWM-frekvens", 100, 20000, 100, 1000, "Hz", "ac_out_freq_hz", apply_controller),
-    BOOL(SET_AC_OUT_INVERT,     AC, "Invert output", "Vend udgang", 0, "ac_out_invert", apply_controller),
+    /* Inverted, the node's safe state (duty 0 / DAC 0) reads as FULL speed: only the enable
+     * relay (GPIO6) stops the compressor then, hence the label */
+    BOOL(SET_AC_OUT_INVERT,     AC, "Invert (needs enable)", "Vend (kræver enable)", 0, "ac_out_invert", apply_controller),
     INT (SET_AC_OUT_MIN_PCT,    AC, "Output at min speed", "Udgang ved min. fart", 0, 100, 1, 10, "%", "ac_out_min_pct", apply_controller),
     INT (SET_AC_OUT_MAX_PCT,    AC, "Output at max speed", "Udgang ved maks. fart", 0, 100, 1, 100, "%", "ac_out_max_pct", apply_controller),
     ENUM(SET_AC_OUT_FULL_SCALE, AC, "DAC full scale", "DAC fuldt udslag", 2, SET_AC_FS_3V3, k_acfs_en, k_acfs_da, "ac_out_fs_v", apply_controller),

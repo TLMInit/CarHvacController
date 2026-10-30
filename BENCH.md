@@ -49,7 +49,10 @@ which averages; or a scope), analog RC after the node README's filter (10 kΩ, 1
    when the node watchdog trips (3 s); the DAC follows within about 0.1 s after that. Display:
    reason `Electric: link down`. Plug back: HELLO, the output is initialised again (log line from
    step 3) and follows the demand.
-8. **Invert.** Invert output on: idle reads full scale, 100 % demand reads 0 V. Back off.
+8. **Invert.** "Invert (needs enable)" on: idle reads full scale, 100 % demand reads 0 V. Pull
+   the node RX wire: after 3 s the output goes to 0 V, which an inverting controller reads as
+   FULL speed, so the relay (enable) must drop at the same moment: check it does, and only use
+   Invert with the enable wired. Back off.
 9. **Dead-man.** Start a test and do not touch for 60 s: demand 0, enable off, `Test ended,
    demand 0`, the test's blower stops. Leaving the page does the same at once; switching the
    airflow mode on ends it too.

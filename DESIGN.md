@@ -331,7 +331,7 @@ section 5, the node's side is the table in its README.
 ### Group order and visibility
 
 The A/C group shows, in this order: Compressor type, the electric block (Speed output, Output
-pin, PWM frequency, Invert output, Output at min / max speed, DAC full scale, DAC address,
+pin, PWM frequency, Invert (needs enable), Output at min / max speed, DAC full scale, DAC address,
 Speed ramp, Minimum speed, Off after no demand, Evaporator target), the freeze limits
 (Evaporator cut-out / cut-in), then the older A/C rows moved here (AUTO uses A/C, Humidity A/C
 on / off, DEF restores A/C). The electric rows are hidden with Compressor type = clutch; the pin

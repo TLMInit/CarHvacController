@@ -86,7 +86,9 @@ async function loadState(){
   $("link").textContent=s.link?"Node online":"Node offline";$("link").className=s.link?"ok":"bad";
   kv($("state"),[["Mode",s.mode],["Fan",s.fan+" ("+s.blower_pct+" %)"],["Setpoint",t1(s.setpoint)],["Cabin",t1(s.cabin)],
    ["Humidity",s.humidity==null?null:s.humidity+" %"],["Duct",t1(s.duct)],["Outside",t1(s.outside)],["Coolant",t1(s.coolant)],
-   ["A/C",(s.ac?"On":"Off")+(s.ac_on?" (running)":"")],["A/C reason",s.ac_reason||null],["Preset",s.preset||null],
+   ["A/C",(s.ac?"On":"Off")+(s.ac_on?" (running)":"")],["A/C reason",s.ac_reason||null],
+   ["Compressor",s.compressor_type==="electric"?"Electric: demand "+s.ac_demand+" %, output "+s.ac_output+" %, "+(s.ac_enable?"enabled":"disabled"):"Clutch"],
+   ["Evaporator",t1(s.evap_c)],["Preset",s.preset||null],
    ["Defog",s.defog?"Active":"Off"],["Heater delay",s.heater_delay?"Active":"Off"],
    ["Faults",(s.sensor_fault?"sensor ":"")+(s.valve_fault?"valve":"")||"None"]]);
   kv($("conn"),[["Phones connected",s.clients],["Wi-Fi turns off in",s.ap_left_s?Math.ceil(s.ap_left_s/60)+" min":null],
