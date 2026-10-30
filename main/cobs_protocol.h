@@ -50,6 +50,7 @@ extern "C" {
 // HELLO_RESP capability bits
 #define NODE_CAP_SEARCH         0x01    // ONEWIRE_SEARCH supported
 #define NODE_CAP_OTA            0x02    // OTA_BEGIN/DATA/END/STATUS supported
+#define NODE_CAP_PWM_HZ         0x04    // PWM_INIT_HZ and the 16-bit PWM_SET form supported
 
 #define ONEWIRE_SEARCH_MAX_ROMS 4       // ROM_LIST carries at most this many 8-byte ROM codes
 #define OTA_DATA_MAX            56      // OTA_DATA payload: offset(4) + up to 56 bytes = 60 <= 63
@@ -66,8 +67,10 @@ typedef enum {
     MSG_GPIO_SET        = 0x10,     // pin(1), level(1)
     MSG_GPIO_GET        = 0x11,     // pin(1), expects GPIO_VALUE response
     MSG_GPIO_MODE       = 0x12,     // pin(1), mode(1)
-    MSG_PWM_SET         = 0x20,     // pin(1), duty(1)
-    MSG_PWM_INIT        = 0x21,     // pin(1), freq_khz(1)
+    MSG_PWM_SET         = 0x20,     // pin(1), duty(1) [8-bit, scaled to the channel's resolution]
+                                    //   or pin(1), duty u16 BE [raw counts, 0..2^bits; needs NODE_CAP_PWM_HZ]
+    MSG_PWM_INIT        = 0x21,     // pin(1), freq_khz(1); 8-bit resolution
+    MSG_PWM_INIT_HZ     = 0x22,     // pin(1), freq_hz u32 BE, resolution_bits(1); needs NODE_CAP_PWM_HZ
     MSG_I2C_WRITE       = 0x30,     // addr(1), reg(1), len(1), data(N)
     MSG_I2C_READ        = 0x31,     // addr(1), reg(1), len(1), expects I2C_DATA
     MSG_ADS_READ        = 0x40,     // channel(1), expects ADS_VALUE response
