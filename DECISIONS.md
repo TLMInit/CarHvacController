@@ -56,5 +56,10 @@ Decisions taken without stopping, per the brief. Newest at the bottom of each se
 - Node OTA_DATA with a wrong offset returns ERR_OTA_WRITE but keeps the transfer, so the display resumes from OTA_STATUS.
 - Archived flash sets: `flash_args` rewritten to the flat file names of the archive (earlier sets fixed in place, sums regenerated).
 
+## Final (WP-T, WP-K)
+- WP-T's host test found a latent node bug: a full-size reply that needs the compatibility pad did not fit `send_frame`'s buffer and was dropped. Unreachable today (no reply that long is sent while padding is on) but fixed (*node* 3a6a1e8); the test runs by default.
+- `strip_pad()` is static in the display link layer, so the host test checks a reference copy of the rule plus the real `cobs_parse_frame` on the documented byte sequences. The node's HELLO handling is not host-tested (needs ESP-IDF).
+- CI is written for GitHub Actions (host tests on ubuntu, firmware build in `espressif/idf:v6.1` failing on any `main/` warning) but has not run: neither repo is pushed.
+
 ## Models
 - Strongest available model (Opus) for WP-A, WP-B, WP-C, WP-G, WP-H; faster model (Sonnet) for WP-D, WP-E, WP-F, WP-T. WP-A is not named in the brief; it is the framework every package depends on, so it gets the stronger model.
