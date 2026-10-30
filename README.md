@@ -33,3 +33,19 @@ Below is short explanation of remaining files in the project folder.
 ```
 Additionally, the sample project contains Makefile and component.mk files, used for the legacy Make based build system. 
 They are not used or needed when building with CMake and idf.py.
+
+## Tests
+
+Host unit tests (no ESP-IDF, no hardware) live in `test/host/`: settings table, NVS schema/migration
+(`settings_ns_open` against a fake NVS), dew point and defog, cascade control, COBS + CRC and the pad rule.
+Firmware sources are compiled as they are; ESP-IDF headers are faked under `test/host/fakes/`.
+
+```
+cmake -S test/host -B ../tbuild-display
+cmake --build ../tbuild-display
+ctest --test-dir ../tbuild-display --output-on-failure
+```
+
+Add `-DRUN_KNOWN_BUG_TESTS=ON` to also build checks that document known firmware bugs (they fail).
+CI (`.github/workflows/ci.yml`) runs these tests, then builds with `espressif/idf:v6.1` and fails on any
+compiler warning from `main/`.

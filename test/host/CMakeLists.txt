@@ -1,0 +1,35 @@
+# Host unit tests for the pure / nearly-pure firmware files. No ESP-IDF, no framework.
+# Build:  cmake -S test/host -B <builddir> && cmake --build <builddir> && ctest --test-dir <builddir> --output-on-failure
+cmake_minimum_required(VERSION 3.16)
+project(car_hvac_host_tests C)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+enable_testing()
+
+option(RUN_KNOWN_BUG_TESTS "Also build the checks that document known firmware bugs (they fail)" OFF)
+
+set(MAIN ${CMAKE_CURRENT_SOURCE_DIR}/../../main)
+add_compile_options(-Wall -Wextra)
+if(RUN_KNOWN_BUG_TESTS)
+  add_compile_definitions(KNOWN_BUG_TESTS=1)
+endif()
+
+# settings.c + settings_table.c against the fake IDF (fakes/) and stubbed apply callbacks.
+add_library(fw_settings STATIC ${MAIN}/settings.c ${MAIN}/settings_table.c stubs.c fakes/fake_idf.c)
+target_include_directories(fw_settings PUBLIC fakes ${MAIN})
+target_link_libraries(fw_settings PUBLIC m)
+
+function(host_test name)
+  add_executable(${name} ${name}.c ${ARGN})
+  target_include_directories(${name} PRIVATE fakes ${MAIN} .)
+  target_link_libraries(${name} PRIVATE m)
+  add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+host_test(test_settings_table)
+target_link_libraries(test_settings_table PRIVATE fw_settings)
+host_test(test_nvs_schema)
+target_link_libraries(test_nvs_schema PRIVATE fw_settings)
+host_test(test_comfort ${MAIN}/comfort.c)
+host_test(test_cascade ${MAIN}/cascade.c)
+host_test(test_cobs ${MAIN}/cobs_protocol.c)
