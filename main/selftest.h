@@ -3,8 +3,8 @@
  * @brief Boot self-test: what answered, what is calibrated, what is missing.
  *
  * INTERFACE (lead). Implemented by WP-H in selftest.c. Runs in its own short-lived
- * task started after the background tasks; waits (max 60 s) for calibration to
- * finish, then checks and publishes. Results go to the event log (EVT_FAULT /
+ * task started after the background tasks; waits for calibration to finish (at most
+ * its timeout, about 4 min, see TB6612_CALIB_MAX_MS), then checks and publishes. Results go to the event log (EVT_FAULT /
  * EVT_INFO) and to the UI via the getters (the UI shows the summary 5 s after boot
  * and the fault badge uses selftest_overall()).
  */

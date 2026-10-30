@@ -1211,10 +1211,8 @@ void tb6612fng_valve_task(void *pvParameters)
  ******************************************************************************/
 
 // Calibration sampling parameters
-#define CALIB_SETTLE_TIME_MS      500    // Wait for motor to settle after direction change
 #define CALIB_MARKER_ADC          60     // ADC% to use as rotation marker
 #define CALIB_MARKER_TOLERANCE    2      // +/- tolerance for marker detection
-#define CALIB_MAX_ROTATION_TIME   120000 // Max time for one rotation (120 seconds at slower speed)
 #define CALIB_MIN_SAMPLES         200    // Minimum samples before looking for marker again (ensure full rotation)
 #define CALIB_MOTOR_SPEED         50     // Slow speed during calibration for better ADC capture
 #define CALIB_MIN_RANGE           20     // Minimum ADC range required for valid calibration

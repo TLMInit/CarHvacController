@@ -290,7 +290,7 @@ generated Montserrat 14/16 subsets with æ/ø/å; the main page keeps its fonts.
 |---|---|---|---|
 | `settings_nvs` | 1 | event + 2 s debounce | only task that writes `hvac_cfg` values |
 | `console_repl` | 2 | on input | runs apply callbacks of what it sets |
-| `selftest` | 2 | once, then deleted | waits for calibration, max 60 s |
+| `selftest` | 2 | once, then deleted | waits for calibration, at most its timeout (about 4 min, `TB6612_CALIB_MAX_MS` + 3 s) |
 | `wifi_ap` | 3 | event | starts/stops the AP and the HTTP server |
 | `httpd` | IDF default | on request | thread-safe getters only; OTA uploads stream in chunks |
 | `node_ota` | — | per upload | streams a node image over the link, one command per mutex hold |

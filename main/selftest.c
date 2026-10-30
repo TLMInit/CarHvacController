@@ -25,7 +25,7 @@ static const char *TAG = "SELFTEST";
 #define SELFTEST_TASK_STACK     3072
 #define SELFTEST_TASK_PRIO      2
 #define SELFTEST_SETTLE_MS      3000    // sensors need a few cycles before their status means anything
-#define SELFTEST_MAX_WAIT_MS    60000
+#define SELFTEST_MAX_WAIT_MS    (SELFTEST_SETTLE_MS + TB6612_CALIB_MAX_MS)    // a calibration ends (done or timed out) by then
 #define SELFTEST_POLL_MS        250
 
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -190,7 +190,7 @@ static void selftest_task(void *arg)
     for (;;) {
         int64_t elapsed = esp_timer_get_time() / 1000 - start_ms;
         if (elapsed >= SELFTEST_MAX_WAIT_MS) {
-            ESP_LOGW(TAG, "Calibration still running after %d s, testing anyway", SELFTEST_MAX_WAIT_MS / 1000);
+            ESP_LOGW(TAG, "Calibration still running after %d s, testing anyway", (int)(SELFTEST_MAX_WAIT_MS / 1000));
             break;
         }
         if (elapsed >= SELFTEST_SETTLE_MS && !tb6612fng_is_calibrating()) {

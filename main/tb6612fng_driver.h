@@ -21,6 +21,12 @@
 #define VALVE_MIN_SPEED             30      // butterfly valves
 #define COOLANT_MIN_SPEED           100     // coolant valve
 
+// Calibration timing. Each valve runs its own state machine (valves calibrate in parallel):
+// seek the marker (<= CALIB_MAX_ROTATION_TIME), settle, rotate once (<= CALIB_MAX_ROTATION_TIME).
+#define CALIB_SETTLE_TIME_MS        500     // Wait for motor to settle after direction change
+#define CALIB_MAX_ROTATION_TIME     120000  // Max time for one phase (120 seconds at slower speed)
+#define TB6612_CALIB_MAX_MS         (2 * CALIB_MAX_ROTATION_TIME + CALIB_SETTLE_TIME_MS)  // longest calibration of one valve
+
 #ifdef __cplusplus
 extern "C" {
 #endif
