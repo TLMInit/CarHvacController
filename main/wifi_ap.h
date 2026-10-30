@@ -25,6 +25,8 @@ esp_err_t wifi_ap_init(void);
 void wifi_ap_apply_settings(void);
 
 bool wifi_ap_is_on(void);
+/** Last AP start failure ("esp_wifi_start: ESP_ERR_NO_MEM"), "" when none. Retried every second. */
+const char *wifi_ap_last_error(void);
 const char *wifi_ap_ssid(void);             /* "HVAC-1A2B" */
 int wifi_ap_client_count(void);
 uint32_t wifi_ap_remaining_s(void);         /* 10MIN mode: seconds left without a client, else 0 */

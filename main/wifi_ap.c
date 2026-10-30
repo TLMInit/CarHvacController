@@ -28,6 +28,7 @@ static const char *TAG = "WIFI_AP";
 #define AP_CHANNEL          1
 #define AP_MAX_CLIENTS      2
 #define AP_IDLE_TIMEOUT_US  (10LL * 60 * 1000000)
+#define AP_ERR_LOG_US       (10LL * 1000000)    /* a failing start is retried every second, logged every 10 s */
 
 static TaskHandle_t s_task;
 static char s_ssid[12];
@@ -35,6 +36,8 @@ static volatile bool s_on;
 static volatile int s_clients;
 static volatile int64_t s_idle_since_us;    /* last moment a client was connected (or AP start) */
 static volatile bool s_ten_min;             /* AP is on under the 10MIN rule */
+static char s_last_error[48];               /* last start failure, "" after a successful start */
+static int64_t s_last_error_log_us = -AP_ERR_LOG_US;
 
 static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
@@ -52,16 +55,30 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
     event_log_add(EVT_INFO, "%s: %d phone(s) connected", s_ssid, s_clients);
 }
 
-static void ap_start(void)
+// A failure is retried by ap_task every second; it is logged (console and event log) at most
+// once per 10 s and kept for the diagnostics page until a start succeeds
+static void start_failed(const char *step, esp_err_t err)
+{
+    snprintf(s_last_error, sizeof(s_last_error), "%s: %s", step, esp_err_to_name(err));
+    int64_t now = esp_timer_get_time();
+    if (now - s_last_error_log_us >= AP_ERR_LOG_US) {
+        s_last_error_log_us = now;
+        ESP_LOGE(TAG, "AP start failed (%s), retrying every second; free internal heap %u",
+                 s_last_error, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+        event_log_add(EVT_FAULT, "AP start failed: %s", s_last_error);
+    }
+}
+
+static esp_err_t ap_start(void)
 {
     if (s_on) {
-        return;
+        return ESP_OK;
     }
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
     esp_err_t err = esp_wifi_init(&init);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_wifi_init: %s", esp_err_to_name(err));
-        return;
+        start_failed("esp_wifi_init", err);
+        return err;
     }
     wifi_config_t cfg = {
         .ap = {
@@ -79,10 +96,11 @@ static void ap_start(void)
     if ((err = esp_wifi_set_mode(WIFI_MODE_AP)) != ESP_OK ||
         (err = esp_wifi_set_config(WIFI_IF_AP, &cfg)) != ESP_OK ||
         (err = esp_wifi_start()) != ESP_OK) {
-        ESP_LOGE(TAG, "AP start failed: %s", esp_err_to_name(err));
+        start_failed("esp_wifi_start", err);
         esp_wifi_deinit();
-        return;
+        return err;
     }
+    s_last_error[0] = '\0';
     s_clients = 0;
     s_idle_since_us = esp_timer_get_time();
     s_on = true;
@@ -91,6 +109,7 @@ static void ap_start(void)
     ESP_LOGI(TAG, "Free internal heap with AP on: %u (largest block %u)",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+    return ESP_OK;
 }
 
 static void ap_stop(const char *why)
@@ -115,13 +134,14 @@ static void ap_task(void *arg)
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
         int mode = settings_get_int(SET_WIFI_AP_MODE);
         if (mode != applied) {
-            applied = mode;
             s_ten_min = (mode == SET_AP_10MIN);
             if (mode == SET_AP_OFF) {
                 ap_stop("setting off");
-            } else {
-                ap_start();
+                s_last_error[0] = '\0';
+                applied = mode;
+            } else if (ap_start() == ESP_OK) {
                 s_idle_since_us = esp_timer_get_time();     /* re-selecting 10MIN restarts the window */
+                applied = mode;                             /* only now: a failed start is retried */
             }
         }
         if (s_on && s_ten_min && s_clients == 0 &&
@@ -157,6 +177,11 @@ void wifi_ap_apply_settings(void)
     if (s_task) {
         xTaskNotifyGive(s_task);
     }
+}
+
+const char *wifi_ap_last_error(void)
+{
+    return s_last_error;
 }
 
 bool wifi_ap_is_on(void)

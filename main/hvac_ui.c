@@ -12,6 +12,7 @@
 #include "hvac_sensors.h"
 #include "remote_io.h"
 #include "tb6612fng_driver.h"
+#include "wifi_ap.h"
 
 #include "esp_log.h"
 #include "esp_system.h"
@@ -90,7 +91,7 @@ static ui_label_t lbl_compressor;
 static ui_label_t lbl_fan;
 static ui_label_t lbl_night;
 static ui_label_t lbl_diag_fault;
-static ui_label_t lbl_diag_rows[13];
+static ui_label_t lbl_diag_rows[14];
 
 static uint32_t s_last_diag_refresh_ms;
 static uint32_t s_last_stats_log_ms;
@@ -991,7 +992,7 @@ static void make_debug_screen(void)
     lv_obj_set_scroll_dir(body, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(body, LV_SCROLLBAR_MODE_AUTO);
 
-    static const char *initial[13] = {
+    static const char *initial[14] = {
         "CABIN --.-C  RH --%  DUCT --.-C",
         "MODE OFF  FAN AUTO  BLOWER --%",
         "A/C REQ OFF  COMP OFF  RECIRC OFF",
@@ -1004,9 +1005,10 @@ static void make_debug_screen(void)
         "THERMAL: --",
         "UPTIME --  HEAP --KB",
         "REMOTE TX -- RX -- CRC -- TO --",
-        "LINK --"
+        "LINK --",
+        "WI-FI --"
     };
-    for (size_t i = 0; i < 13; ++i) {
+    for (size_t i = 0; i < 14; ++i) {
         ui_make_label(body, &lbl_diag_rows[i], initial[i], 0, (lv_coord_t)i * 18,
                    308, 18, &lv_font_montserrat_14, UI_COLOR_TEXT, LV_TEXT_ALIGN_LEFT);
     }
@@ -1144,6 +1146,16 @@ static void update_diagnostics(const hvac_state_t *state, bool link_ok)
                  (unsigned long)crc, (unsigned long)timeout);
     ui_label_set(&lbl_diag_rows[12], link_ok ? "LINK CONNECTED" : "LINK LOST");
     ui_label_set_color(&lbl_diag_rows[12], link_ok ? UI_COLOR_ACCENT : UI_COLOR_FAULT);
+
+    const char *wifi_err = wifi_ap_last_error();
+    if (wifi_err[0]) {
+        ui_label_format(&lbl_diag_rows[13], "WI-FI FAILED %s", wifi_err);
+    } else if (wifi_ap_is_on()) {
+        ui_label_format(&lbl_diag_rows[13], "WI-FI ON %d PHONE(S)", wifi_ap_client_count());
+    } else {
+        ui_label_set(&lbl_diag_rows[13], "WI-FI OFF");
+    }
+    ui_label_set_color(&lbl_diag_rows[13], wifi_err[0] ? UI_COLOR_FAULT : UI_COLOR_TEXT);
 }
 
 esp_err_t hvac_ui_init(void)
