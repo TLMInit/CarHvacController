@@ -12,10 +12,10 @@ the full `@flash_args` set both work. Coming from v2.0 or earlier, flash the ful
 
 1. **Lost stop (1).** System in AUTO, Diagnostics → Valve service open on one valve. Change the
    setpoint so that valve moves; the instant it reaches its target, pull the node's RX wire
-   (display TX → node RX). Reconnect within a few seconds. The motor must stop within one
-   second of reconnecting, and the event log shows `V<n> stop resent after a lost command`.
-   (While the wire is out the node's link watchdog also stops all outputs after 500 ms; the
-   check is that the display re-asserts the stop itself.)
+   (display TX → node RX) and reconnect it within 2 s. The motor must stop within one second
+   of reconnecting, and the event log shows `V<n> stop resent after a lost command`. Keep the
+   wire out for less than 3 s: after 3 s of silence the node's own link watchdog
+   (`LINK_WATCHDOG_MS`) stops every output, which would hide whether the display resent the stop.
 2. **Stored calibration (2).** Mode OFF so every butterfly valve closes, wait until they have
    stopped, reboot. Repeat once. Each boot logs `V<n>: accepted stored (...)` for V0–V3 and no
    valve rotates.
