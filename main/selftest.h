@@ -27,7 +27,7 @@ typedef enum {
     SELFTEST_FAIL,      /* a function is unavailable */
 } selftest_result_t;
 
-#define SELFTEST_MAX_ITEMS      12
+#define SELFTEST_MAX_ITEMS      14      /* 12 in use (v2.4: + Evaporator sensor), two spare */
 #define SELFTEST_DETAIL_LEN     40
 
 typedef struct {
