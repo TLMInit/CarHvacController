@@ -5,12 +5,7 @@
 
 #include "bts7960_driver.h"
 #include "hvac_hw_config.h"
-#if USE_REMOTE_IO
 #include "remote_io.h"
-#else
-#include "driver/gpio.h"
-#include "driver/ledc.h"
-#endif
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -59,15 +54,9 @@ static void set_pwm_duty(uint16_t duty)
 {
     // BTS7960: R_EN tied to 3V3, L_EN tied to GND
     // Only R_PWM is connected for speed control
-#if USE_REMOTE_IO
     // Map duty (0-1023) to 0-255 for remote PWM
     uint8_t duty_8bit = (duty > 1023) ? 255 : (duty >> 2);
     last_command_ok = (remote_pwm_set_duty(BTS7960_RPWM, duty_8bit) == ESP_OK);
-#else
-    last_command_ok = true;
-    ledc_set_duty(BTS7960_LEDC_MODE, BTS7960_RPWM_CHANNEL, duty);
-    ledc_update_duty(BTS7960_LEDC_MODE, BTS7960_RPWM_CHANNEL);
-#endif
 }
 
 static uint16_t percent_to_duty(uint8_t percent)
@@ -104,7 +93,6 @@ esp_err_t bts7960_init(void)
     blower_state.is_enabled = false;
     blower_state.is_ramping = false;
     
-#if USE_REMOTE_IO
     // Configure PWM channel on IO Node (25kHz, 10-bit resolution)
     ESP_LOGI(TAG, "Configuring remote PWM for blower...");
     esp_err_t ret = remote_pwm_configure(BTS7960_RPWM, 25000, 10);
@@ -113,7 +101,6 @@ esp_err_t bts7960_init(void)
     } else {
         ESP_LOGI(TAG, "BTS7960 remote IO configured");
     }
-#endif
     
     // R_EN is hardwired to 3V3, L_EN is hardwired to GND
     // Driver is always enabled, just set PWM to 0

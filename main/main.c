@@ -25,7 +25,6 @@
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "driver/i2c_master.h"
-#include "driver/ledc.h"
 #include "esp_heap_caps.h"
 #include "esp_app_desc.h"
 
@@ -40,9 +39,7 @@
 
 // HVAC modules
 #include "hvac_hw_config.h"
-#if USE_REMOTE_IO
 #include "remote_io.h"
-#endif
 #include "tb6612fng_driver.h"
 #include "bts7960_driver.h"
 #include "ads1115_driver.h"
@@ -357,7 +354,6 @@ void app_main(void)
     ESP_LOGI(TAG, "Initializing hardware...");
     bool io_node_ready = true;   // false: node never answered at boot
 
-#if USE_REMOTE_IO
     // Initialize Remote IO Node communication FIRST
     ESP_LOGI(TAG, "Initializing Remote IO Node connection...");
     ESP_ERROR_CHECK(remote_io_init(REMOTE_IO_UART_NUM, REMOTE_IO_TX_PIN, 
@@ -382,9 +378,6 @@ void app_main(void)
         }
         remote_io_poll_node();
     }
-#else
-    ESP_LOGI(TAG, "Remote IO disabled, using local IO only");
-#endif
     
     // Local GPIO initialization (backlight, etc - only pins on this board)
     ESP_ERROR_CHECK(hvac_hw_gpio_init());

@@ -10,7 +10,6 @@
     #define HVAC_HW_CONFIG_H
 
     #include "driver/gpio.h"
-    #include "driver/ledc.h"
     #include "driver/spi_master.h"
     #include "driver/i2c_master.h"
     #include "driver/uart.h"
@@ -18,14 +17,6 @@
     #ifdef __cplusplus
     extern "C" {
     #endif
-
-    /*******************************************************************************
-     * Remote IO Configuration
-     * Set to 1 to use IO Node over UART, 0 for local IO (no UART)
-     * When enabled, TB6612 and BTS7960 commands are sent via UART to the IO Node
-     * using the same pin numbers defined below.
-     ******************************************************************************/
-    #define USE_REMOTE_IO           1
 
     /*******************************************************************************
      * Display Configuration (ST7789 via SPI)
@@ -122,20 +113,6 @@
     // Spare motor output - NOT USED (no more GPIO available)
     // If needed in future, may need to remove some functionality or use I2C GPIO expander
 
-    // TB6612FNG PWM Configuration
-    #define TB6612_PWM_FREQ_HZ      20000   // 20 kHz for quiet operation
-    #define TB6612_PWM_RESOLUTION   LEDC_TIMER_8_BIT
-    #define TB6612_PWM_MAX_DUTY     255
-    #define TB6612_LEDC_TIMER       LEDC_TIMER_1
-    #define TB6612_LEDC_MODE        LEDC_LOW_SPEED_MODE
-
-    // PWM Channels for TB6612FNG motors
-    #define TB6612_1_PWMA_CHANNEL   LEDC_CHANNEL_1
-    #define TB6612_1_PWMB_CHANNEL   LEDC_CHANNEL_2
-    #define TB6612_2_PWMA_CHANNEL   LEDC_CHANNEL_3
-    #define TB6612_2_PWMB_CHANNEL   LEDC_CHANNEL_4
-    #define TB6612_3_PWMA_CHANNEL   LEDC_CHANNEL_5
-
     /*******************************************************************************
      * A/C Compressor Control (via relay on IO Node)
      * GPIO6 on IO Node controls A/C compressor clutch relay
@@ -152,12 +129,7 @@
     // Note: R_EN tied to 3V3, L_EN tied to GND, L_PWM not connected
 
     // BTS7960 PWM Configuration
-    #define BTS7960_PWM_FREQ_HZ     25000   // 25 kHz for quiet blower operation
-    #define BTS7960_PWM_RESOLUTION  LEDC_TIMER_10_BIT
     #define BTS7960_PWM_MAX_DUTY    1023
-    #define BTS7960_LEDC_TIMER      LEDC_TIMER_2
-    #define BTS7960_LEDC_MODE       LEDC_LOW_SPEED_MODE
-    #define BTS7960_RPWM_CHANNEL    LEDC_CHANNEL_6
 
     /*******************************************************************************
      * SHT30-D Sensor Configuration (I2C)
@@ -166,27 +138,16 @@
     #define SHT30_I2C_PORT          I2C_NUM_1       // Use separate I2C bus
     #define SHT30_PIN_SDA           GPIO_NUM_43
     #define SHT30_PIN_SCL           GPIO_NUM_44
-    #define SHT30_I2C_ADDR          0x44            // Default address (ADDR pin LOW)
-    #define SHT30_I2C_SPEED_HZ      100000          // 100 kHz
-
-    /*******************************************************************************
-     * DS18B20 Duct Temperature Sensor (1-Wire) - ON REMOTE IO NODE
-     * - Single sensor for duct air temperature
-     ******************************************************************************/
-    #define DS18B20_ONEWIRE_PIN     GPIO_NUM_7      // On IO Node
-    #define DS18B20_MAX_SENSORS     1
 
     /*******************************************************************************
      * Remote IO Node UART Configuration
      * All GPIO, PWM, I2C, 1-Wire operations go through UART to IO Node
      * IO Node pins: TX=GPIO2, RX=GPIO21 at 921600 baud
      ******************************************************************************/
-    #if USE_REMOTE_IO
     #define REMOTE_IO_UART_NUM      UART_NUM_1
     #define REMOTE_IO_TX_PIN        GPIO_NUM_10     // Controller TX -> IO Node RX (GPIO21)
     #define REMOTE_IO_RX_PIN        GPIO_NUM_11     // Controller RX <- IO Node TX (GPIO2)  
     #define REMOTE_IO_BAUD_RATE     921600
-    #endif // USE_REMOTE_IO
 
     /*******************************************************************************
      * ADS1115 ADC Configuration (I2C) - ON REMOTE IO NODE
@@ -197,7 +158,6 @@
      ******************************************************************************/
     #define ADS1115_I2C_SDA         GPIO_NUM_8      // Sent to IO Node
     #define ADS1115_I2C_SCL         GPIO_NUM_9      // Sent to IO Node
-    #define ADS1115_I2C_SPEED_HZ    400000          // 400 kHz
 
     // ADS1115 I2C Addresses (configurable via ADDR pin)
     #define ADS1115_ADDR_1          0x48            // ADDR pin → GND

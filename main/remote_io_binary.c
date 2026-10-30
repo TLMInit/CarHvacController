@@ -9,7 +9,6 @@
 
 #include "hvac_hw_config.h"
 
-#if USE_REMOTE_IO
 
 #include "remote_io.h"
 #include "cobs_protocol.h"
@@ -1055,4 +1054,3 @@ void remote_io_get_health(remote_io_health_t *out)
     }
 }
 
-#endif // USE_REMOTE_IO

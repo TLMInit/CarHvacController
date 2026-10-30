@@ -25,9 +25,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#if USE_REMOTE_IO
 #include "remote_io.h"
-#endif
 
 static const char *TAG = "HVAC_CTRL";
 
@@ -321,16 +319,12 @@ static void set_ac_compressor(bool on)
         return;  // No change needed
     }
 
-#if USE_REMOTE_IO
     int level = ac_relay_level(on);
     esp_err_t ret = remote_gpio_set_level(AC_RELAY_PIN, level);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set A/C relay: %s", esp_err_to_name(ret));
         return;
     }
-#else
-    gpio_set_level(AC_RELAY_PIN, on ? (AC_RELAY_ACTIVE_HIGH ? 1 : 0) : (AC_RELAY_ACTIVE_HIGH ? 0 : 1));
-#endif
     
     ac_relay_on = on;
     ac_changed_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -345,7 +339,6 @@ static void set_ac_compressor(bool on)
  */
 static void reassert_outputs(void)
 {
-#if USE_REMOTE_IO
     static uint32_t last_ms = 0;
     uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     if (now_ms - last_ms < 1000) {
@@ -354,7 +347,6 @@ static void reassert_outputs(void)
     last_ms = now_ms;
     remote_gpio_set_level(AC_RELAY_PIN, ac_relay_level(ac_relay_on));
     bts7960_refresh();
-#endif
 }
 
 /**
@@ -362,7 +354,6 @@ static void reassert_outputs(void)
  */
 static esp_err_t init_ac_compressor_gpio(void)
 {
-#if USE_REMOTE_IO
     esp_err_t ret = remote_gpio_set_mode(AC_RELAY_PIN, REMOTE_GPIO_OUTPUT);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init A/C relay GPIO: %s", esp_err_to_name(ret));
@@ -371,20 +362,6 @@ static esp_err_t init_ac_compressor_gpio(void)
     // Start with A/C off
     set_ac_compressor(false);
     return ESP_OK;
-#else
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << AC_RELAY_PIN),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    esp_err_t ret = gpio_config(&io_conf);
-    if (ret == ESP_OK) {
-        set_ac_compressor(false);
-    }
-    return ret;
-#endif
 }
 
 // Called by every setter of a persisted setting

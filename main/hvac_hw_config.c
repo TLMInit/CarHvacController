@@ -17,37 +17,7 @@ esp_err_t hvac_hw_gpio_init(void)
     ESP_LOGI(TAG, "Initializing GPIO pins");
     
     
-#if USE_REMOTE_IO
     ESP_LOGI(TAG, "Remote IO enabled - skipping local TB6612 GPIO config");
-#else
-    gpio_config_t io_conf = {
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-
-    // TB6612FNG #1 GPIO configuration (STBY hardwired to 3V3)
-    io_conf.pin_bit_mask = (1ULL << TB6612_1_AIN1) |
-                           (1ULL << TB6612_1_AIN2) |
-                           (1ULL << TB6612_1_BIN1) |
-                           (1ULL << TB6612_1_BIN2);
-    ESP_ERROR_CHECK(gpio_config(&io_conf));
-    
-    // TB6612FNG #2 GPIO configuration (STBY hardwired to 3V3)
-    io_conf.pin_bit_mask = (1ULL << TB6612_2_AIN1) |
-                           (1ULL << TB6612_2_AIN2) |
-                           (1ULL << TB6612_2_BIN1) |
-                           (1ULL << TB6612_2_BIN2);
-    ESP_ERROR_CHECK(gpio_config(&io_conf));
-    
-    // TB6612FNG #3 GPIO configuration (STBY hardwired to 3V3)
-    // Only configure coolant valve (Motor A), spare motor (Motor B) is NC
-    io_conf.pin_bit_mask = (1ULL << TB6612_3_AIN1) |
-                           (1ULL << TB6612_3_AIN2);
-    ESP_ERROR_CHECK(gpio_config(&io_conf));
-    // Note: TB6612_3_BIN1, BIN2 (spare motor) not configured - NC for now
-#endif
     
     // BTS7960: R_EN hardwired to 3V3, L_EN hardwired to GND
     // No GPIO control needed for enable pins
@@ -95,101 +65,7 @@ esp_err_t hvac_hw_pwm_init(void)
 {
     ESP_LOGI(TAG, "Initializing PWM timers and channels");
     
-#if !USE_REMOTE_IO
-    // TB6612FNG PWM Timer configuration
-    ledc_timer_config_t tb6612_timer = {
-        .speed_mode = TB6612_LEDC_MODE,
-        .timer_num = TB6612_LEDC_TIMER,
-        .duty_resolution = TB6612_PWM_RESOLUTION,
-        .freq_hz = TB6612_PWM_FREQ_HZ,
-        .clk_cfg = LEDC_AUTO_CLK,
-    };
-    ESP_ERROR_CHECK(ledc_timer_config(&tb6612_timer));
-    
-    // BTS7960 PWM Timer configuration
-    ledc_timer_config_t bts7960_timer = {
-        .speed_mode = BTS7960_LEDC_MODE,
-        .timer_num = BTS7960_LEDC_TIMER,
-        .duty_resolution = BTS7960_PWM_RESOLUTION,
-        .freq_hz = BTS7960_PWM_FREQ_HZ,
-        .clk_cfg = LEDC_AUTO_CLK,
-    };
-    ESP_ERROR_CHECK(ledc_timer_config(&bts7960_timer));
-    
-    // TB6612FNG #1 Motor A PWM channel
-    ledc_channel_config_t tb6612_1_pwma = {
-        .speed_mode = TB6612_LEDC_MODE,
-        .channel = TB6612_1_PWMA_CHANNEL,
-        .timer_sel = TB6612_LEDC_TIMER,
-        .intr_type = LEDC_INTR_DISABLE,
-        .gpio_num = TB6612_1_PWMA,
-        .duty = 0,
-        .hpoint = 0,
-    };
-    ESP_ERROR_CHECK(ledc_channel_config(&tb6612_1_pwma));
-    
-    // TB6612FNG #1 Motor B PWM channel
-    ledc_channel_config_t tb6612_1_pwmb = {
-        .speed_mode = TB6612_LEDC_MODE,
-        .channel = TB6612_1_PWMB_CHANNEL,
-        .timer_sel = TB6612_LEDC_TIMER,
-        .intr_type = LEDC_INTR_DISABLE,
-        .gpio_num = TB6612_1_PWMB,
-        .duty = 0,
-        .hpoint = 0,
-    };
-    ESP_ERROR_CHECK(ledc_channel_config(&tb6612_1_pwmb));
-    
-    // TB6612FNG #2 Motor A PWM channel (Foot valve)
-    ledc_channel_config_t tb6612_2_pwma = {
-        .speed_mode = TB6612_LEDC_MODE,
-        .channel = TB6612_2_PWMA_CHANNEL,
-        .timer_sel = TB6612_LEDC_TIMER,
-        .intr_type = LEDC_INTR_DISABLE,
-        .gpio_num = TB6612_2_PWMA,
-        .duty = 0,
-        .hpoint = 0,
-    };
-    ESP_ERROR_CHECK(ledc_channel_config(&tb6612_2_pwma));
-    
-    // TB6612FNG #2 Motor B PWM channel (Windscreen valve)
-    ledc_channel_config_t tb6612_2_pwmb = {
-        .speed_mode = TB6612_LEDC_MODE,
-        .channel = TB6612_2_PWMB_CHANNEL,
-        .timer_sel = TB6612_LEDC_TIMER,
-        .intr_type = LEDC_INTR_DISABLE,
-        .gpio_num = TB6612_2_PWMB,
-        .duty = 0,
-        .hpoint = 0,
-    };
-    ESP_ERROR_CHECK(ledc_channel_config(&tb6612_2_pwmb));
-    
-    // TB6612FNG #3 Motor A PWM channel (Coolant valve)
-    ledc_channel_config_t tb6612_3_pwma = {
-        .speed_mode = TB6612_LEDC_MODE,
-        .channel = TB6612_3_PWMA_CHANNEL,
-        .timer_sel = TB6612_LEDC_TIMER,
-        .intr_type = LEDC_INTR_DISABLE,
-        .gpio_num = TB6612_3_PWMA,
-        .duty = 0,
-        .hpoint = 0,
-    };
-    ESP_ERROR_CHECK(ledc_channel_config(&tb6612_3_pwma));
-    
-    // BTS7960 RPWM channel (L_PWM not connected)
-    ledc_channel_config_t bts7960_rpwm = {
-        .speed_mode = BTS7960_LEDC_MODE,
-        .channel = BTS7960_RPWM_CHANNEL,
-        .timer_sel = BTS7960_LEDC_TIMER,
-        .intr_type = LEDC_INTR_DISABLE,
-        .gpio_num = BTS7960_RPWM,
-        .duty = 0,
-        .hpoint = 0,
-    };
-    ESP_ERROR_CHECK(ledc_channel_config(&bts7960_rpwm));
-#else
     ESP_LOGI(TAG, "Remote IO mode - skipping local motor PWM configuration");
-#endif
     
     ESP_LOGI(TAG, "PWM initialization complete");
     return ESP_OK;

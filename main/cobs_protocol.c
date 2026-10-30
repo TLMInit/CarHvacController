@@ -5,7 +5,6 @@
 
 #include "hvac_hw_config.h"
 
-#if USE_REMOTE_IO
 
 #include "cobs_protocol.h"
 #include <string.h>
@@ -313,4 +312,3 @@ void cobs_receiver_reset(cobs_receiver_t *rx)
     rx->frame_len = 0;
 }
 
-#endif // USE_REMOTE_IO

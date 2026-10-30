@@ -1,15 +1,4 @@
 dependencies:
-  espressif/ds18b20:
-    component_hash: 9792f38a20eb2fe7435cba349e3b4b7085381f05400233aacd849ced69e2207f
-    dependencies:
-    - name: espressif/onewire_bus
-      registry_url: https://components.espressif.com
-      require: private
-      version: ^1.0.0
-    source:
-      registry_url: https://components.espressif.com/
-      type: service
-    version: 0.2.0
   espressif/esp_lcd_touch:
     component_hash: 3f85a7d95af876f1a6ecca8eb90a81614890d0f03a038390804e5a77e2caf862
     dependencies:
@@ -34,16 +23,6 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.1.1
-  espressif/onewire_bus:
-    component_hash: 11729fd9a5de80225177a61e9cd77de91683b8ec300e83710d5327b666dbe884
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.0'
-    source:
-      registry_url: https://components.espressif.com/
-      type: service
-    version: 1.0.4
   idf:
     source:
       type: idf
@@ -56,11 +35,9 @@ dependencies:
       type: service
     version: 8.4.0
 direct_dependencies:
-- espressif/ds18b20
 - espressif/esp_lcd_touch_cst816s
-- espressif/onewire_bus
 - idf
 - lvgl/lvgl
-manifest_hash: 862581d6ef89736323b1907f6a9f1e34923e175272244c9ea303d0918d9b2206
+manifest_hash: 5d8be75f73f021b2dc5fe80847eefdbe6057d611b8b2aeea76e788365f6078e8
 target: esp32s3
 version: 3.0.0

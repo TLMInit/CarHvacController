@@ -18,23 +18,18 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "driver/gpio.h"
-#include "driver/ledc.h"
-#if USE_REMOTE_IO
 #include "remote_io.h"
-#endif
 
 static const char *TAG = "TB6612FNG";
 
 /*******************************************************************************
  * Motor Channel Configuration
- * Uses standard TB6612_* pin defines - routed via remote IO when USE_REMOTE_IO=1
+ * Uses standard TB6612_* pin defines, routed to the remote IO node
  ******************************************************************************/
 typedef struct {
     int in1;                    // GPIO pin number for IN1
     int in2;                    // GPIO pin number for IN2
     int pwm_pin;                // GPIO pin number for PWM
-    ledc_channel_t pwm_channel; // LEDC channel (used when local IO)
 } motor_config_t;
 
 static const motor_config_t motor_configs[HVAC_VALVE_MAX] = {
@@ -43,35 +38,30 @@ static const motor_config_t motor_configs[HVAC_VALVE_MAX] = {
         .in1 = TB6612_1_AIN1,
         .in2 = TB6612_1_AIN2,
         .pwm_pin = TB6612_1_PWMA,
-        .pwm_channel = TB6612_1_PWMA_CHANNEL,
     },
     // Center valve 2 (TB6612 #1, Motor B)
     {
         .in1 = TB6612_1_BIN1,
         .in2 = TB6612_1_BIN2,
         .pwm_pin = TB6612_1_PWMB,
-        .pwm_channel = TB6612_1_PWMB_CHANNEL,
     },
     // Foot valve (TB6612 #2, Motor A)
     {
         .in1 = TB6612_2_AIN1,
         .in2 = TB6612_2_AIN2,
         .pwm_pin = TB6612_2_PWMA,
-        .pwm_channel = TB6612_2_PWMA_CHANNEL,
     },
     // Windscreen valve (TB6612 #2, Motor B)
     {
         .in1 = TB6612_2_BIN1,
         .in2 = TB6612_2_BIN2,
         .pwm_pin = TB6612_2_PWMB,
-        .pwm_channel = TB6612_2_PWMB_CHANNEL,
     },
     // Coolant valve (TB6612 #3, Motor A)
     {
         .in1 = TB6612_3_AIN1,
         .in2 = TB6612_3_AIN2,
         .pwm_pin = TB6612_3_PWMA,
-        .pwm_channel = TB6612_3_PWMA_CHANNEL,
     },
 };
 
@@ -273,7 +263,6 @@ static bool set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *
     bool dir_changed = (valve_id < HVAC_VALVE_MAX && last_motor_dir[valve_id] != direction);
     const char *dir_str = "?";
     
-#if USE_REMOTE_IO
     esp_err_t ret1 = ESP_OK, ret2 = ESP_OK;
     
     switch (direction) {
@@ -306,30 +295,6 @@ static bool set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *
                  esp_err_to_name(ret1), esp_err_to_name(ret2));
     }
     ok = (ret1 == ESP_OK && ret2 == ESP_OK);
-#else
-    switch (direction) {
-        case TB6612_DIR_STOP:
-            gpio_set_level(config->in1, 0);
-            gpio_set_level(config->in2, 0);
-            dir_str = "STOP";
-            break;
-        case TB6612_DIR_FORWARD:
-            gpio_set_level(config->in1, 1);
-            gpio_set_level(config->in2, 0);
-            dir_str = "FWD";
-            break;
-        case TB6612_DIR_REVERSE:
-            gpio_set_level(config->in1, 0);
-            gpio_set_level(config->in2, 1);
-            dir_str = "REV";
-            break;
-        case TB6612_DIR_BRAKE:
-            gpio_set_level(config->in1, 1);
-            gpio_set_level(config->in2, 1);
-            dir_str = "BRAKE";
-            break;
-    }
-#endif
 
     if (valve_id < HVAC_VALVE_MAX) {
         last_motor_dir[valve_id] = direction;
@@ -343,7 +308,6 @@ static bool set_motor_direction(hvac_valve_id_t valve_id, const motor_config_t *
 
 static bool set_motor_speed(const motor_config_t *config, uint8_t speed)
 {
-#if USE_REMOTE_IO
     esp_err_t ret = remote_pwm_set_duty(config->pwm_pin, speed);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "PWM set failed for pin %d: %s", config->pwm_pin, esp_err_to_name(ret));
@@ -351,11 +315,6 @@ static bool set_motor_speed(const motor_config_t *config, uint8_t speed)
     }
     ESP_LOGD(TAG, "PWM pin=%d duty=%d", config->pwm_pin, speed);
     return true;
-#else
-    ledc_set_duty(TB6612_LEDC_MODE, config->pwm_channel, speed);
-    ledc_update_duty(TB6612_LEDC_MODE, config->pwm_channel);
-    return true;
-#endif
 }
 
 static uint32_t motor_now_ms(void)

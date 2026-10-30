@@ -1142,7 +1142,6 @@ static void update_diagnostics(const hvac_state_t *state, bool link_ok)
                  (unsigned long)(uptime_sec / 3600U),
                  (unsigned long)((uptime_sec % 3600U) / 60U),
                  (unsigned long)(esp_get_free_heap_size() / 1024U));
-#if USE_REMOTE_IO
     uint32_t tx = 0, rx = 0, crc = 0, timeout = 0;
     remote_io_get_stats(&tx, &rx, &crc, &timeout);
     ui_label_format(&lbl_diag_rows[11], "REMOTE TX %lu RX %lu CRC %lu TO %lu",
@@ -1150,10 +1149,6 @@ static void update_diagnostics(const hvac_state_t *state, bool link_ok)
                  (unsigned long)crc, (unsigned long)timeout);
     ui_label_set(&lbl_diag_rows[12], link_ok ? "LINK CONNECTED" : "LINK LOST");
     ui_label_set_color(&lbl_diag_rows[12], link_ok ? UI_COLOR_ACCENT : UI_COLOR_FAULT);
-#else
-    ui_label_set(&lbl_diag_rows[11], "REMOTE IO DISABLED");
-    ui_label_set(&lbl_diag_rows[12], "LOCAL IO");
-#endif
 }
 
 esp_err_t hvac_ui_init(void)
@@ -1218,11 +1213,7 @@ void hvac_ui_update(void)
     const uint64_t started_us = esp_timer_get_time();
     hvac_state_t state;
     ui_get_state(&state);
-#if USE_REMOTE_IO
     const bool link_ok = remote_io_is_connected();
-#else
-    const bool link_ok = true;
-#endif
 
     if (!isnan(state.target_temp_c)) {
         float target = state.temp_unit == TEMP_UNIT_CELSIUS

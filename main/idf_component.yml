@@ -2,8 +2,3 @@ dependencies:
   idf: ">=5.2"
   lvgl/lvgl: "~8.4.0"
   espressif/esp_lcd_touch_cst816s: "^1.0.3"
-  # DS18B20 temperature sensor (1-Wire) library; 0.4.0 breaks the IDF 6.1 component solver
-  espressif/ds18b20: "0.2.0"
-  # OneWire bus driver for DS18B20
-  espressif/onewire_bus: "1.0.4"
-  # Note: SHT30-D uses custom driver (new I2C master API), not esp-idf-lib

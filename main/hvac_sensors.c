@@ -2,9 +2,9 @@
  * @file hvac_sensors.c
  * @brief HVAC Sensor Management Implementation
  * 
- * Uses ESP-IDF managed components:
+ * Sensors are read on the remote IO node via UART:
  * - BME280 for cabin temperature and humidity (via remote I2C)
- * - espressif/ds18b20 and espressif/onewire_bus for DS18B20 duct sensor
+ * - DS18B20 duct sensor (via remote 1-Wire)
  * - ADS1115 driver for valve position feedback via analog inputs
  */
 
@@ -22,37 +22,14 @@
 #include <math.h>
 #include <string.h>
 
-#if !USE_REMOTE_IO
-#include "driver/i2c_master.h"
-// DS18B20 library from espressif components
-#include "onewire_bus.h"
-#include "ds18b20.h"
-#else
 // Remote IO for sensor reading via UART
 #include "remote_io.h"
 #include "cobs_protocol.h"
 #include "sensor_roles.h"
 #include "nvs.h"
 #include <stdio.h>
-#endif
 
 static const char *TAG = "HVAC_SENSORS";
-
-/*******************************************************************************
- * SHT30 Register Definitions (using new I2C master API)
- ******************************************************************************/
-#define SHT30_CMD_MEASURE_HIGH_REP      0x2400  // High repeatability, no clock stretch
-#define SHT30_CMD_SOFT_RESET            0x30A2
-#define SHT30_CMD_READ_STATUS           0xF32D
-
-#if !USE_REMOTE_IO
-// Store the sensor I2C bus handle
-static i2c_master_bus_handle_t sensor_i2c_bus_handle = NULL;
-static i2c_master_dev_handle_t sht30_dev_handle = NULL;
-static bool sht30_initialized = false;
-static onewire_bus_handle_t onewire_bus = NULL;
-static ds18b20_device_handle_t ds18b20_duct = NULL;
-#endif
 
 // Sensor data storage
 static sensor_data_t sensor_data[SENSOR_MAX];
@@ -76,221 +53,6 @@ static uint32_t get_time_ms(void)
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
 
-#if !USE_REMOTE_IO
-
-// CRC-8 calculation for SHT30
-static uint8_t sht30_crc8(const uint8_t *data, size_t len)
-{
-    uint8_t crc = 0xFF;
-    for (size_t i = 0; i < len; i++) {
-        crc ^= data[i];
-        for (int j = 0; j < 8; j++) {
-            if (crc & 0x80) {
-                crc = (crc << 1) ^ 0x31;
-            } else {
-                crc <<= 1;
-            }
-        }
-    }
-    return crc;
-}
-
-static esp_err_t init_sht30(void)
-{
-    ESP_LOGI(TAG, "Initializing SHT30-D sensor (new I2C master API)");
-    
-    if (sensor_i2c_bus_handle == NULL) {
-        ESP_LOGE(TAG, "Sensor I2C bus not initialized");
-        sensor_data[SENSOR_CABIN_TEMP].status = SENSOR_STATUS_NOT_FOUND;
-        sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_NOT_FOUND;
-        return ESP_ERR_INVALID_STATE;
-    }
-    
-    // Add SHT30 device to the I2C bus
-    i2c_device_config_t dev_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = SHT30_I2C_ADDR,
-        .scl_speed_hz = SHT30_I2C_SPEED_HZ,
-    };
-    
-    esp_err_t ret = i2c_master_bus_add_device(sensor_i2c_bus_handle, &dev_cfg, &sht30_dev_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to add SHT30 to I2C bus: %s", esp_err_to_name(ret));
-        sensor_data[SENSOR_CABIN_TEMP].status = SENSOR_STATUS_NOT_FOUND;
-        sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_NOT_FOUND;
-        return ret;
-    }
-    
-    // Send soft reset command
-    uint8_t cmd[2] = {(SHT30_CMD_SOFT_RESET >> 8) & 0xFF, SHT30_CMD_SOFT_RESET & 0xFF};
-    ret = i2c_master_transmit(sht30_dev_handle, cmd, 2, 100);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "SHT30 soft reset failed (sensor may not be connected): %s", esp_err_to_name(ret));
-        sensor_data[SENSOR_CABIN_TEMP].status = SENSOR_STATUS_NOT_FOUND;
-        sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_NOT_FOUND;
-        return ret;
-    }
-    
-    vTaskDelay(pdMS_TO_TICKS(20));  // Wait for reset
-    
-    sht30_initialized = true;
-    ESP_LOGI(TAG, "SHT30-D initialized successfully");
-    return ESP_OK;
-}
-
-static esp_err_t init_ds18b20_sensors(void)
-{
-    ESP_LOGI(TAG, "Initializing DS18B20 duct sensor on 1-Wire bus (GPIO %d)", DS18B20_ONEWIRE_PIN);
-    esp_err_t ret;
-    
-    // Initialize 1-Wire bus for DS18B20 duct sensor
-    onewire_bus_config_t bus_config = {
-        .bus_gpio_num = DS18B20_ONEWIRE_PIN,
-    };
-    onewire_bus_rmt_config_t rmt_config = {
-        .max_rx_bytes = 10,
-    };
-    
-    ret = onewire_new_bus_rmt(&bus_config, &rmt_config, &onewire_bus);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to create 1-Wire bus: %s", esp_err_to_name(ret));
-        sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_NOT_FOUND;
-        return ret;
-    }
-    
-    // Search for DS18B20 device on the bus
-    onewire_device_iter_handle_t iter = NULL;
-    ret = onewire_new_device_iter(onewire_bus, &iter);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to create device iterator");
-        return ret;
-    }
-    
-    onewire_device_t device;
-    ret = onewire_device_iter_get_next(iter, &device);
-    onewire_del_device_iter(iter);
-    
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "No DS18B20 found for duct sensor");
-        sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_NOT_FOUND;
-        return ESP_OK;
-    }
-    
-    ESP_LOGI(TAG, "Found 1-Wire device: %016llX", device.address);
-    
-    // Initialize duct temperature sensor
-    ds18b20_config_t ds_config = {};
-    ret = ds18b20_new_device_from_enumeration(&device, &ds_config, &ds18b20_duct);
-    if (ret == ESP_OK) {
-        ds18b20_set_resolution(ds18b20_duct, DS18B20_RESOLUTION_12B);
-        ESP_LOGI(TAG, "DS18B20 duct sensor initialized (address: %016llX)", device.address);
-    } else {
-        ESP_LOGE(TAG, "Failed to create DS18B20 duct device");
-        sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_NOT_FOUND;
-    }
-    
-    return ESP_OK;
-}
-
-static void read_sht30(void)
-{
-    if (!sht30_initialized || sht30_dev_handle == NULL) {
-        return;
-    }
-    
-    esp_err_t ret;
-    float temperature = NAN, humidity = NAN;
-    
-    // Send measurement command (high repeatability, no clock stretching)
-    uint8_t cmd[2] = {(SHT30_CMD_MEASURE_HIGH_REP >> 8) & 0xFF, SHT30_CMD_MEASURE_HIGH_REP & 0xFF};
-    ret = i2c_master_transmit(sht30_dev_handle, cmd, 2, 100);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "SHT30 measure command failed: %s", esp_err_to_name(ret));
-        goto update_status;
-    }
-    
-    // Wait for measurement (max 15ms for high repeatability)
-    vTaskDelay(pdMS_TO_TICKS(20));
-    
-    // Read 6 bytes: temp_msb, temp_lsb, temp_crc, hum_msb, hum_lsb, hum_crc
-    uint8_t data[6];
-    ret = i2c_master_receive(sht30_dev_handle, data, 6, 100);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "SHT30 read failed: %s", esp_err_to_name(ret));
-        goto update_status;
-    }
-    
-    // Verify CRC for temperature
-    if (sht30_crc8(data, 2) != data[2]) {
-        ESP_LOGW(TAG, "SHT30 temperature CRC error");
-        ret = ESP_ERR_INVALID_CRC;
-        goto update_status;
-    }
-    
-    // Verify CRC for humidity
-    if (sht30_crc8(data + 3, 2) != data[5]) {
-        ESP_LOGW(TAG, "SHT30 humidity CRC error");
-        ret = ESP_ERR_INVALID_CRC;
-        goto update_status;
-    }
-    
-    // Convert raw values to temperature and humidity
-    uint16_t temp_raw = (data[0] << 8) | data[1];
-    uint16_t hum_raw = (data[3] << 8) | data[4];
-    
-    temperature = -45.0f + 175.0f * ((float)temp_raw / 65535.0f);
-    humidity = 100.0f * ((float)hum_raw / 65535.0f);
-
-update_status:
-    if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        if (ret == ESP_OK) {
-            sensor_data[SENSOR_CABIN_TEMP].value = temperature;
-            sensor_data[SENSOR_CABIN_TEMP].status = SENSOR_STATUS_OK;
-            sensor_data[SENSOR_CABIN_TEMP].last_update_ms = get_time_ms();
-            
-            sensor_data[SENSOR_CABIN_HUMIDITY].value = humidity;
-            sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_OK;
-            sensor_data[SENSOR_CABIN_HUMIDITY].last_update_ms = get_time_ms();
-            
-            ESP_LOGD(TAG, "SHT30: %.1f°C, %.1f%%RH", temperature, humidity);
-        } else {
-            sensor_data[SENSOR_CABIN_TEMP].status = SENSOR_STATUS_ERROR;
-            sensor_data[SENSOR_CABIN_HUMIDITY].status = SENSOR_STATUS_ERROR;
-        }
-        xSemaphoreGive(sensor_mutex);
-    }
-}
-
-static void read_ds18b20_duct(void)
-{
-    if (ds18b20_duct == NULL) {
-        return;
-    }
-    
-    float temperature;
-    esp_err_t ret = ds18b20_trigger_temperature_conversion(ds18b20_duct);
-    if (ret == ESP_OK) {
-        vTaskDelay(pdMS_TO_TICKS(100));
-        ret = ds18b20_get_temperature(ds18b20_duct, &temperature);
-    }
-    
-    if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        if (ret == ESP_OK) {
-            sensor_data[SENSOR_DUCT_TEMP].value = temperature;
-            sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_OK;
-            sensor_data[SENSOR_DUCT_TEMP].last_update_ms = get_time_ms();
-            ESP_LOGD(TAG, "Duct temp: %.1f°C", temperature);
-        } else {
-            sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_ERROR;
-            ESP_LOGW(TAG, "DS18B20 duct read error");
-        }
-        xSemaphoreGive(sensor_mutex);
-    }
-}
-
-#endif // !USE_REMOTE_IO
-
-#if USE_REMOTE_IO
 // Remote sensor reading functions using UART protocol
 
 // --- BME280 calibration helpers (remote I2C) ---
@@ -924,7 +686,6 @@ static void read_remote_temperature_sensors(void)
     // Read ambient (cabin) temp/humidity via BME280 I2C
     read_remote_bme280();
 }
-#endif
 
 #define VALVE_FEEDBACK_FAIL_LIMIT   3   // consecutive failed/good reads to declare feedback lost/back
 
@@ -964,11 +725,6 @@ esp_err_t hvac_sensors_init(i2c_master_bus_handle_t i2c_bus)
 {
     ESP_LOGI(TAG, "Initializing HVAC sensors");
     
-#if !USE_REMOTE_IO
-    // Store the I2C bus handle for SHT30
-    sensor_i2c_bus_handle = i2c_bus;
-#endif
-    
     // Create mutexes
     sensor_mutex = xSemaphoreCreateMutex();
     if (sensor_mutex == NULL) {
@@ -983,16 +739,8 @@ esp_err_t hvac_sensors_init(i2c_master_bus_handle_t i2c_bus)
         sensor_data[i].last_update_ms = 0;
     }
     
-#if !USE_REMOTE_IO
-    // Initialize SHT30-D using new I2C master API
-    init_sht30();
-    
-    // Initialize DS18B20 sensors
-    init_ds18b20_sensors();
-#else
     ESP_LOGI(TAG, "Remote IO mode - skipping local sensor initialization");
     roles_load();
-#endif
     
     ESP_LOGI(TAG, "HVAC sensors initialization complete");
     return ESP_OK;
@@ -1000,25 +748,6 @@ esp_err_t hvac_sensors_init(i2c_master_bus_handle_t i2c_bus)
 
 void hvac_sensors_deinit(void)
 {
-#if !USE_REMOTE_IO
-    if (ds18b20_coolant) {
-        ds18b20_del_device(ds18b20_coolant);
-        ds18b20_coolant = NULL;
-    }
-    if (ds18b20_duct) {
-        ds18b20_del_device(ds18b20_duct);
-        ds18b20_duct = NULL;
-    }
-    if (onewire_bus) {
-        onewire_bus_del(onewire_bus);
-        onewire_bus = NULL;
-    }
-    if (sht30_dev_handle) {
-        i2c_master_bus_rm_device(sht30_dev_handle);
-        sht30_dev_handle = NULL;
-        sht30_initialized = false;
-    }
-#endif
     if (sensor_mutex) {
         vSemaphoreDelete(sensor_mutex);
         sensor_mutex = NULL;
@@ -1027,13 +756,7 @@ void hvac_sensors_deinit(void)
 
 esp_err_t hvac_sensors_read_all(void)
 {
-#if !USE_REMOTE_IO
-    read_sht30();
-    read_ds18b20_coolant();
-    read_ds18b20_duct();
-#else
     read_remote_temperature_sensors();
-#endif
     read_valve_positions();
     
     // Return OK if at least one sensor is working
@@ -1165,24 +888,16 @@ void hvac_sensors_task(void *pvParameters)
 
     while (1) {
         esp_task_wdt_reset();
-#if USE_REMOTE_IO
         // Node uptime and reset reason: tells a node restart apart from lost replies
         if (get_time_ms() - last_node_poll_ms >= 10000) {
             last_node_poll_ms = get_time_ms();
             remote_io_poll_node();
         }
-#endif
         read_valve_positions();
 
         if (get_time_ms() - last_temps_ms >= TEMP_READ_INTERVAL_MS) {
             last_temps_ms = get_time_ms();
-#if USE_REMOTE_IO
             read_remote_temperature_sensors();
-#else
-            read_sht30();
-            read_ds18b20_coolant();
-            read_ds18b20_duct();
-#endif
         }
 
         vTaskDelay(pdMS_TO_TICKS(calibration_mode ? CALIB_SENSOR_INTERVAL_MS : sensor_interval_ms));
