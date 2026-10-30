@@ -24,8 +24,21 @@ static void test_ends_near_pot_limits(void)
     CHECK(!valve_cal_store_plausible(NULL, 50));
 }
 
+/* The pot's dead gap reads 0 % or 98 % on the bench: calibration must not call it a stall. */
+static void test_pot_gap(void)
+{
+    CHECK(valve_cal_in_pot_gap(0));
+    CHECK(valve_cal_in_pot_gap(VALVE_POT_GAP_LOW_PCT));
+    CHECK(!valve_cal_in_pot_gap(VALVE_POT_GAP_LOW_PCT + 1));
+    CHECK(!valve_cal_in_pot_gap(50));
+    CHECK(!valve_cal_in_pot_gap(VALVE_POT_GAP_HIGH_PCT - 1));
+    CHECK(valve_cal_in_pot_gap(98));
+    CHECK(valve_cal_in_pot_gap(100));
+}
+
 int main(void)
 {
+    RUN(test_pot_gap);
     RUN(test_range_only_with_slack);
     RUN(test_ends_near_pot_limits);
     T_DONE();

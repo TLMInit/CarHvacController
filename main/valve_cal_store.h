@@ -50,6 +50,13 @@ esp_err_t valve_cal_store_erase_all(void);
  *  closed, so a reading in a deadzone is fine. */
 bool valve_cal_store_plausible(const valve_cal_record_t *rec, uint8_t current_adc);
 
+/** The butterfly pot turns continuously; in its dead gap the wiper is off the track and the
+ *  reading parks at the top or bottom (98 % / 0 % on the bench) for several seconds at
+ *  calibration speed. True for such a reading: calibration does not count it as a stall. */
+#define VALVE_POT_GAP_LOW_PCT   2
+#define VALVE_POT_GAP_HIGH_PCT  96
+bool valve_cal_in_pot_gap(uint8_t adc);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1304,9 +1304,12 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
         prog->state = CALIB_STATE_FAILED;
     }
 
-    // Same stall rule as normal control while the motor is driven
+    // Same stall rule as normal control while the motor is driven, except inside the pot's dead
+    // gap: calibration must cross it, and at calibration speed that takes longer than the stall
+    // time (bench: ~10 s). There the calibration timeout is the bound.
     if (prog->state == CALIB_STATE_SEEKING_MARKER || prog->state == CALIB_STATE_ROTATING) {
-        if (abs((int)current_adc - (int)prog->stall_ref_adc) >= VALVE_MOVEMENT_THRESHOLD) {
+        if (abs((int)current_adc - (int)prog->stall_ref_adc) >= VALVE_MOVEMENT_THRESHOLD ||
+            valve_cal_in_pot_gap(current_adc)) {
             prog->stall_ref_adc = current_adc;
             prog->stall_ref_ms = now_ms;
         } else if (now_ms - prog->stall_ref_ms > s_vc.stall_ms) {
