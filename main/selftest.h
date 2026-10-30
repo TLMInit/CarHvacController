@@ -4,7 +4,7 @@
  *
  * INTERFACE (lead). Implemented by WP-H in selftest.c. Runs in its own short-lived
  * task started after the background tasks; waits for calibration to finish (at most
- * its timeout, about 4 min, see TB6612_CALIB_MAX_MS), then checks and publishes. Results go to the event log (EVT_FAULT /
+ * its timeout, about 4 min, see tb6612fng_calib_max_ms(), SET_CAL_TIMEOUT_S), then checks and publishes. Results go to the event log (EVT_FAULT /
  * EVT_INFO) and to the UI via the getters (the UI shows the summary 5 s after boot
  * and the fault badge uses selftest_overall()).
  */

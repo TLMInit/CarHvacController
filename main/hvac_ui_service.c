@@ -53,7 +53,8 @@ static void jog_stop(void)
 
 static bool service_allowed(const hvac_state_t *st, const tb6612_valve_info_t *vi)
 {
-    return st->mode == HVAC_MODE_OFF && !vi->calibrating && !tb6612fng_is_calibrating();
+    return st->mode == HVAC_MODE_OFF && !vi->calibrating && !tb6612fng_is_calibrating() &&
+           tb6612fng_valve_fitted(k_valve_ids[s_valve]);
 }
 
 static void jog_send(void)
@@ -143,9 +144,17 @@ static void learn_tap(lv_event_t *e)
     service_run(NULL);
 }
 
+/* SERVICE settings: the settings page's rows and editor (hvac_ui_settings.c), editable with mode OFF */
+static void settings_tap(lv_event_t *e)
+{
+    (void)e;
+    ui_settings_open_service();
+}
+
 static void valves_open(lv_obj_t *hdr, lv_obj_t *body)
 {
-    (void)hdr;
+    (void)ui_make_button(hdr, ui_lang_da() ? "INDSTIL." : "SETTINGS", 180, 0, 136, UI_HDR_H, UI_FONT_16,
+                         settings_tap, UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
     lv_obj_clear_flag(body, LV_OBJ_FLAG_SCROLLABLE);
     s_jog_dir = 0;
     s_jog_refused = false;
@@ -200,7 +209,10 @@ static void valves_update(void)
 
     const bool fault = vi.stalled || vi.feedback_fault || (st.valve_fault_mask & (1U << s_valve));
     const bool allowed = service_allowed(&st, &vi);
-    if (fault) {
+    if (!tb6612fng_valve_fitted(k_valve_ids[s_valve])) {
+        ui_label_set(&s_v_info[2], "Not fitted (see SETTINGS)");
+        ui_label_set_color(&s_v_info[2], UI_COLOR_TEXT_DIM);
+    } else if (fault) {
         ui_label_format(&s_v_info[2], "FAULT: %s", vi.stalled ? "stalled" :
                         vi.feedback_fault ? "no feedback" : "valve fault");
         ui_label_set_color(&s_v_info[2], UI_COLOR_FAULT);

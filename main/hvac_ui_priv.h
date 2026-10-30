@@ -95,6 +95,7 @@ void ui_settings_init(lv_obj_t *tab);
 void ui_settings_update(void);                     /* tick while the settings tab is shown */
 bool ui_settings_at_root(void);
 void ui_settings_reset_view(void);
+void ui_settings_open_service(void);               /* SERVICE rows (from the valve service page) */
 
 /* hvac_ui_diag.c */
 void ui_diag_init(void);                           /* starts the chart feed timer (SET_CHART_INTERVAL_S) */

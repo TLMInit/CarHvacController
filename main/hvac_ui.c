@@ -1124,8 +1124,12 @@ static void update_diagnostics(const hvac_state_t *state, bool link_ok)
     for (int i = 0; i < HVAC_VALVE_MAX; ++i) {
         uint8_t actual = actuals[i];
         uint8_t target = tb6612fng_get_valve_target(s_valves[i]);
-        ui_label_format(&lbl_diag_rows[3 + i], "%-11s ACT %3u%% TARGET %3u%%",
-                     s_valve_names[i], (unsigned)actual, (unsigned)target);
+        if (!tb6612fng_valve_fitted(s_valves[i])) {
+            ui_label_format(&lbl_diag_rows[3 + i], "%-11s not fitted", s_valve_names[i]);
+        } else {
+            ui_label_format(&lbl_diag_rows[3 + i], "%-11s ACT %3u%% TARGET %3u%%",
+                         s_valve_names[i], (unsigned)actual, (unsigned)target);
+        }
         if (state->valve_fault_mask & (1U << i)) {
             ui_label_set_color(&lbl_diag_rows[3 + i], UI_COLOR_FAULT);
         } else {

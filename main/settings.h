@@ -56,7 +56,7 @@ typedef enum {
     SET_GROUP_VALVES,
     SET_GROUP_CONNECT,
     SET_GROUP_SYSTEM,
-    SET_GROUP_SERVICE,          /* valve service page only, mode OFF (no rows yet) */
+    SET_GROUP_SERVICE,          /* valve service page only, editable with mode OFF */
     SET_GROUP_ADVANCED,         /* phone page only */
     SET_GROUP_AIR,              /* air distribution grid: a sub-page of Valves on the display */
     SET_GROUP_COUNT
@@ -125,7 +125,7 @@ typedef enum {
     SET_DUCT_MAX,               /* float degC, 30..80, default 60 */
 
     /* Valves (index = hvac_valve_id_t) */
-    SET_VALVE_SPEED_0,          /* int PWM, 0 = built-in default, else 30..255 (coolant 100..255); one per valve; caps every move */
+    SET_VALVE_SPEED_0,          /* int PWM, 0 = built-in default, else >= SET_VALVE_MIN_PWM (coolant SET_COOLANT_MIN_PWM) .. 255; one per valve; caps every move */
     SET_VALVE_SPEED_1,
     SET_VALVE_SPEED_2,
     SET_VALVE_SPEED_3,
@@ -194,6 +194,34 @@ typedef enum {
     SET_AIR_FF_C1, SET_AIR_FF_C2, SET_AIR_FF_FOOT, SET_AIR_FF_WS,
     SET_AIR_DEF_C1, SET_AIR_DEF_C2, SET_AIR_DEF_FOOT, SET_AIR_DEF_WS,
     SET_AIR_DF_C1, SET_AIR_DF_C2, SET_AIR_DF_FOOT, SET_AIR_DF_WS,
+
+    /* Service (valve service page, editable with mode OFF); defaults = the old constants */
+    SET_VALVE_FITTED_0,         /* bool, default yes; one per valve (hvac_valve_id_t): not fitted = never driven, calibrated or self-tested */
+    SET_VALVE_FITTED_1,
+    SET_VALVE_FITTED_2,
+    SET_VALVE_FITTED_3,
+    SET_VALVE_FITTED_4,
+    SET_WARMUP_FOOT_PCT,        /* int %, 0..100 step 10, default 70: AUTO cold-start foot valve */
+    SET_WARMUP_CENTRE_PCT,      /* int %, 0..100 step 10, default 30: AUTO cold-start centre valves */
+    SET_COLD_HEAT_CENTRE_PCT,   /* int %, 0..100 step 10, default 30: AUTO heating a cold cabin, centres */
+    SET_COLD_HEAT_WS_PCT,       /* int %, 0..100 step 10, default 30: same, windscreen */
+    SET_COOLING_FOOT_PCT,       /* int %, 0..100 step 10, default 30: AUTO cooling, foot */
+    SET_BALANCED_PCT,           /* int %, 0..100 step 10, default 50: AUTO at setpoint and on entry, centres and foot */
+    SET_VALVE_TOL_PCT,          /* int %, 1..10, default 2: "at target" window */
+    SET_VALVE_HYST_PCT,         /* int %, 0..10, default 2: extra error before a stopped valve restarts */
+    SET_VALVE_STALL_S,          /* int s, 2..20, default 6: no movement while driving = stall */
+    SET_VALVE_MOVE_MAX_S,       /* int s, 5..60 step 5, default 20: one move longer than this = stall */
+    SET_VALVE_STALL_RETRIES,    /* int, 1..10, default 3 (at least 1: a rule) */
+    SET_VALVE_RETRY_S,          /* int s, 5..60 step 5, default 10: back-off step between retries */
+    SET_VALVE_MIN_PWM,          /* int PWM, 10..150 step 5, default 30: butterfly ramp floor; floor of SET_VALVE_SPEED_0..3 */
+    SET_VALVE_RAMP_PCT,         /* int %, 5..60 step 5, default 40: butterfly slows below this error */
+    SET_VALVE_FILTER,           /* int /256, 32..255 step 16, default 128: position EMA weight of a new reading */
+    SET_COOLANT_MIN_PWM,        /* int PWM, 10..255 step 5, default 100: coolant ramp floor; floor of SET_VALVE_SPEED_4 */
+    SET_COOLANT_RAMP_PCT,       /* int %, 5..60 step 5, default 20 */
+    SET_JOG_PWM,                /* int PWM, 20..255 step 5, default 40: service jog */
+    SET_LEARN_MS,               /* int ms, 300..3000 step 100, default 800: learn-direction move */
+    SET_CAL_SPEED_PWM,          /* int PWM, 20..255 step 5, default 50 */
+    SET_CAL_TIMEOUT_S,          /* int s, 30..300 step 10, default 120: per calibration phase */
 
     SET_COUNT
 } setting_id_t;
@@ -269,16 +297,18 @@ typedef struct {
     float gap;
 } setting_chain_t;
 
-/* A value that is either 0 (= built-in default) or at least floor. */
+/* A value that is either 0 (= built-in default) or at least the floor setting's value. A set
+ * of the floor setting is clamped to stay at or below a non-zero value; at load the value moves. */
 typedef struct {
     setting_id_t id;
-    float floor;
+    setting_id_t floor_id;
 } setting_floor_t;
 
 typedef struct {                    /* chain and floor both NULL: no rule changed the value */
     const setting_chain_t *chain;
     const setting_operand_t *other; /* chain: the operand that bounds the value */
-    bool other_above;               /* chain: true = the value had to stay below other */
+    bool other_above;               /* chain: true = the value had to stay below other;
+                                     * floor: true = the floor setting had to stay at or below floor->id */
     const setting_floor_t *floor;
 } setting_rule_hit_t;
 

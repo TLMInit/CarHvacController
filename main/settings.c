@@ -203,10 +203,17 @@ static void make_note(setting_id_t id, const setting_rule_hit_t *hit, char *buf,
     bool da = lang_da();
     char val[24], other_val[24], gap[24], rel[64];
     settings_format(id, val, sizeof(val));
+    if (hit->floor && hit->other_above) {
+        char ovr[24];
+        settings_format(hit->floor->id, ovr, sizeof(ovr));
+        snprintf(buf, len, da ? "Sat til %s: må ikke være over %s (%s)" : "Set to %s: must not be above %s (%s)",
+                 val, settings_label(hit->floor->id), ovr);
+        return;
+    }
     if (hit->floor) {
         snprintf(buf, len, da ? "Sat til %s: 0 = standard, ellers mindst %g (ventilen kan sidde fast)"
                               : "Set to %s: 0 = default, else at least %g (the valve may not move)",
-                 val, (double)hit->floor->floor);
+                 val, (double)s_val[hit->floor->floor_id]);
         return;
     }
     fmt_amount(d, settings_operand_value(o), false, other_val, sizeof(other_val));

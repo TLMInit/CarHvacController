@@ -177,12 +177,7 @@
         HVAC_VALVE_MAX
     } hvac_valve_id_t;
 
-    // Valve enable flags - set to 0 to disable unconnected valves during testing
-    #define VALVE_CENTER_1_ENABLED      1   // Center vent valve 1
-    #define VALVE_CENTER_2_ENABLED      1   // Center vent valve 2 (disabled for testing)
-    #define VALVE_FOOT_ENABLED          1   // Foot vent valve (disabled for testing)
-    #define VALVE_WINDSCREEN_ENABLED    1   // Windscreen valve (disabled for testing)
-    #define VALVE_COOLANT_ENABLED       1   // Coolant valve (disabled for testing)
+    // Which valves are fitted: settings SET_VALVE_FITTED_0..4 (valve service page)
 
     /*******************************************************************************
      * HVAC Operating Modes

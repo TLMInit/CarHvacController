@@ -17,15 +17,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// Lowest PWM that overcomes stiction; also the floor of a non-zero SET_VALVE_SPEED_n (settings_table.c)
-#define VALVE_MIN_SPEED             30      // butterfly valves
-#define COOLANT_MIN_SPEED           100     // coolant valve
-
 // Calibration timing. Each valve runs its own state machine (valves calibrate in parallel):
-// seek the marker (<= CALIB_MAX_ROTATION_TIME), settle, rotate once (<= CALIB_MAX_ROTATION_TIME).
+// seek the marker (<= SET_CAL_TIMEOUT_S), settle, rotate once (<= SET_CAL_TIMEOUT_S).
 #define CALIB_SETTLE_TIME_MS        500     // Wait for motor to settle after direction change
-#define CALIB_MAX_ROTATION_TIME     120000  // Max time for one phase (120 seconds at slower speed)
-#define TB6612_CALIB_MAX_MS         (2 * CALIB_MAX_ROTATION_TIME + CALIB_SETTLE_TIME_MS)  // longest calibration of one valve
 
 #ifdef __cplusplus
 extern "C" {
@@ -200,8 +194,20 @@ esp_err_t tb6612fng_service_recalibrate(hvac_valve_id_t valve_id);
 /** Short move, observe the ADC sign, store is_inverted (non-blocking). */
 esp_err_t tb6612fng_service_learn_direction(hvac_valve_id_t valve_id);
 
-/** Re-read the per-valve speed/direction settings and the safe margin (settings apply_cb). */
+/**
+ * Re-read the valve settings into the driver's snapshot (settings apply_cb, and at init), under
+ * valve_mutex so a valve-task pass never sees half a change. Calibration speed and timeout are
+ * latched when a calibration starts. SET_VALVE_FITTED_n: not fitted = stopped once and then never
+ * driven, calibrated or self-tested; fitted again after boot = the boot decision runs for it
+ * (stored calibration if it still fits the pot, else it calibrates).
+ */
 void tb6612fng_apply_settings(void);
+
+/** SET_VALVE_FITTED_n as the driver last applied it. */
+bool tb6612fng_valve_fitted(hvac_valve_id_t valve_id);
+
+/** Longest calibration of one valve in ms with the current settings (two phases + settle). */
+uint32_t tb6612fng_calib_max_ms(void);
 
 #ifdef __cplusplus
 }

@@ -25,7 +25,6 @@ static const char *TAG = "SELFTEST";
 #define SELFTEST_TASK_STACK     3072
 #define SELFTEST_TASK_PRIO      2
 #define SELFTEST_SETTLE_MS      3000    // sensors need a few cycles before their status means anything
-#define SELFTEST_MAX_WAIT_MS    (SELFTEST_SETTLE_MS + TB6612_CALIB_MAX_MS)    // a calibration ends (done or timed out) by then
 #define SELFTEST_POLL_MS        250
 
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -41,14 +40,13 @@ static size_t s_work_count;
 
 static const struct {
     hvac_valve_id_t id;
-    bool enabled;
     const char *name;
-} s_valves[] = {
-    { HVAC_VALVE_CENTER_1,   VALVE_CENTER_1_ENABLED,   "Valve C1" },
-    { HVAC_VALVE_CENTER_2,   VALVE_CENTER_2_ENABLED,   "Valve C2" },
-    { HVAC_VALVE_FOOT,       VALVE_FOOT_ENABLED,       "Valve Foot" },
-    { HVAC_VALVE_WINDSCREEN, VALVE_WINDSCREEN_ENABLED, "Valve WS" },
-    { HVAC_VALVE_COOLANT,    VALVE_COOLANT_ENABLED,    "Valve Coolant" },
+} s_valves[] = {                // a valve set to not fitted (SET_VALVE_FITTED_n) is not tested
+    { HVAC_VALVE_CENTER_1,   "Valve C1" },
+    { HVAC_VALVE_CENTER_2,   "Valve C2" },
+    { HVAC_VALVE_FOOT,       "Valve Foot" },
+    { HVAC_VALVE_WINDSCREEN, "Valve WS" },
+    { HVAC_VALVE_COOLANT,    "Valve Coolant" },
 };
 
 static selftest_item_t *add_item(const char *name, selftest_result_t result, const char *fmt, ...)
@@ -142,7 +140,7 @@ static void check_roles(void)
 static void check_valves(void)
 {
     for (size_t i = 0; i < sizeof(s_valves) / sizeof(s_valves[0]); i++) {
-        if (!s_valves[i].enabled) {
+        if (!tb6612fng_valve_fitted(s_valves[i].id)) {
             continue;
         }
         tb6612_valve_info_t info;
@@ -187,10 +185,12 @@ static void selftest_task(void *arg)
 {
     (void)arg;
     int64_t start_ms = esp_timer_get_time() / 1000;
+    // a calibration ends (done or timed out) by then; read once, with the boot settings
+    const int64_t max_wait_ms = SELFTEST_SETTLE_MS + (int64_t)tb6612fng_calib_max_ms();
     for (;;) {
         int64_t elapsed = esp_timer_get_time() / 1000 - start_ms;
-        if (elapsed >= SELFTEST_MAX_WAIT_MS) {
-            ESP_LOGW(TAG, "Calibration still running after %d s, testing anyway", (int)(SELFTEST_MAX_WAIT_MS / 1000));
+        if (elapsed >= max_wait_ms) {
+            ESP_LOGW(TAG, "Calibration still running after %d s, testing anyway", (int)(max_wait_ms / 1000));
             break;
         }
         if (elapsed >= SELFTEST_SETTLE_MS && !tb6612fng_is_calibrating()) {

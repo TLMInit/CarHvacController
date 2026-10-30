@@ -307,6 +307,9 @@ static esp_err_t settings_post(httpd_req_t *req)
     if (!d) {
         return reply(req, "404 Not Found", false, "Unknown setting");
     }
+    if (d->group == SET_GROUP_SERVICE && hvac_controller_get_mode() != HVAC_MODE_OFF) {
+        return reply(req, "409 Conflict", false, "Service settings change only with mode OFF");
+    }
     const char *v = json_field(body, "value");
     if (!v) {
         return reply(req, "400 Bad Request", false, "Missing \"value\"");

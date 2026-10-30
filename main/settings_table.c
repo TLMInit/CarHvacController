@@ -61,6 +61,7 @@ static const char *const k_ap_da[]      = { "Fra", "Auto-fra", "Altid" };
 #define CN SET_GROUP_CONNECT
 #define SY SET_GROUP_SYSTEM
 #define AD SET_GROUP_ADVANCED
+#define SV SET_GROUP_SERVICE
 #define AR SET_GROUP_AIR
 
 const setting_def_t g_settings_table[SET_COUNT] = {
@@ -202,6 +203,35 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     AIR(SET_AIR_DF_FOOT,   "Def+Foot: foot", "Afrim+fod: fod", 50, "ad_df_ft"),
     AIR(SET_AIR_DF_WS,     "Def+Foot: windscreen", "Afrim+fod: rude", 100, "ad_df_ws"),
 #undef AIR
+
+    /* SERVICE: valve service page, editable with mode OFF; defaults = the old constants.
+     * Valve rows reach the driver's snapshot through tb6612fng_apply_settings(). */
+    BOOL(SET_VALVE_FITTED_0,    SV, "Fitted: center 1", "Monteret: midt 1", 1, "vfit0", apply_valves),
+    BOOL(SET_VALVE_FITTED_1,    SV, "Fitted: center 2", "Monteret: midt 2", 1, "vfit1", apply_valves),
+    BOOL(SET_VALVE_FITTED_2,    SV, "Fitted: foot", "Monteret: fod", 1, "vfit2", apply_valves),
+    BOOL(SET_VALVE_FITTED_3,    SV, "Fitted: windscreen", "Monteret: rude", 1, "vfit3", apply_valves),
+    BOOL(SET_VALVE_FITTED_4,    SV, "Fitted: coolant", "Monteret: kølevand", 1, "vfit4", apply_valves),
+    INT (SET_WARMUP_FOOT_PCT,   SV, "Warm-up foot air", "Opvarmning fodluft", 0, 100, 10, 70, "%", "warm_foot", apply_controller),
+    INT (SET_WARMUP_CENTRE_PCT, SV, "Warm-up centre air", "Opvarmning midtluft", 0, 100, 10, 30, "%", "warm_centre", apply_controller),
+    INT (SET_COLD_HEAT_CENTRE_PCT, SV, "Cold heat centre air", "Kold varme midtluft", 0, 100, 10, 30, "%", "cold_centre", apply_controller),
+    INT (SET_COLD_HEAT_WS_PCT,  SV, "Cold heat windscreen", "Kold varme rude", 0, 100, 10, 30, "%", "cold_ws", apply_controller),
+    INT (SET_COOLING_FOOT_PCT,  SV, "Cooling foot air", "Køling fodluft", 0, 100, 10, 30, "%", "cool_foot", apply_controller),
+    INT (SET_BALANCED_PCT,      SV, "Balanced centre/foot", "Balanceret midt/fod", 0, 100, 10, 50, "%", "balanced", apply_controller),
+    INT (SET_VALVE_TOL_PCT,     SV, "Position tolerance", "Positionstolerance", 1, 10, 1, 2, "%", "v_tol", apply_valves),
+    INT (SET_VALVE_HYST_PCT,    SV, "Restart hysteresis", "Genstart-hysterese", 0, 10, 1, 2, "%", "v_hyst", apply_valves),
+    INT (SET_VALVE_STALL_S,     SV, "Stall timeout", "Stall-tid", 2, 20, 1, 6, "s", "v_stall_s", apply_valves),
+    INT (SET_VALVE_MOVE_MAX_S,  SV, "Max move time", "Maks bevægelsestid", 5, 60, 5, 20, "s", "v_move_s", apply_valves),
+    INT (SET_VALVE_STALL_RETRIES, SV, "Stall retries", "Stall-forsøg", 1, 10, 1, 3, NULL, "v_retries", apply_valves),
+    INT (SET_VALVE_RETRY_S,     SV, "Stall retry wait", "Stall-ventetid", 5, 60, 5, 10, "s", "v_retry_s", apply_valves),
+    INT (SET_VALVE_MIN_PWM,     SV, "Butterfly min speed", "Spjæld min. fart", 10, 150, 5, 30, NULL, "v_min_pwm", apply_valves),
+    INT (SET_VALVE_RAMP_PCT,    SV, "Butterfly slow band", "Spjæld bremsebånd", 5, 60, 5, 40, "%", "v_ramp", apply_valves),
+    INT (SET_VALVE_FILTER,      SV, "Feedback filter", "Positionsfilter", 32, 255, 16, 128, NULL, "v_filter", apply_valves),
+    INT (SET_COOLANT_MIN_PWM,   SV, "Coolant min speed", "Kølevand min. fart", 10, 255, 5, 100, NULL, "c_min_pwm", apply_valves),
+    INT (SET_COOLANT_RAMP_PCT,  SV, "Coolant slow band", "Kølevand bremsebånd", 5, 60, 5, 20, "%", "c_ramp", apply_valves),
+    INT (SET_JOG_PWM,           SV, "Jog speed", "Jog-fart", 20, 255, 5, 40, NULL, "jog_pwm", apply_valves),
+    INT (SET_LEARN_MS,          SV, "Learn-direction move", "Lær-retning bevægelse", 300, 3000, 100, 800, "ms", "learn_ms", apply_valves),
+    INT (SET_CAL_SPEED_PWM,     SV, "Calibration speed", "Kalibreringsfart", 20, 255, 5, 50, NULL, "cal_pwm", apply_valves),
+    INT (SET_CAL_TIMEOUT_S,     SV, "Calibration timeout", "Kalibreringstimeout", 30, 300, 10, 120, "s", "cal_timeout_s", apply_valves),
 };
 
 /* ---- Cross-field rules (see settings.h) ---- */
@@ -218,14 +248,14 @@ const setting_operand_t g_fan_levels[SETTINGS_FAN_LEVELS] = {
     SETTING(SET_FAN_MAX_DUTY),
 };
 
-/* A valve speed override is 0 (built-in default) or at least the stiction floor: below it the
- * driver lowers its ramp minimum to the override and the valve may not move at all. */
+/* A valve speed override is 0 (built-in default) or at least the stiction floor (the min-speed
+ * setting): below it the driver lowers its ramp minimum to the override and the valve may not move. */
 const setting_floor_t g_settings_floors[] = {
-    { SET_VALVE_SPEED_0, VALVE_MIN_SPEED },
-    { SET_VALVE_SPEED_1, VALVE_MIN_SPEED },
-    { SET_VALVE_SPEED_2, VALVE_MIN_SPEED },
-    { SET_VALVE_SPEED_3, VALVE_MIN_SPEED },
-    { SET_VALVE_SPEED_4, COOLANT_MIN_SPEED },
+    { SET_VALVE_SPEED_0, SET_VALVE_MIN_PWM },
+    { SET_VALVE_SPEED_1, SET_VALVE_MIN_PWM },
+    { SET_VALVE_SPEED_2, SET_VALVE_MIN_PWM },
+    { SET_VALVE_SPEED_3, SET_VALVE_MIN_PWM },
+    { SET_VALVE_SPEED_4, SET_COOLANT_MIN_PWM },
 };
 const size_t g_settings_floor_count = sizeof(g_settings_floors) / sizeof(g_settings_floors[0]);
 
@@ -266,11 +296,20 @@ float settings_rules_clamp(setting_id_t id, float v, const float vals[SET_COUNT]
     }
     for (size_t f = 0; f < g_settings_floor_count; f++) {
         const setting_floor_t *fl = &g_settings_floors[f];
-        if (fl->id != id || v == 0.0f || v >= fl->floor) continue;
+        float floor = vals[fl->floor_id];
+        if (fl->floor_id == id) {
+            /* the floor itself: not above an override in use (that valve could not reach it) */
+            if (vals[fl->id] != 0.0f && v > vals[fl->id]) {
+                v = vals[fl->id];
+                h = (setting_rule_hit_t){ .floor = fl, .other_above = true };
+            }
+            continue;
+        }
+        if (fl->id != id || v == 0.0f || v >= floor) continue;
         /* nearest of 0 and the floor; one that is the current value goes the other way, so a
          * -/+ step from the floor reaches 0 and a step from 0 reaches the floor */
-        float near = (v < fl->floor / 2.0f) ? 0.0f : fl->floor;
-        if (near == vals[id]) near = fl->floor - near;
+        float near = (v < floor / 2.0f) ? 0.0f : floor;
+        if (near == vals[id]) near = floor - near;
         v = near;
         h = (setting_rule_hit_t){ .floor = fl };
     }
@@ -304,9 +343,9 @@ int settings_rules_fix(float vals[SET_COUNT])
     }
     for (size_t f = 0; f < g_settings_floor_count; f++) {
         const setting_floor_t *fl = &g_settings_floors[f];
-        float v = vals[fl->id];
-        if (v != 0.0f && v < fl->floor) {
-            vals[fl->id] = (v < fl->floor / 2.0f) ? 0.0f : fl->floor;
+        float v = vals[fl->id], floor = vals[fl->floor_id];
+        if (v != 0.0f && v < floor) {
+            vals[fl->id] = (v < floor / 2.0f) ? 0.0f : floor;
             changed++;
         }
     }

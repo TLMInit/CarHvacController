@@ -167,6 +167,7 @@ typedef struct {
     float heat_gain, heat_gain_min, heat_gain_max;
     uint32_t ac_min_off_ms, ac_min_on_ms;
     uint8_t air[SETTINGS_AIR_MODES][SETTINGS_AIR_VALVES];  // valve % per manual mode (SET_AIR_*)
+    uint8_t warm_foot, warm_centre, cold_centre, cold_ws, cool_foot, balanced;   // AUTO distribution % (SERVICE)
 } ctl_cfg_t;
 
 static ctl_cfg_t cfg;
@@ -181,71 +182,71 @@ static uint32_t cascade_last_ms = 0;
 static bool ac_mem_valid = false;           // user A/C flag remembered on entering DEF
 static bool ac_mem = false;
 
-// Out-of-range values (e.g. before the settings package is wired) fall back to the default
-static float cfg_f(setting_id_t id, float def, float lo, float hi)
-{
-    float v = settings_get_float(id);
-    return (v >= lo && v <= hi) ? v : def;
-}
-
-static int cfg_i(setting_id_t id, int def, int lo, int hi)
-{
-    int v = (int)settings_get_int(id);
-    return (v >= lo && v <= hi) ? v : def;
-}
-
-// Same, with the table's own default and range (no second copy of the default here)
+// The setting, or the table's own default if it is out of the table's range (each default
+// exists once: in the table)
 static float cfg_t(setting_id_t id)
 {
     const setting_def_t *d = settings_def(id);
-    return cfg_f(id, d->def, d->min, d->max);
+    float v = settings_get_float(id);
+    return (v >= d->min && v <= d->max) ? v : d->def;
+}
+
+static int cfg_ti(setting_id_t id)
+{
+    return (int)lroundf(cfg_t(id));
 }
 
 static void cfg_refresh(void)   // caller holds state_mutex (or runs before the task starts)
 {
     ctl_cfg_t n;
     memset(&n, 0, sizeof(n));
-    n.hum_on = cfg_f(SET_HUMIDITY_ON, 65.0f, 50.0f, 90.0f);
-    n.hum_off = cfg_f(SET_HUMIDITY_OFF, 58.0f, 40.0f, 85.0f);
+    n.hum_on = cfg_t(SET_HUMIDITY_ON);
+    n.hum_off = cfg_t(SET_HUMIDITY_OFF);
     if (n.hum_off > n.hum_on - SETTINGS_HUMIDITY_GAP) {     // the settings rule already keeps this
         n.hum_off = n.hum_on - SETTINGS_HUMIDITY_GAP;
     }
-    n.step = cfg_f(SET_SETPOINT_STEP, 0.5f, 0.1f, 1.0f);
-    n.default_setpoint = cfg_f(SET_DEFAULT_SETPOINT, 22.0f, TEMP_MIN_C, TEMP_MAX_C);
-    n.powerup = cfg_i(SET_POWER_UP_STATE, SET_POWERUP_RESTORE, SET_POWERUP_RESTORE, SET_POWERUP_OFF);
+    n.step = cfg_t(SET_SETPOINT_STEP);
+    n.default_setpoint = cfg_t(SET_DEFAULT_SETPOINT);
+    n.powerup = cfg_ti(SET_POWER_UP_STATE);
     n.auto_requests_ac = settings_get_bool(SET_AUTO_REQUESTS_AC);
     n.recirc_fitted = settings_get_bool(SET_RECIRC_FITTED);
     n.def_restores_ac = settings_get_bool(SET_DEF_RESTORES_AC);
-    n.recirc_cancel_min = cfg_i(SET_RECIRC_AUTO_CANCEL_MIN, 0, 0, 60);
-    n.fan_min = cfg_i(SET_FAN_MIN_DUTY, 30, 5, 100);
-    n.fan_max = cfg_i(SET_FAN_MAX_DUTY, 100, 30, 100);
+    n.recirc_cancel_min = cfg_ti(SET_RECIRC_AUTO_CANCEL_MIN);
+    n.fan_min = cfg_ti(SET_FAN_MIN_DUTY);
+    n.fan_max = cfg_ti(SET_FAN_MAX_DUTY);
     if (n.fan_max < n.fan_min) {
         n.fan_max = n.fan_min;
     }
-    n.night_cap = cfg_i(SET_QUIET_NIGHT_CAP, 0, 0, 100);
+    n.night_cap = cfg_ti(SET_QUIET_NIGHT_CAP);
     n.night = settings_get_bool(SET_NIGHT_MODE);
-    switch (cfg_i(SET_AUTO_CURVE, SET_CURVE_NORMAL, SET_CURVE_ECO, SET_CURVE_MAX)) {
+    switch (cfg_ti(SET_AUTO_CURVE)) {
         case SET_CURVE_ECO: n.curve_k = 0.6f; break;
         case SET_CURVE_MAX: n.curve_k = 1.4f; break;
         default:            n.curve_k = 1.0f; break;
     }
-    n.soft_start_ms = (uint32_t)cfg_i(SET_SOFT_START_MS, 500, 0, 3000);
+    n.soft_start_ms = (uint32_t)cfg_ti(SET_SOFT_START_MS);
     n.hd_on = settings_get_bool(SET_HEATER_DELAY);
-    n.hd_temp = cfg_f(SET_HEATER_DELAY_TEMP, 40.0f, 20.0f, 70.0f);
-    n.hd_fan = cfg_i(SET_HEATER_DELAY_FAN, HVAC_FAN_LOW, HVAC_FAN_OFF, HVAC_FAN_HIGH);
-    n.hd_max_ms = (uint32_t)cfg_i(SET_HEATER_DELAY_MAX_MIN, 8, 1, 20) * 60000u;
+    n.hd_temp = cfg_t(SET_HEATER_DELAY_TEMP);
+    n.hd_fan = cfg_ti(SET_HEATER_DELAY_FAN);
+    n.hd_max_ms = (uint32_t)cfg_ti(SET_HEATER_DELAY_MAX_MIN) * 60000u;
     n.defog_on = settings_get_bool(SET_DEFOG);
-    n.defog_margin = cfg_f(SET_DEFOG_MARGIN, 3.0f, 0.0f, 10.0f);
+    n.defog_margin = cfg_t(SET_DEFOG_MARGIN);
     n.defog_uses_ac = settings_get_bool(SET_DEFOG_USES_AC);
-    n.defog_offset = cfg_f(SET_DEFOG_GLASS_OFFSET, 2.0f, -5.0f, 10.0f);
-    n.control_mode = cfg_i(SET_CONTROL_MODE, SET_CONTROL_CLASSIC, SET_CONTROL_CLASSIC, SET_CONTROL_CASCADE);
-    n.casc.outer_kp = cfg_f(SET_CASCADE_OUTER_KP, 0.0f, 0.0f, 20.0f);   // zero gain = that term off
-    n.casc.outer_ki = cfg_f(SET_CASCADE_OUTER_KI, 0.0f, 0.0f, 5.0f);
-    n.casc.inner_kp = cfg_f(SET_CASCADE_INNER_KP, 0.0f, 0.0f, 20.0f);
-    n.casc.inner_ki = cfg_f(SET_CASCADE_INNER_KI, 0.0f, 0.0f, 10.0f);
-    n.casc.duct_min_c = cfg_f(SET_DUCT_MIN, 10.0f, 0.0f, 30.0f);
-    n.casc.duct_max_c = cfg_f(SET_DUCT_MAX, 60.0f, 30.0f, 80.0f);
-    n.unit = cfg_i(SET_TEMP_UNIT, SET_UNIT_C, SET_UNIT_C, SET_UNIT_F);
+    n.defog_offset = cfg_t(SET_DEFOG_GLASS_OFFSET);
+    n.control_mode = cfg_ti(SET_CONTROL_MODE);
+    n.casc.outer_kp = cfg_t(SET_CASCADE_OUTER_KP);     // zero gain = that term off
+    n.casc.outer_ki = cfg_t(SET_CASCADE_OUTER_KI);
+    n.casc.inner_kp = cfg_t(SET_CASCADE_INNER_KP);
+    n.casc.inner_ki = cfg_t(SET_CASCADE_INNER_KI);
+    n.casc.duct_min_c = cfg_t(SET_DUCT_MIN);
+    n.casc.duct_max_c = cfg_t(SET_DUCT_MAX);
+    n.unit = cfg_ti(SET_TEMP_UNIT);
+    n.warm_foot = (uint8_t)cfg_ti(SET_WARMUP_FOOT_PCT);
+    n.warm_centre = (uint8_t)cfg_ti(SET_WARMUP_CENTRE_PCT);
+    n.cold_centre = (uint8_t)cfg_ti(SET_COLD_HEAT_CENTRE_PCT);
+    n.cold_ws = (uint8_t)cfg_ti(SET_COLD_HEAT_WS_PCT);
+    n.cool_foot = (uint8_t)cfg_ti(SET_COOLING_FOOT_PCT);
+    n.balanced = (uint8_t)cfg_ti(SET_BALANCED_PCT);
     n.deadband = cfg_t(SET_TEMP_DEADBAND);
     n.feet_first_c = cfg_t(SET_FEET_FIRST_BELOW);
     n.auto_ws_rh = cfg_t(SET_AUTO_WS_RH);
@@ -529,7 +530,7 @@ static void update_valve_positions(hvac_mode_t mode)
     // OFF closes everything; AUTO starts balanced and then runs its own law
     uint8_t pos[SETTINGS_AIR_VALVES] = { 0 };
     if (mode == HVAC_MODE_AUTO) {
-        pos[HVAC_VALVE_CENTER_1] = pos[HVAC_VALVE_CENTER_2] = pos[HVAC_VALVE_FOOT] = 50;
+        pos[HVAC_VALVE_CENTER_1] = pos[HVAC_VALVE_CENTER_2] = pos[HVAC_VALVE_FOOT] = cfg.balanced;
     } else if (is_grid_mode(mode)) {
         for (int v = 0; v < SETTINGS_AIR_VALVES; v++) {
             pos[v] = air_pct(mode, (hvac_valve_id_t)v);
@@ -861,10 +862,10 @@ static void run_temperature_control(void)
             
             // Air distribution: prioritize windscreen, some to feet for comfort
             want_valve(HVAC_VALVE_WINDSCREEN, 100);
-            want_valve(HVAC_VALVE_FOOT, 70);
-            want_valve(HVAC_VALVE_CENTER_1, 30);
-            want_valve(HVAC_VALVE_CENTER_2, 30);
-            
+            want_valve(HVAC_VALVE_FOOT, cfg.warm_foot);
+            want_valve(HVAC_VALVE_CENTER_1, cfg.warm_centre);
+            want_valve(HVAC_VALVE_CENTER_2, cfg.warm_centre);
+
             // Override fan to high speed during warmup (if in AUTO fan mode)
             if (hvac_state.fan_level == HVAC_FAN_AUTO && !hvac_state.heater_delay_active) {
                 blower_command(BTS7960_FAN_PERCENT_HIGH, true);
@@ -883,21 +884,21 @@ static void run_temperature_control(void)
             // Adjust air distribution based on conditions
             if (hvac_state.is_heating && hvac_state.cabin_temp_c < cfg.feet_first_c) {
                 // Cold cabin - more to feet
-                want_valve(HVAC_VALVE_CENTER_1, 30);
-                want_valve(HVAC_VALVE_CENTER_2, 30);
+                want_valve(HVAC_VALVE_CENTER_1, cfg.cold_centre);
+                want_valve(HVAC_VALVE_CENTER_2, cfg.cold_centre);
                 want_valve(HVAC_VALVE_FOOT, 100);
-                want_valve(HVAC_VALVE_WINDSCREEN, 30);
+                want_valve(HVAC_VALVE_WINDSCREEN, cfg.cold_ws);
             } else if (hvac_state.is_cooling) {
                 // Cooling - more to face
                 want_valve(HVAC_VALVE_CENTER_1, 100);
                 want_valve(HVAC_VALVE_CENTER_2, 100);
-                want_valve(HVAC_VALVE_FOOT, 30);
+                want_valve(HVAC_VALVE_FOOT, cfg.cool_foot);
                 want_valve(HVAC_VALVE_WINDSCREEN, 0);
             } else {
                 // Temperature reached - balanced distribution
-                want_valve(HVAC_VALVE_CENTER_1, 50);
-                want_valve(HVAC_VALVE_CENTER_2, 50);
-                want_valve(HVAC_VALVE_FOOT, 50);
+                want_valve(HVAC_VALVE_CENTER_1, cfg.balanced);
+                want_valve(HVAC_VALVE_CENTER_2, cfg.balanced);
+                want_valve(HVAC_VALVE_FOOT, cfg.balanced);
                 want_valve(HVAC_VALVE_WINDSCREEN, 0);
             }
             

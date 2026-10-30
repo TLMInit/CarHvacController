@@ -171,6 +171,44 @@ static void test_air_grid_defaults(void)
     }
 }
 
+/* Item 11 (SERVICE): every default equals the deleted constant or literal it replaced. */
+static void test_service_defaults(void)
+{
+    static const struct { setting_id_t id; float old; const char *was; } k[] = {
+        { SET_VALVE_FITTED_0, 1, "VALVE_CENTER_1_ENABLED (hvac_hw_config.h)" },
+        { SET_VALVE_FITTED_1, 1, "VALVE_CENTER_2_ENABLED" },
+        { SET_VALVE_FITTED_2, 1, "VALVE_FOOT_ENABLED" },
+        { SET_VALVE_FITTED_3, 1, "VALVE_WINDSCREEN_ENABLED" },
+        { SET_VALVE_FITTED_4, 1, "VALVE_COOLANT_ENABLED" },
+        { SET_WARMUP_FOOT_PCT, 70, "warm-up foot literal 70 (hvac_controller.c)" },
+        { SET_WARMUP_CENTRE_PCT, 30, "warm-up centre literal 30" },
+        { SET_COLD_HEAT_CENTRE_PCT, 30, "AUTO cold heating centre literal 30" },
+        { SET_COLD_HEAT_WS_PCT, 30, "AUTO cold heating windscreen literal 30" },
+        { SET_COOLING_FOOT_PCT, 30, "AUTO cooling foot literal 30" },
+        { SET_BALANCED_PCT, 50, "AUTO balanced / AUTO entry literal 50" },
+        { SET_VALVE_TOL_PCT, 2, "VALVE_POSITION_TOLERANCE" },
+        { SET_VALVE_HYST_PCT, 2, "VALVE_HYSTERESIS" },
+        { SET_VALVE_STALL_S, 6, "VALVE_STALL_TIMEOUT_MS 6000" },
+        { SET_VALVE_MOVE_MAX_S, 20, "VALVE_MAX_MOVE_MS 2 x VALVE_FULL_TRAVEL_TIME_MS 10000" },
+        { SET_VALVE_STALL_RETRIES, 3, "VALVE_STALL_RETRIES" },
+        { SET_VALVE_RETRY_S, 10, "VALVE_STALL_RETRY_MS 10000" },
+        { SET_VALVE_MIN_PWM, 30, "VALVE_MIN_SPEED" },
+        { SET_VALVE_RAMP_PCT, 40, "VALVE_RAMP_START_ERROR" },
+        { SET_VALVE_FILTER, 128, "VALVE_EMA_ALPHA" },
+        { SET_COOLANT_MIN_PWM, 100, "COOLANT_MIN_SPEED" },
+        { SET_COOLANT_RAMP_PCT, 20, "COOLANT_RAMP_START_ERROR" },
+        { SET_JOG_PWM, 40, "SERVICE_JOG_SPEED" },
+        { SET_LEARN_MS, 800, "SERVICE_LEARN_MS" },
+        { SET_CAL_SPEED_PWM, 50, "CALIB_MOTOR_SPEED" },
+        { SET_CAL_TIMEOUT_S, 120, "CALIB_MAX_ROTATION_TIME 120000" },
+    };
+    for (size_t i = 0; i < sizeof(k) / sizeof(k[0]); i++) {
+        const setting_def_t *d = settings_def(k[i].id);
+        CHECKM(d->def == k[i].old, "%s: default %g, old %g", k[i].was, (double)d->def, (double)k[i].old);
+        CHECKM(d->group == SET_GROUP_SERVICE, "%s: group %d", k[i].was, d->group);
+    }
+}
+
 int main(void)
 {
     RUN(test_rows_in_order);
@@ -180,5 +218,6 @@ int main(void)
     RUN(test_decision_defaults);
     RUN(test_old_constant_defaults);
     RUN(test_air_grid_defaults);
+    RUN(test_service_defaults);
     T_DONE();
 }

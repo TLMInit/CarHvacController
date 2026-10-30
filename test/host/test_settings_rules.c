@@ -191,6 +191,27 @@ static void test_duct_gap(void)
     CHECK(settings_get_float(SET_DUCT_MAX) == 30);
 }
 
+/* Item 11: the floor of a speed override is the min-speed setting, not a copy */
+static void test_valve_speed_floor_follows_setting(void)
+{
+    fresh();                                                    /* min PWM 30, calibration speed 50 */
+    CHECK(settings_set_int(SET_VALVE_MIN_PWM, 40) == ESP_OK);
+    CHECK(settings_set_int(SET_VALVE_SPEED_0, 35) == ESP_OK);   /* below the new floor */
+    CHECK(settings_get_int(SET_VALVE_SPEED_0) == 40);
+    CHECKM(noted(SET_VALVE_SPEED_0, "else at least 40"), "note '%s'", s_note);
+    CHECK(settings_set_int(SET_VALVE_SPEED_0, 45) == ESP_OK);
+    CHECK(settings_set_int(SET_VALVE_MIN_PWM, 50) == ESP_OK);   /* floor above an override in use */
+    CHECK(settings_get_int(SET_VALVE_MIN_PWM) == 45);
+    CHECKM(noted(SET_VALVE_MIN_PWM, "must not be above Speed center 1 (45)"), "note '%s'", s_note);
+    CHECK(settings_set_int(SET_COOLANT_MIN_PWM, 120) == ESP_OK);
+    CHECK(settings_set_int(SET_VALVE_SPEED_4, 110) == ESP_OK);  /* coolant floor follows its own setting */
+    CHECK(settings_get_int(SET_VALVE_SPEED_4) == 120);
+
+    boot_with_i32("v_min_pwm", 50, "vspeed0", 40);              /* stored override below the stored floor */
+    CHECK(settings_get_int(SET_VALVE_MIN_PWM) == 50);
+    CHECK(settings_get_int(SET_VALVE_SPEED_0) == 50);
+}
+
 int main(void)
 {
     RUN(test_fan_chain_pure);
@@ -201,5 +222,6 @@ int main(void)
     RUN(test_valve_speed_floor);
     RUN(test_humidity_gap);
     RUN(test_duct_gap);
+    RUN(test_valve_speed_floor_follows_setting);
     T_DONE();
 }

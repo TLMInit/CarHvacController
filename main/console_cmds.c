@@ -13,6 +13,7 @@
 #include "esp_console.h"
 #include "esp_log.h"
 #include "settings.h"
+#include "hvac_controller.h"
 #include "console_cmds.h"
 
 static const char *TAG = "CONSOLE";
@@ -32,6 +33,15 @@ static const setting_def_t *find_key(const char *key)
     }
     printf("unknown key '%s' (see 'list')\n", key);
     return NULL;
+}
+
+/* The display and phone page refuse SERVICE rows unless mode is OFF; the console (a service
+ * technician) may change them anyway, with a warning. */
+static void warn_service(const setting_def_t *d)
+{
+    if (d->group == SET_GROUP_SERVICE && hvac_controller_get_mode() != HVAC_MODE_OFF) {
+        printf("warning: service setting changed while mode is not OFF\n");
+    }
 }
 
 static void print_row(const setting_def_t *d)
@@ -166,6 +176,7 @@ static int cmd_set(int argc, char **argv)
         printf("rejected: %s\n", esp_err_to_name(err));
         return 1;
     }
+    warn_service(d);
     print_row(d);      /* shows the value after clamping/snapping */
     char note[SETTINGS_NOTE_MAX];
     if (settings_last_note(d->id, note, sizeof(note))) {
@@ -190,6 +201,7 @@ static int cmd_reset(int argc, char **argv)
         return 1;
     }
     settings_reset(d->id);
+    warn_service(d);
     print_row(d);
     return 0;
 }

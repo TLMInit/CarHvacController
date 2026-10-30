@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MAX_ROWS        20      /* Valves group: 17 rows; air distribution grid: 20 cells */
+#define MAX_ROWS        26      /* Valves group: 17 rows; air distribution grid: 20 cells; Service: 26 rows */
 #define ROW_H           48
 #define INFO_ROW_H      24
 #define WIFI_REFRESH_MS 500U
@@ -33,7 +33,7 @@ static const name_t k_groups[SET_GROUP_COUNT] = {
     {"Display", "Visning"}, {"Climate", "Klima"}, {"Fan", "Bl\xC3\xA6ser"},
     {"Comfort", "Komfort"}, {"Control", "Regulering"}, {"Valves", "Ventiler"},
     {"Connect", "Forbindelse"}, {"System", "System"},
-    {"Service", "Service"}, {"Advanced", "Avanceret"}, {"Air distribution", "Luftfordeling"},
+    {"Service settings", "Indstillinger"}, {"Advanced", "Avanceret"}, {"Air distribution", "Luftfordeling"},
 };
 
 static const name_t k_air_modes[SETTINGS_AIR_MODES] = {
@@ -67,6 +67,7 @@ static const menu_item_t k_service_menu[] = {
 
 typedef struct {
     setting_id_t id;
+    lv_obj_t *btn;                  /* NULL for grid cells */
     lv_obj_t *name;
     ui_label_t value;
 } row_t;
@@ -85,6 +86,8 @@ static row_t s_rows[MAX_ROWS];
 static size_t s_nrows;
 static ui_label_t s_wifi_state, s_wifi_ssid;
 static bool s_wifi_rows;
+static ui_label_t s_svc_info;       /* Service group: why the rows are read-only */
+static int s_svc_locked = -1;       /* Service group shown: 1 = mode not OFF, rows read-only; -1 = other view */
 
 /* Editor modal (INT / FLOAT). */
 static setting_id_t s_ed_id = SET_COUNT;
@@ -105,7 +108,11 @@ static void go_back(lv_event_t *e)
     case V_PAGE:
         open_view(s_page == &ui_page_valves || s_page == &ui_page_sensors ? V_SERVICE_MENU : V_DIAG_MENU, 0, NULL);
         break;
-    case V_GROUP: case V_DIAG_MENU: case V_SERVICE_MENU:
+    case V_GROUP:
+        if (s_group == SET_GROUP_SERVICE) open_view(V_PAGE, 0, &ui_page_valves);
+        else open_view(V_HOME, 0, NULL);
+        break;
+    case V_DIAG_MENU: case V_SERVICE_MENU:
         open_view(V_HOME, 0, NULL);
         break;
     case V_AIR:
@@ -150,6 +157,17 @@ static void chk(esp_err_t err)
     if (err != ESP_OK) hvac_ui_show_error("Setting was not saved");
 }
 
+/* SERVICE rows change only with mode OFF (the car's air system idle), like the jog buttons */
+static bool service_locked(setting_id_t id)
+{
+    if (settings_def(id)->group != SET_GROUP_SERVICE) return false;
+    hvac_state_t st;
+    ui_get_state(&st);
+    if (st.mode == HVAC_MODE_OFF) return false;
+    hvac_ui_show_error(tr("Set airflow mode OFF first", "S\xC3\xA6t luft-tilstand til FRA"));
+    return true;
+}
+
 static void action_run(void *data)
 {
     chk(settings_set_int((setting_id_t)(intptr_t)data, 1));
@@ -178,7 +196,7 @@ static void editor_note(void)
 static void editor_step(lv_event_t *e)
 {
     intptr_t dir = (intptr_t)ui_button_user_data(e);
-    if (s_ed_id < SET_COUNT) {
+    if (s_ed_id < SET_COUNT && !service_locked(s_ed_id)) {
         chk(settings_step(s_ed_id, (int)dir));
         editor_note();
     }
@@ -187,7 +205,7 @@ static void editor_step(lv_event_t *e)
 static void editor_default(lv_event_t *e)
 {
     (void)e;
-    if (s_ed_id < SET_COUNT) {
+    if (s_ed_id < SET_COUNT && !service_locked(s_ed_id)) {
         chk(settings_reset(s_ed_id));
         editor_note();
     }
@@ -241,6 +259,7 @@ static void row_tap(lv_event_t *e)
 {
     setting_id_t id = (setting_id_t)(intptr_t)ui_button_user_data(e);
     const setting_def_t *d = settings_def(id);
+    if (service_locked(id)) return;
     switch (d->type) {
     case SET_TYPE_BOOL:
         chk(settings_set_int(id, settings_get_bool(id) ? 0 : 1));
@@ -286,6 +305,7 @@ static bool build_row(const setting_def_t *d, void *ctx)
     lv_obj_t *btn = ui_make_button_blank(s_body, 4, b->y, 312, ROW_H, row_tap,
                                          UI_COLOR_SURFACE, UI_COLOR_SURFACE_2);
     ui_button_set_action(btn, row_tap, (void *)(intptr_t)d->id);
+    r->btn = btn;
     b->y += ROW_H;
 
     r->name = lv_label_create(btn);
@@ -349,6 +369,22 @@ static void refresh_wifi(void)
         ui_label_set_color(&s_wifi_state, UI_COLOR_TEXT_DIM);
     }
     ui_label_format(&s_wifi_ssid, "SSID %s", wifi_ap_ssid());
+}
+
+/* Service group: rows enabled only with mode OFF; redrawn only when that changes */
+static void refresh_service_lock(void)
+{
+    if (s_view != V_GROUP || s_group != SET_GROUP_SERVICE) return;
+    hvac_state_t st;
+    ui_get_state(&st);
+    int locked = st.mode != HVAC_MODE_OFF;
+    if (locked == s_svc_locked) return;
+    s_svc_locked = locked;
+    for (size_t i = 0; i < s_nrows; ++i) ui_set_enabled(s_rows[i].btn, !locked);
+    ui_label_set(&s_svc_info, locked ? tr("Read only: set airflow mode OFF to edit", "Kun visning: s\xC3\xA6t luft-tilstand FRA")
+                                     : tr("Mode OFF: changes apply now", "Tilstand FRA: \xC3\xA6ndringer virker nu"));
+    ui_label_set_color(&s_svc_info, locked ? UI_COLOR_WARNING : UI_COLOR_TEXT_DIM);
+    if (locked && s_ed_id < SET_COUNT) ui_modal_close();
 }
 
 static void home_tap(lv_event_t *e)
@@ -453,6 +489,7 @@ static void open_view(view_t view, int group, const ui_page_t *page)
     s_hdr = s_body = NULL;
     s_nrows = 0;
     s_wifi_rows = false;
+    s_svc_locked = -1;
     s_ed_id = SET_COUNT;
     s_view = view;
     s_group = group;
@@ -500,9 +537,14 @@ static void open_view(view_t view, int group, const ui_page_t *page)
         } else if (group == SET_GROUP_VALVES) {
             add_nav_row(0, tr(k_groups[SET_GROUP_AIR].en, k_groups[SET_GROUP_AIR].da), air_tap, NULL);
             b.y = ROW_H;
+        } else if (group == SET_GROUP_SERVICE) {
+            (void)ui_make_label(s_body, &s_svc_info, "", 8, 3, 304, 18, UI_FONT_14,
+                                UI_COLOR_TEXT_DIM, LV_TEXT_ALIGN_LEFT);
+            b.y = INFO_ROW_H;
         }
         settings_iterate(build_row, &b);
         refresh_rows();
+        refresh_service_lock();
         break;
     }
     case V_DIAG_MENU:
@@ -540,6 +582,11 @@ void ui_settings_init(lv_obj_t *tab)
     open_view(V_HOME, 0, NULL);
 }
 
+void ui_settings_open_service(void)
+{
+    open_view(V_GROUP, SET_GROUP_SERVICE, NULL);
+}
+
 void ui_settings_reset_view(void)
 {
     if (s_view != V_HOME) open_view(V_HOME, 0, NULL);
@@ -564,5 +611,6 @@ void ui_settings_update(void)
         if (s_view == V_GROUP || s_view == V_AIR) refresh_rows();
     }
     refresh_wifi();
+    refresh_service_lock();
     if (s_page && s_page->update) s_page->update();
 }
