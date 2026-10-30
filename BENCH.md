@@ -39,8 +39,9 @@ The node is unchanged in this hotfix (`v2.3.1-node` is the same code as `v2.3-no
    setpoint so that valve moves; the instant it reaches its target, pull the node's RX wire
    (display TX → node RX) and reconnect it within 2 s. The motor must stop within one second
    of reconnecting, and the event log shows `V<n> stop resent after a lost command`. Keep the
-   wire out for less than 3 s: after 3 s of silence the node's own link watchdog
-   (`LINK_WATCHDOG_MS`) stops every output, which would hide whether the display resent the stop.
+   wire out for less than 3 s: after 3 s of silence the node's own link watchdog (the display's
+   `REMOTE_IO_LINK_WINDOW_MS` from HELLO; `LINK_WATCHDOG_MS` on a node that has not had one)
+   stops every output, which would hide whether the display resent the stop.
 2. **Stored calibration (2).** Mode OFF so every butterfly valve closes, wait until they have
    stopped, reboot. Repeat once. Each boot logs `V<n>: accepted stored (...)` for V0–V3 and no
    valve rotates.
@@ -92,7 +93,7 @@ Later updates can go over the phone page.
 
 | Expect | Means |
 |---|---|
-| `SETTINGS: hvac_cfg schema 1: N keys loaded, 0 rejected, 66 rows total` | settings loaded |
+| `SETTINGS: hvac_cfg schema 1: N keys loaded, 0 rejected, 141 rows total` | settings loaded |
 | `HELLO: node protocol 2, caps 0x03 (search ota), ionode 2.3 (...)` | handshake; pad off from here |
 | `1-Wire search: 1 ROM(s)` and `Sensor roles: single ROM assigned DUCT (migration from 2.0)` | existing duct sensor kept its role |
 | `V0: recalibrating: no stored calibration (...)` then `CALIBRATED`, same for V1–V3; `V4: fixed calibration (linear valve)` | first boot stores calibration |
@@ -114,7 +115,7 @@ control is seconds instead of a full calibration round.
    setpoint clears the preset highlight.
 5. A/C off, quick DEF, leave DEF: A/C is off again.
 6. Diagnostics → Link health: RTT last/p95 in the low ms, 0 timeouts/min at rest.
-7. Diagnostics → Trend chart: one point every 10 s.
+7. Diagnostics → Trend chart: one point every 10 s (default of Display → Trend point every, 5..60 s).
 8. Mode OFF → Service → Valve service: hold + on a valve, it moves; release, it stops. With
    mode AUTO the jog buttons are greyed with the reason.
 9. Service → Sensor roles: Search lists each DS18B20 with its temperature; assign a second
@@ -122,8 +123,9 @@ control is seconds instead of a full calibration round.
 
 ## 5. Console
 
-`list fan` · `set fan_max 80` (reboot after 2 s: `1 keys loaded`) · `set hum_on 55` then
-`get hum_off` → 53 · `reset all`.
+`list fan` · `set fan_max 80` (reboot after 2 s: `1 keys loaded`) · `set hum_on 55` → `note:` set to 60, at
+least 2 %RH above Humidity A/C off (the other setting is never moved), so `get hum_off` → 58 ·
+`reset all`.
 
 ## 6. Phone page and updates
 
@@ -156,7 +158,7 @@ Cold start in AUTO, then drive. Check and note:
 
 Optional, one at a time, each on its own drive: heater delay on; dew-point defog on (needs an
 outside sensor); Control mode: Cascade. Cascade gains are first guesses — if the cabin
-overshoots by more than 1 °C or the coolant valve swings, lower `CASCADE_OUTER_KP` first.
+overshoots by more than 1 °C or the coolant valve swings, lower Control → Cabin loop Kp (`outer_kp`) first.
 
 ## What to send back
 

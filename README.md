@@ -8,7 +8,7 @@ and README), reached over UART at 921600 baud with COBS + CRC16 frames.
 | Doc | What is in it |
 |---|---|
 | `BENCH.md` | How to flash and check a release on the bench and in the car |
-| `DECISIONS.md` | Every decision taken for v2.1 / v2.2 and why |
+| `DECISIONS.md` | Every decision taken for v2.1 to v2.3 and why |
 | `DESIGN.md` | UI design, page map, module and task layout |
 | `REVIEW.md` | The review findings and their status |
 | `CHANGELOG.md` | What changed per release |
@@ -31,12 +31,15 @@ place, so settings, valve calibration and thermal learning survive.
 ## Using it
 
 - **Pages**: swipe main ↔ diagnostics ↔ settings. Settings holds the presets, the eight
-  setting groups, diagnostics (event log, link health, self-test, trend chart) and service
-  (valve jog/recalibrate/learn direction, sensor roles). Valve service needs mode OFF.
+  setting groups (Valves starts with the air distribution grid), diagnostics (event log, link
+  health, self-test, trend chart) and service (valve jog/recalibrate/learn direction, the
+  Service settings, sensor roles). Valve service and the Service settings need mode OFF. The
+  Advanced group is on the phone page only.
 - **Presets**: long press AUTO, or the first settings row.
 - **Console** (USB, same port as the log): `list [group]`, `get <key>`, `set <key> <value>`,
   `reset <key|all>`, `help`. Example: `set fan_max 80`.
-- **Phone page**: Settings → Connect → Phone Wi-Fi (off / 10 min / always). Join
+- **Phone page**: Settings → Connect → Phone Wi-Fi (Off / Auto off / Always; Auto off after
+  Connect → Wi-Fi auto-off after, default 10 min). Join
   `HVAC-xxxx` with the password shown there and open `http://192.168.4.1`: status, settings,
   event log, diagnostics and firmware upload for the display and the node. Uploads are
   refused unless the system is OFF and the blower has stopped.
@@ -46,8 +49,9 @@ place, so settings, valve calibration and thermal learning survive.
 
 ## Tests
 
-Host unit tests (no ESP-IDF, no hardware) live in `test/host/`: settings table, NVS schema/migration
-(`settings_ns_open` against a fake NVS), dew point and defog, cascade control, COBS + CRC and the pad rule.
+Host unit tests (no ESP-IDF, no hardware) live in `test/host/`: settings table and cross-field rules,
+NVS schema/migration (`settings_ns_open` against a fake NVS), dew point and defog, cascade control,
+COBS + CRC and the pad rule, valve motor bookkeeping, valve calibration records, OTA image check.
 Firmware sources are compiled as they are; ESP-IDF headers are faked under `test/host/fakes/`.
 
 ```

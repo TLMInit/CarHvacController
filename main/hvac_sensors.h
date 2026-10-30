@@ -114,7 +114,7 @@ float hvac_sensors_get_duct_temp(void);
 
 /**
  * @brief Enable/disable calibration mode for fast valve position reads
- * @param enabled true for fast reads (50ms), false for normal interval
+ * @param enabled true for fast reads (25 ms, CALIB_SENSOR_INTERVAL_MS), false for normal interval
  */
 void hvac_sensors_set_calibration_mode(bool enabled);
 

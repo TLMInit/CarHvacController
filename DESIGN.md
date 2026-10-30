@@ -96,7 +96,7 @@ Illustrative readings only. The first row shows the controller-reported operatin
 
 The fault explanation wraps rather than silently clipping. The scrolling content lists all five valves in the specified order. Actual and target positions are both open % (v2.2): actuals come from `tb6612fng_get_valve_position()` through `hvac_sensors_get_all()` into the `hvac_state_t` fields, targets from `tb6612fng_get_valve_target()` for the matching `hvac_valve_id_t`. Any valve whose bit is set in `valve_fault_mask` is highlighted and named in the fault explanation.
 
-The `DAY/NIGHT` target is 100×48 px. It switches the backlight through the existing `hvac_ui_set_brightness()` API, persists `night_mode` in NVS namespace `hvac` next to the existing controller settings, and restores it at boot. Defaults are DAY 80% and NIGHT 18%. These are proposed starting values and should be adjusted after night driving tests.
+The `DAY/NIGHT` target is 100×48 px. It switches the backlight through the existing `hvac_ui_set_brightness()` API, persists the choice as the setting `SET_NIGHT_MODE` (key `night_mode` in NVS namespace `hvac_cfg` since v2.1), and restores it at boot. Defaults are DAY 80 % and NIGHT 20 % (`SET_BRIGHT_DAY` / `SET_BRIGHT_NIGHT`, Settings → Display). These are proposed starting values and should be adjusted after night driving tests.
 
 `RESET CAL` opens a modal; no calibration reset happens until `RESET CAL` is confirmed. Both `KEEP MODEL` and `RESET CAL` are 144×48 px targets. `SAVE CAL` is 96×48 px. The `READ 1W` button was removed in v2.2 (it blocked the UI for 750 ms); Service → Sensor roles shows every DS18B20 live.
 
@@ -176,7 +176,7 @@ The main operating strip prioritizes the reported state as HEATING, COOLING, REA
 
 ### Link and stale readings
 
-The new `remote_io_is_connected()` returns true only after at least one CRC-valid response and while its age is under 3 seconds. Any valid response proves link liveness, including a protocol-level error response. `remote_io_get_stats()` exposes the existing TX/RX/CRC-error/timeout counters through its newly declared header prototype.
+The new `remote_io_is_connected()` returns true only after at least one CRC-valid response and while its age is under the link window `REMOTE_IO_LINK_WINDOW_MS` (3 s; from v2.3 the node gets the same value in HELLO and uses it as its watchdog). Any valid response proves link liveness, including a protocol-level error response. `remote_io_get_stats()` exposes the existing TX/RX/CRC-error/timeout counters through its newly declared header prototype.
 
 The current controller/sensor state has no sensor-reading timestamp or age field. The UI therefore reports `sensor_fault`, NaN readings and remote `LINK LOST`, but does **not** claim that an unchanged, valid number is stale. Robust stale-sensor detection would require an existing timestamp/status source or a separate, explicitly approved sensor API addition.
 
@@ -206,13 +206,13 @@ Colour is supplementary rather than the sole on/off or fault signal. Normal and 
 - Approximately 60 retained LVGL objects are expected across the two screens and controls, plus modal objects allocated only when opened. The incremental LVGL heap cost is an estimate only; it is not reported as measured.
 - The update path uses persistent per-label buffers and `lv_label_set_text_static()`. It compares text and colour values before touching widgets, and only runs extended diagnostics refresh when the diagnostics tab is active (750 ms interval). The periodic `hvac_ui_update()` path uses fixed stack buffers and no explicit heap allocation. All state reads in `hvac_ui.c` use a static last-good `hvac_state_t` snapshot: the local destination is seeded from that snapshot before the void getter, then saved back afterward, so the getter's mutex-timeout path cannot expose uninitialised stack data.
 - Page changes use `lv_tabview_set_act(..., LV_ANIM_OFF)`. Both the tabview and `lv_tabview_get_content(tabview)` have `LV_OBJ_FLAG_SCROLLABLE` cleared; in LVGL 8.4 the content object owns the native horizontal scroll/snap behavior. Swipe gestures are converted into an immediate page change, and `lv_indev_wait_release()` prevents the touch release from activating a button underneath the gesture.
-- `lv_mem_monitor()` logs total/free/used/fragmentation/largest block immediately after UI initialization. `hvac_ui_update()` logs average and maximum function duration over five-second windows. These timings may spike on Diagnostics while the valve task holds `valve_mutex` during valve motion: `tb6612fng_get_valve_target()` can wait up to 100 ms per valve (five serial calls can therefore stall the UI path for as much as 500 ms). This is existing TB6612 driver behavior, not a UI rendering defect; review item L-02 is expected to remove that driver-side blocking.
+- `lv_mem_monitor()` logs total/free/used/fragmentation/largest block immediately after UI initialization. `hvac_ui_update()` logs average and maximum function duration over five-second windows. These timings may spike on Diagnostics while the valve task holds `valve_mutex` during valve motion: `tb6612fng_get_valve_target()` can wait up to 100 ms per valve (five serial calls can therefore stall the UI path for as much as 500 ms). This is existing TB6612 driver behavior, not a UI rendering defect; review item L-02 (done in v2.1) took the UART I/O out from under `valve_mutex`, which was why it was held that long, but the getter's 100 ms timeout remains.
 - No usable build output or ESP-IDF toolchain is available in this environment: `idf.py build` exits 127 because `idf.py` is not installed and `IDF_PATH` is unset. A new build and runtime measurements could not be executed here; the code's log messages are instrumentation, not measured results.
 
 ## 7. API and integration changes
 
 - Preserved all existing `hvac_ui.h` public functions and added `hvac_ui_apply_saved_brightness()` so `main.c` can restore the selected backlight setting after display initialization. `main.c` no longer overwrites DAY/NIGHT with a hard-coded 80% value.
-- Added `remote_io_is_connected()` in `remote_io_binary.c` and declared it in `remote_io.h`. Its 3-second liveness window is based on a CRC-valid response timestamp.
+- Added `remote_io_is_connected()` in `remote_io_binary.c` and declared it in `remote_io.h`. Its liveness window (`REMOTE_IO_LINK_WINDOW_MS`, 3 s) is based on a CRC-valid response timestamp.
 - Declared the already-implemented `remote_io_get_stats()` in `remote_io.h`. Its four output arguments are TX frames, RX frames, CRC errors and timeouts; each may be `NULL`.
 - No `hvac_controller.h` API, controller logic, hardware drivers, display/touch drivers, protocol frame definitions or node firmware were changed.
 
@@ -233,7 +233,7 @@ Colour is supplementary rather than the sole on/off or fault signal. Normal and 
 ### Hardware/car checks
 
 - [ ] Sunlight: read setpoint, cabin temperature, fan, mode, A/C request and compressor state in under one second.
-- [ ] Night: switch to NIGHT, power-cycle, verify it stays at the stored 18% default, and verify DAY restores 80%; adjust values based on actual visibility.
+- [ ] Night: switch to NIGHT, power-cycle, verify it stays at the stored 20 % default, and verify DAY restores 80 %; adjust values based on actual visibility.
 - [ ] One-handed: tap temperature and fan controls; hold them to verify repeat, boundaries and safe behaviour.
 - [ ] AUTO: verify both requested mode/fan and displayed readback; ensure the UI follows state changes made by the controller.
 - [ ] DEF: verify one tap calls quick defrost, with the mode reflecting controller state.
@@ -244,7 +244,7 @@ Colour is supplementary rather than the sole on/off or fault signal. Normal and 
 - [ ] Calibration safety: tap RESET CAL and cancel; verify no reset occurs. Confirm only on the second explicit action.
 - [ ] Gesture/animation: swipe to Diagnostics and back; verify the tabview content does not natively scroll/snap, page changes are instant, and the release does not trigger the button under the finger.
 - [ ] Tap slop: slow-drag across AUTO and verify nothing happens; perform a fast swipe starting on DEF and verify the page changes without starting defrost; swipe inside the picker and verify no mode is selected and the picker stays open; hold `+` and slide more than 10 px off-origin and verify stepping stops. Repeat with the message-overlay OK button and calibration dialog controls.
-- [ ] Diagnostic responsiveness: observe the UI while valves move. The current `tb6612fng_get_valve_target()` may block on `valve_mutex` for up to 100 ms per valve; attribute any multi-valve stall to the existing driver path pending driver review L-02, not to LVGL layout changes.
+- [ ] Diagnostic responsiveness: observe the UI while valves move. The current `tb6612fng_get_valve_target()` may block on `valve_mutex` for up to 100 ms per valve; attribute any multi-valve stall to the driver getter's 100 ms timeout (L-02 removed the usual cause), not to LVGL layout changes.
 
 ## 9. Photo list when a compatible PC simulator is unavailable
 
@@ -258,9 +258,15 @@ See `HARDWARE_PHOTO_CHECKLIST.md`. The required set is Main normal, AUTO, DEF, n
 main  <-swipe->  diagnostics  <-swipe->  settings home
                                            |- Presets (also: long press AUTO)
                                            |- Display / Climate / Fan / Comfort / Control / Valves / Connect / System
+                                           |     (Valves starts with Air distribution: 5 manual modes x 4 air valves, % open)
                                            |- Diagnostics: Event log, Link health, Self-test, Trend chart
                                            '- Service: Valve service (mode OFF only), Sensor roles
+                                                 (Valve service opens the Service settings group, editable with mode OFF)
 ```
+
+Since v2.3 the table has eleven groups: the eight above, Air distribution (a sub-page of Valves),
+Service (valve tunables, on the valve service page, changed only with mode OFF) and Advanced
+(heat gains, A/C timing, Wi-Fi channel: on the phone page only, not on the display).
 
 Settings rows are 48 px, label left and value right. BOOL toggles, ENUM steps, INT/FLOAT open
 an editor (−/+ with repeat, DEFAULT, OK), ACTION rows confirm in a modal. Inside a sub-page
@@ -271,7 +277,7 @@ generated Montserrat 14/16 subsets with æ/ø/å; the main page keeps its fonts.
 
 | Module | Role |
 |---|---|
-| `settings.c`, `settings_table.c` | One table of all preferences; RAM cache, debounced NVS writes (2 s), apply callbacks, schema per namespace |
+| `settings.c`, `settings_table.c` | One table of all preferences; RAM cache, NVS writes 2 s after a key's first unwritten change, apply callbacks, schema per namespace, cross-field rules |
 | `console_cmds.c` | USB console `list/get/set/reset` |
 | `event_log.c` | 50-entry ring, newest first, fed by link, valves, controller, self-test, OTA |
 | `valve_cal_store.c` | Per-valve calibration records with CRC in `hvac_cal` |
@@ -282,19 +288,19 @@ generated Montserrat 14/16 subsets with æ/ø/å; the main page keeps its fonts.
 | `selftest.c` | One-shot boot check after calibration |
 | `hvac_ui_settings.c`, `hvac_ui_diag.c`, `hvac_ui_service.c` | The new pages |
 | `wifi_ap.c`, `web_server.c`, `web/index.html` | Phone access point and page |
-| `ota_display.c` | Display update into the inactive slot, 30 s validation |
+| `ota_display.c` | Display update into the inactive slot; kept after 30 s of UI with the link up, rolled back after 5 min without |
 
 ### New tasks
 
 | Task | Prio | Period | Note |
 |---|---|---|---|
-| `settings_nvs` | 1 | event + 2 s debounce | only task that writes `hvac_cfg` values |
+| `settings_nvs` | 1 | event; a key 2 s after its first unwritten change | only task that writes `hvac_cfg` values |
 | `console_repl` | 2 | on input | runs apply callbacks of what it sets |
 | `selftest` | 2 | once, then deleted | waits for calibration, at most its timeout (about 4 min with the default `SET_CAL_TIMEOUT_S`: `tb6612fng_calib_max_ms()` + 3 s) |
 | `wifi_ap` | 3 | event | starts/stops the AP and the HTTP server |
 | `httpd` | IDF default | on request | thread-safe getters only; OTA uploads stream in chunks |
 | `node_ota` | — | per upload | streams a node image over the link, one command per mutex hold |
-| `ota_valid` | — | until validated | marks a fresh display image valid after 30 s UI + link up |
+| `ota_valid` | — | until validated | marks a fresh display image valid after 30 s UI + link up; gives up (rollback) after 5 min |
 
 Only the valve task's calibration tick switches the sensors' fast position reads (on while a valve calibrates or learns its direction). The firmware has no local-IO build any more (v2.2): every actuator and sensor is on the node.
 
@@ -303,8 +309,8 @@ scratchpad read per ROM (at most four); searches run in the same task.
 
 ### Memory
 
-LVGL's 128 KB pool is one malloc in PSRAM (see the root `CMakeLists.txt`); draw buffers stay
-internal for DMA. Static internal RAM: 136 KB used of 342 KB. `wifi_ap.c` logs the free
+LVGL's 128 KB pool is one malloc in PSRAM (see the root `CMakeLists.txt`); both full-frame draw
+buffers are in PSRAM too (`main.c`, `MALLOC_CAP_SPIRAM`). Static internal RAM: 136 KB used of 342 KB. `wifi_ap.c` logs the free
 internal heap each time the AP starts.
 
 ### Numbers shared with the IO node

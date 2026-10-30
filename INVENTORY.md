@@ -358,6 +358,8 @@ label promises:
 
 ## 4. Documentation that differs from the code
 
+All rows below were fixed in v2.3 (item 15); the tags row is a note on the brief.
+
 | doc | says | code |
 |---|---|---|
 | DESIGN.md:99, :236 | NIGHT brightness 18 %, stored under `night_mode` in namespace `hvac` | 20 % (settings_table.c:71), key `night_mode` in `hvac_cfg` (settings.h:79) |
