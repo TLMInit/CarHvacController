@@ -63,11 +63,6 @@ esp_err_t tb6612fng_init(void);
 void tb6612fng_enable_all(void);
 
 /**
- * @brief Disable all TB6612FNG drivers (enter standby mode)
- */
-void tb6612fng_disable_all(void);
-
-/**
  * @brief Set valve position (0-100%)
  * @param valve_id Valve identifier
  * @param position Target position 0-100%
@@ -88,13 +83,6 @@ uint8_t tb6612fng_get_valve_position(hvac_valve_id_t valve_id);
  * @return Target position 0-100%
  */
 uint8_t tb6612fng_get_valve_target(hvac_valve_id_t valve_id);
-
-/**
- * @brief Check if valve is currently moving
- * @param valve_id Valve identifier
- * @return true if moving, false if stationary
- */
-bool tb6612fng_valve_is_moving(hvac_valve_id_t valve_id);
 
 /**
  * @brief Stop a specific valve immediately
@@ -139,14 +127,6 @@ bool tb6612fng_valve_has_fault(hvac_valve_id_t valve_id);
 void tb6612fng_clear_stall(hvac_valve_id_t valve_id);
 
 /**
- * @brief Set motor direction and speed directly
- * @param valve_id Valve identifier
- * @param direction Motor direction
- * @param speed PWM duty cycle 0-255
- */
-void tb6612fng_motor_set(hvac_valve_id_t valve_id, tb6612_direction_t direction, uint8_t speed);
-
-/**
  * @brief Valve control task - must be called periodically or run as FreeRTOS task
  * @param pvParameters Task parameters (not used)
  */
@@ -159,16 +139,6 @@ void tb6612fng_valve_task(void *pvParameters);
 esp_err_t tb6612fng_start_task(void);
 
 /**
- * @brief Calibrate a valve (blocking, full open then full close)
- */
-esp_err_t tb6612fng_calibrate_valve(hvac_valve_id_t valve_id);
-
-/**
- * @brief Start non-blocking auto-calibration for a single valve
- */
-esp_err_t tb6612fng_auto_calibrate_valve(hvac_valve_id_t valve_id);
-
-/**
  * @brief Start non-blocking auto-calibration for all butterfly valves
  */
 esp_err_t tb6612fng_auto_calibrate_all(void);
@@ -177,24 +147,6 @@ esp_err_t tb6612fng_auto_calibrate_all(void);
  * @brief Check if any valve is currently calibrating
  */
 bool tb6612fng_is_calibrating(void);
-
-/**
- * @brief Check if a valve has completed calibration
- */
-bool tb6612fng_valve_is_calibrated(hvac_valve_id_t valve_id);
-
-/**
- * @brief Get calibration values for a valve
- * @return ESP_OK if calibrated, ESP_ERR_NOT_FOUND if not calibrated
- */
-esp_err_t tb6612fng_get_calibration(hvac_valve_id_t valve_id, 
-                                     uint8_t *adc_min, uint8_t *adc_max, uint8_t *adc_center);
-
-/**
- * @brief Get all valve states
- * @param states Array to store valve states (must be at least HVAC_VALVE_MAX elements)
- */
-void tb6612fng_get_all_valve_states(valve_state_t *states);
 
 // ==================== v2.1 interfaces (implemented by WP-D) ====================
 

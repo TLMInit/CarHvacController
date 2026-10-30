@@ -241,13 +241,6 @@ bool cobs_receiver_feed(cobs_receiver_t *rx, const uint8_t *data, size_t len,
 size_t cobs_receiver_get_frame(cobs_receiver_t *rx, uint8_t *frame, size_t max_len);
 
 /**
- * @brief Check for frame timeout and reset if needed
- * @param rx Receiver state
- * @param now_ms Current time in milliseconds
- */
-void cobs_receiver_check_timeout(cobs_receiver_t *rx, uint32_t now_ms);
-
-/**
  * @brief Reset receiver state (call after processing frame or on timeout)
  * @param rx Receiver state
  */

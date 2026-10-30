@@ -97,13 +97,6 @@ valve_position_percent_t ads1115_voltage_to_position(ads1115_mv_t voltage);
 esp_err_t ads1115_read_valve_position(ads1115_channel_t channel, 
                                       valve_position_percent_t *position);
 
-/**
- * @brief Deinitialize ADS1115 driver
- * 
- * @return ESP_OK on success
- */
-esp_err_t ads1115_deinit(void);
-
 #ifdef __cplusplus
 }
 #endif

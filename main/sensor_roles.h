@@ -62,9 +62,6 @@ float sensor_roles_get_temp(sensor_role_t role);
 /** "Duct", "Coolant", "Outside", "Unused" (English; the UI translates). */
 const char *sensor_role_name(sensor_role_t role);
 
-/** Increments when the found list, an assignment or a reading changes. */
-uint32_t sensor_roles_seq(void);
-
 #ifdef __cplusplus
 }
 #endif

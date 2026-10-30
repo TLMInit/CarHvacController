@@ -76,8 +76,6 @@ static const char *TAG = "HVAC_CTRL";
 static hvac_state_t hvac_state;
 static SemaphoreHandle_t state_mutex = NULL;
 static TaskHandle_t controller_task_handle = NULL;
-static hvac_state_callback_t state_callback = NULL;
-static void *callback_user_data = NULL;
 
 // Settings persistence: loaded at init, applied by hvac_controller_restore_settings();
 // changes are written to NVS 5 s after the last one
@@ -368,9 +366,6 @@ static esp_err_t init_ac_compressor_gpio(void)
 static void notify_state_change(void)
 {
     mark_settings_dirty();
-    if (state_callback != NULL) {
-        state_callback(&hvac_state, callback_user_data);
-    }
 }
 
 static void save_thermal_calibration(void)
@@ -1106,14 +1101,6 @@ esp_err_t hvac_controller_init(void)
     return ESP_OK;
 }
 
-void hvac_controller_deinit(void)
-{
-    if (state_mutex) {
-        vSemaphoreDelete(state_mutex);
-        state_mutex = NULL;
-    }
-}
-
 bool hvac_controller_get_state(hvac_state_t *state)
 {
     if (state == NULL) {
@@ -1267,16 +1254,6 @@ esp_err_t hvac_controller_set_fan_level(hvac_fan_speed_t level)
     return ESP_OK;
 }
 
-hvac_fan_speed_t hvac_controller_get_fan_level(void)
-{
-    hvac_fan_speed_t level = HVAC_FAN_OFF;
-    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        level = hvac_state.fan_level;
-        xSemaphoreGive(state_mutex);
-    }
-    return level;
-}
-
 esp_err_t hvac_controller_set_target_temp(float temp_c)
 {
     if (!(temp_c >= TEMP_MIN_C && temp_c <= TEMP_MAX_C)) {
@@ -1289,16 +1266,6 @@ esp_err_t hvac_controller_set_target_temp(float temp_c)
     set_target_locked(temp_c);
     xSemaphoreGive(state_mutex);
     return ESP_OK;
-}
-
-float hvac_controller_get_target_temp(void)
-{
-    float temp = 22.0f;
-    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        temp = hvac_state.target_temp_c;
-        xSemaphoreGive(state_mutex);
-    }
-    return temp;
 }
 
 static void temp_step(float direction)
@@ -1334,16 +1301,6 @@ void hvac_controller_set_ac(bool enabled)
     }
 }
 
-bool hvac_controller_get_ac(void)
-{
-    bool enabled = false;
-    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        enabled = hvac_state.ac_enabled;
-        xSemaphoreGive(state_mutex);
-    }
-    return enabled;
-}
-
 void hvac_controller_set_recirculate(bool enabled)
 {
     if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -1352,35 +1309,6 @@ void hvac_controller_set_recirculate(bool enabled)
         notify_state_change();
         xSemaphoreGive(state_mutex);
     }
-}
-
-bool hvac_controller_get_recirculate(void)
-{
-    bool enabled = false;
-    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        enabled = hvac_state.recirculate;
-        xSemaphoreGive(state_mutex);
-    }
-    return enabled;
-}
-
-void hvac_controller_set_temp_unit(temp_unit_t unit)
-{
-    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        hvac_state.temp_unit = unit;
-        notify_state_change();
-        xSemaphoreGive(state_mutex);
-    }
-}
-
-temp_unit_t hvac_controller_get_temp_unit(void)
-{
-    temp_unit_t unit = TEMP_UNIT_CELSIUS;
-    if (xSemaphoreTake(state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        unit = hvac_state.temp_unit;
-        xSemaphoreGive(state_mutex);
-    }
-    return unit;
 }
 
 esp_err_t hvac_controller_get_thermal_status(float *heating_rate, float *cooling_rate, 
@@ -1430,17 +1358,6 @@ float hvac_controller_c_to_f(float celsius)
     return (celsius * 9.0f / 5.0f) + 32.0f;
 }
 
-float hvac_controller_f_to_c(float fahrenheit)
-{
-    return (fahrenheit - 32.0f) * 5.0f / 9.0f;
-}
-
-void hvac_controller_off(void)
-{
-    hvac_controller_set_mode(HVAC_MODE_OFF);
-    hvac_controller_set_fan_level(HVAC_FAN_OFF);
-}
-
 void hvac_controller_quick_defrost(void)
 {
     ESP_LOGI(TAG, "Quick defrost activated");
@@ -1454,18 +1371,6 @@ void hvac_controller_quick_defrost(void)
 
     // Open coolant valve fully for max heat
     tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, 100);
-}
-
-void hvac_controller_quick_cool(void)
-{
-    ESP_LOGI(TAG, "Quick cool activated");
-    hvac_controller_set_mode(HVAC_MODE_FACE);
-    hvac_controller_set_fan_level(HVAC_FAN_HIGH);
-    hvac_controller_set_ac(true);
-    hvac_controller_set_recirculate(true);
-    
-    // Close coolant valve
-    tb6612fng_set_valve_position(HVAC_VALVE_COOLANT, 0);
 }
 
 esp_err_t hvac_controller_apply_preset(hvac_preset_t preset)
@@ -1515,12 +1420,6 @@ void hvac_controller_apply_settings(void)
         }
         xSemaphoreGive(state_mutex);
     }
-}
-
-void hvac_controller_register_callback(hvac_state_callback_t callback, void *user_data)
-{
-    state_callback = callback;
-    callback_user_data = user_data;
 }
 
 void hvac_controller_task(void *pvParameters)

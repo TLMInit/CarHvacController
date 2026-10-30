@@ -33,12 +33,6 @@ esp_err_t hvac_ui_init(void);
 void hvac_ui_update(void);
 
 /**
- * @brief Get the main screen object
- * @return Pointer to main screen
- */
-lv_obj_t* hvac_ui_get_screen(void);
-
-/**
  * @brief Set screen brightness
  * @param brightness Brightness 0-100%
  */
@@ -58,11 +52,6 @@ void hvac_ui_show_error(const char *message);
  * @param message Info message to display
  */
 void hvac_ui_show_info(const char *message);
-
-/**
- * @brief Hide any message
- */
-void hvac_ui_hide_message(void);
 
 #ifdef __cplusplus
 }

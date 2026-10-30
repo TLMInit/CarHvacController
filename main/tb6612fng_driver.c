@@ -557,16 +557,6 @@ void tb6612fng_enable_all(void)
     ESP_LOGI(TAG, "TB6612FNG drivers always enabled (STBY tied to 3V3)");
 }
 
-void tb6612fng_disable_all(void)
-{
-    // STBY pins are hardwired to 3V3, cannot disable
-    // Stop all motors instead by setting PWM to 0
-    ESP_LOGI(TAG, "Stopping all TB6612FNG motors");
-    for (int i = 0; i < HVAC_VALVE_MAX; i++) {
-        tb6612fng_stop_valve((hvac_valve_id_t)i);
-    }
-}
-
 esp_err_t tb6612fng_set_valve_position(hvac_valve_id_t valve_id, uint8_t position)
 {
     if (valve_id >= HVAC_VALVE_MAX) {
@@ -643,20 +633,6 @@ uint8_t tb6612fng_get_valve_target(hvac_valve_id_t valve_id)
     return target;
 }
 
-bool tb6612fng_valve_is_moving(hvac_valve_id_t valve_id)
-{
-    if (valve_id >= HVAC_VALVE_MAX) {
-        return false;
-    }
-    
-    bool moving = false;
-    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        moving = valve_states[valve_id].is_moving;
-        xSemaphoreGive(valve_mutex);
-    }
-    return moving;
-}
-
 void tb6612fng_stop_valve(hvac_valve_id_t valve_id)
 {
     if (valve_id >= HVAC_VALVE_MAX) {
@@ -684,15 +660,6 @@ void tb6612fng_stop_all_valves(void)
     for (int i = 0; i < HVAC_VALVE_MAX; i++) {
         tb6612fng_stop_valve((hvac_valve_id_t)i);
     }
-}
-
-void tb6612fng_motor_set(hvac_valve_id_t valve_id, tb6612_direction_t direction, uint8_t speed)
-{
-    if (valve_id >= HVAC_VALVE_MAX) {
-        return;
-    }
-    
-    motor_now(valve_id, direction, speed, valve_states[valve_id].position);
 }
 
 void tb6612fng_valve_task(void *pvParameters)
@@ -1193,7 +1160,6 @@ void tb6612fng_valve_task(void *pvParameters)
  ******************************************************************************/
 
 // Calibration sampling parameters
-#define CALIB_SAMPLE_PERIOD_MS    50     // Sample every 50ms for better resolution
 #define CALIB_SETTLE_TIME_MS      500    // Wait for motor to settle after direction change
 #define CALIB_MARKER_ADC          60     // ADC% to use as rotation marker
 #define CALIB_MARKER_TOLERANCE    2      // +/- tolerance for marker detection
@@ -1576,292 +1542,6 @@ esp_err_t tb6612fng_start_task(void)
     return ESP_OK;
 }
 
-esp_err_t tb6612fng_calibrate_valve(hvac_valve_id_t valve_id)
-{
-    if (valve_id >= HVAC_VALVE_MAX) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    ESP_LOGI(TAG, "Calibrating valve %d", valve_id);
-    
-    
-    // Move to fully closed position
-    motor_now(valve_id, TB6612_DIR_REVERSE, VALVE_MOTOR_SPEED, -1);
-    vTaskDelay(pdMS_TO_TICKS(VALVE_FULL_TRAVEL_TIME_MS + 500));
-    
-    // Stop
-    motor_now(valve_id, TB6612_DIR_BRAKE, 0, 0);
-    vTaskDelay(pdMS_TO_TICKS(200));
-    
-    // Update state
-    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        valve_states[valve_id].position = 0;
-        valve_states[valve_id].target_position = 0;
-        valve_states[valve_id].is_moving = false;
-        xSemaphoreGive(valve_mutex);
-    }
-    
-    ESP_LOGI(TAG, "Valve %d calibrated", valve_id);
-    return ESP_OK;
-}
-
-// NOTE: Calibration parameters are defined above near the calibration tick function
-
-// Internal calibration function - does not manage calibration_in_progress flag
-// Uses "rotation marker" method: move to 60% ADC, then continue until hitting 60% again
-// This captures exactly one potentiometer revolution regardless of multi-rotation valves
-static esp_err_t __attribute__((unused)) calibrate_valve_internal(hvac_valve_id_t valve_id)
-{
-    if (valve_id >= HVAC_VALVE_MAX) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    ESP_LOGI(TAG, "====== AUTO-CALIBRATION START: Valve %d ======", valve_id);
-    ESP_LOGI(TAG, "Using rotation marker method (marker=%d%%)", CALIB_MARKER_ADC);
-    
-    
-    // Track ADC values during one revolution
-    uint8_t global_min = 255;
-    uint8_t global_max = 0;
-    int sample_count = 0;
-    uint8_t start_adc = 0;
-    uint8_t end_adc = 0;
-    
-    // Track direction of ADC change to detect center crossing
-    int adc_direction_changes = 0;
-    int last_direction = 0;  // 0=unknown, 1=increasing, -1=decreasing
-    uint8_t last_adc = 0;
-    
-    // === PHASE 1: Move to the marker position (60% ADC) ===
-    ESP_LOGI(TAG, "Phase 1: Moving to marker position (%d%% ADC)...", CALIB_MARKER_ADC);
-    
-    uint8_t current_adc = valve_adc_pos[valve_id];
-    
-    // Choose direction based on current position
-    tb6612_direction_t seek_dir;
-    if (current_adc < CALIB_MARKER_ADC) {
-        // Below marker, need to move in direction that increases ADC
-        seek_dir = TB6612_DIR_FORWARD;
-        ESP_LOGI(TAG, "  Current=%d%%, moving FORWARD to reach %d%%", current_adc, CALIB_MARKER_ADC);
-    } else if (current_adc > CALIB_MARKER_ADC) {
-        // Above marker, need to move in direction that decreases ADC
-        seek_dir = TB6612_DIR_REVERSE;
-        ESP_LOGI(TAG, "  Current=%d%%, moving REVERSE to reach %d%%", current_adc, CALIB_MARKER_ADC);
-    } else {
-        // Already at marker!
-        seek_dir = TB6612_DIR_FORWARD;  // Will still do one full rotation
-        ESP_LOGI(TAG, "  Already at marker position!");
-    }
-    
-    motor_now(valve_id, seek_dir, CALIB_MOTOR_SPEED, current_adc);
-    
-    uint32_t phase_start = xTaskGetTickCount();
-    bool marker_found = false;
-    
-    // Keep moving until we hit the marker (or timeout)
-    while ((xTaskGetTickCount() - phase_start) * portTICK_PERIOD_MS < CALIB_MAX_ROTATION_TIME) {
-        vTaskDelay(pdMS_TO_TICKS(CALIB_SAMPLE_PERIOD_MS));
-        
-        current_adc = valve_adc_pos[valve_id];
-        
-        // Check if we've reached the marker
-        if (abs((int)current_adc - CALIB_MARKER_ADC) <= CALIB_MARKER_TOLERANCE) {
-            marker_found = true;
-            ESP_LOGI(TAG, "  Reached marker at ADC=%d%%", current_adc);
-            break;
-        }
-        
-        // If we crossed the marker without stopping on it, we might be going wrong direction
-        // Give it time to traverse the full pot range
-        uint32_t elapsed = (xTaskGetTickCount() - phase_start) * portTICK_PERIOD_MS;
-        if (elapsed % 5000 < CALIB_SAMPLE_PERIOD_MS) {
-            ESP_LOGI(TAG, "  Seeking marker: ADC=%d%% (target=%d%%)", current_adc, CALIB_MARKER_ADC);
-        }
-    }
-    
-    if (!marker_found) {
-        ESP_LOGW(TAG, "Could not reach marker position, using current position");
-    }
-    
-    // Brief stop to settle
-    motor_now(valve_id, TB6612_DIR_BRAKE, 0, current_adc);
-    vTaskDelay(pdMS_TO_TICKS(CALIB_SETTLE_TIME_MS));
-    
-    // === PHASE 2: Complete one full rotation, tracking ADC values ===
-    ESP_LOGI(TAG, "Phase 2: Tracking one full rotation...");
-    
-    start_adc = valve_adc_pos[valve_id];
-    last_adc = start_adc;
-    global_min = start_adc;
-    global_max = start_adc;
-    sample_count = 0;
-    
-    // Always move forward for the rotation mapping
-    motor_now(valve_id, TB6612_DIR_FORWARD, CALIB_MOTOR_SPEED, start_adc);
-    
-    phase_start = xTaskGetTickCount();
-    bool rotation_complete = false;
-    
-    while ((xTaskGetTickCount() - phase_start) * portTICK_PERIOD_MS < CALIB_MAX_ROTATION_TIME) {
-        vTaskDelay(pdMS_TO_TICKS(CALIB_SAMPLE_PERIOD_MS));
-        
-        current_adc = valve_adc_pos[valve_id];
-        sample_count++;
-        
-        // Track min/max
-        if (current_adc < global_min) {
-            global_min = current_adc;
-        }
-        if (current_adc > global_max) {
-            global_max = current_adc;
-        }
-        
-        // Track direction of ADC change
-        int diff = (int)current_adc - (int)last_adc;
-        if (abs(diff) > 2) {  // Significant change
-            int current_dir = (diff > 0) ? 1 : -1;
-            if (last_direction != 0 && current_dir != last_direction) {
-                adc_direction_changes++;
-                ESP_LOGI(TAG, "  Direction change #%d at ADC=%d%%", adc_direction_changes, current_adc);
-            }
-            last_direction = current_dir;
-        }
-        last_adc = current_adc;
-        
-        // Check if we've completed one rotation (back to marker position)
-        // Only check after minimum samples to avoid detecting starting position
-        if (sample_count > CALIB_MIN_SAMPLES) {
-            if (abs((int)current_adc - CALIB_MARKER_ADC) <= CALIB_MARKER_TOLERANCE) {
-                rotation_complete = true;
-                ESP_LOGI(TAG, "  Completed rotation at ADC=%d%% after %d samples", current_adc, sample_count);
-                break;
-            }
-        }
-        
-        // Log progress every 5 seconds
-        uint32_t elapsed = (xTaskGetTickCount() - phase_start) * portTICK_PERIOD_MS;
-        if (elapsed % 5000 < CALIB_SAMPLE_PERIOD_MS) {
-            ESP_LOGI(TAG, "  Rotation %lus: ADC=%d%% (min=%d%% max=%d%% dir_changes=%d)", 
-                     elapsed/1000, current_adc, global_min, global_max, adc_direction_changes);
-        }
-    }
-    
-    end_adc = valve_adc_pos[valve_id];
-    
-    // Stop motor
-    motor_now(valve_id, TB6612_DIR_BRAKE, 0, end_adc);
-    
-    if (!rotation_complete) {
-        ESP_LOGW(TAG, "Rotation did not complete (timeout), using collected data");
-    }
-    
-    ESP_LOGI(TAG, "Rotation mapping: start=%d%% end=%d%%, %d samples", start_adc, end_adc, sample_count);
-    ESP_LOGI(TAG, "  ADC range: %d%% - %d%% (span=%d%%)", global_min, global_max, global_max - global_min);
-    ESP_LOGI(TAG, "  Direction changes: %d", adc_direction_changes);
-    
-    // === Analyze results ===
-    
-    uint8_t adc_center;
-    bool is_butterfly = (valve_id != HVAC_VALVE_COOLANT);
-    
-    if (is_butterfly) {
-        // Butterfly valve: center is the midpoint of observed range
-        adc_center = (global_min + global_max) / 2;
-        
-        // For butterfly valves, we expect 2 direction changes (one at min, one at max)
-        // If we see this pattern, it confirms the V-shaped response
-        if (adc_direction_changes >= 2) {
-            ESP_LOGI(TAG, "Butterfly valve confirmed: V-shaped response detected");
-        }
-        
-        ESP_LOGI(TAG, "Butterfly valve: calculated center=%d%% (range %d%%-%d%%)",
-                 adc_center, global_min, global_max);
-    } else {
-        // Linear valve: center is arbitrary
-        adc_center = 50;
-        ESP_LOGI(TAG, "Linear valve: range %d%%-%d%%", global_min, global_max);
-    }
-    
-    // Determine dead zones
-    uint8_t deadzone_margin = 3;
-    uint8_t low_deadzone = global_min + deadzone_margin;
-    uint8_t high_deadzone = global_max - deadzone_margin;
-    
-    // Determine direction inversion based on how ADC changed during forward movement
-    // Control logic assumes: FWD decreases ADC, REV increases ADC
-    // If ADC mostly INCREASED during forward movement, the motor is inverted
-    bool is_inverted = (end_adc > start_adc) || (last_direction > 0);
-    
-    // Store calibration data
-    valve_calibration[valve_id].adc_min = global_min;
-    valve_calibration[valve_id].adc_max = global_max;
-    valve_calibration[valve_id].adc_center = adc_center;
-    valve_calibration[valve_id].adc_low_deadzone = low_deadzone;
-    valve_calibration[valve_id].adc_high_deadzone = high_deadzone;
-    valve_calibration[valve_id].is_inverted = is_inverted;
-    valve_calibration[valve_id].calibrated = true;
-    
-    ESP_LOGI(TAG, "====== CALIBRATION COMPLETE: Valve %d ======", valve_id);
-    ESP_LOGI(TAG, "  ADC range: %d%% - %d%% (center=%d%%)", global_min, global_max, adc_center);
-    ESP_LOGI(TAG, "  Dead zones: <%d%% and >%d%%", low_deadzone, high_deadzone);
-    ESP_LOGI(TAG, "  Direction inverted: %s", is_inverted ? "YES" : "NO");
-    
-    // Reset valve state
-    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        valve_states[valve_id].position = 0;
-        valve_states[valve_id].target_position = 0;
-        valve_states[valve_id].is_moving = false;
-        valve_states[valve_id].stalled = false;
-        valve_filter_init[valve_id] = false;
-        xSemaphoreGive(valve_mutex);
-    }
-    
-    return ESP_OK;
-}
-
-// Public API: start calibration for a single valve (non-blocking)
-// Uses the background state machine so other valves keep operating
-esp_err_t tb6612fng_auto_calibrate_valve(hvac_valve_id_t valve_id)
-{
-    if (valve_id >= HVAC_VALVE_MAX) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    // Coolant valve is linear and does not need calibration
-    if (valve_id == HVAC_VALVE_COOLANT) {
-        ESP_LOGI(TAG, "V%d: Skipping calibration (linear valve)", valve_id);
-        return ESP_OK;
-    }
-
-    return tb6612fng_start_calibration(valve_id);
-}
-
-bool tb6612fng_valve_is_calibrated(hvac_valve_id_t valve_id)
-{
-    if (valve_id >= HVAC_VALVE_MAX) {
-        return false;
-    }
-    return valve_calibration[valve_id].calibrated;
-}
-
-esp_err_t tb6612fng_get_calibration(hvac_valve_id_t valve_id, 
-                                     uint8_t *adc_min, uint8_t *adc_max, uint8_t *adc_center)
-{
-    if (valve_id >= HVAC_VALVE_MAX) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    if (!valve_calibration[valve_id].calibrated) {
-        return ESP_ERR_NOT_FOUND;
-    }
-    
-    if (adc_min) *adc_min = valve_calibration[valve_id].adc_min;
-    if (adc_max) *adc_max = valve_calibration[valve_id].adc_max;
-    if (adc_center) *adc_center = valve_calibration[valve_id].adc_center;
-    
-    return ESP_OK;
-}
-
 // Boot: stored calibration if it still fits the pot, else calibrate that valve only.
 // The decision happens in the valve task once the first position reading is in.
 esp_err_t tb6612fng_auto_calibrate_all(void)
@@ -1886,18 +1566,6 @@ esp_err_t tb6612fng_auto_calibrate_all(void)
         valve_boot_wait[i] = true;
     }
     return ESP_OK;
-}
-
-void tb6612fng_get_all_valve_states(valve_state_t *states)
-{
-    if (states == NULL) {
-        return;
-    }
-    
-    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        memcpy(states, valve_states, sizeof(valve_states));
-        xSemaphoreGive(valve_mutex);
-    }
 }
 
 void tb6612fng_update_feedback(hvac_valve_id_t valve_id, uint8_t position)

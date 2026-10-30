@@ -58,11 +58,6 @@ esp_err_t valve_cal_store_init(void)
     return ESP_OK;
 }
 
-uint32_t valve_cal_store_boot_counter(void)
-{
-    return s_boot_counter;
-}
-
 esp_err_t valve_cal_store_load(hvac_valve_id_t valve, valve_cal_record_t *out)
 {
     if (!s_open || valve >= HVAC_VALVE_MAX || out == NULL) {

@@ -37,9 +37,6 @@ typedef struct {
 /** Open the namespace, bump and remember the boot counter. Call once at boot after settings_init(). */
 esp_err_t valve_cal_store_init(void);
 
-/** Boot counter of this boot (1, 2, ...). */
-uint32_t valve_cal_store_boot_counter(void);
-
 /** ESP_OK, ESP_ERR_NOT_FOUND (no record) or ESP_ERR_INVALID_CRC (corrupt record). */
 esp_err_t valve_cal_store_load(hvac_valve_id_t valve, valve_cal_record_t *out);
 

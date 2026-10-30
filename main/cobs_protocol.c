@@ -295,16 +295,6 @@ size_t cobs_receiver_get_frame(cobs_receiver_t *rx, uint8_t *frame, size_t max_l
     return copy_len;
 }
 
-void cobs_receiver_check_timeout(cobs_receiver_t *rx, uint32_t now_ms)
-{
-    // If we have partial data and too much time has passed, reset
-    if (rx->pos > 0 && !rx->frame_ready) {
-        if ((now_ms - rx->last_rx_time) > rx->timeout_ms) {
-            cobs_receiver_reset(rx);
-        }
-    }
-}
-
 void cobs_receiver_reset(cobs_receiver_t *rx)
 {
     rx->pos = 0;

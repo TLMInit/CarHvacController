@@ -51,14 +51,6 @@ void event_log_add(event_class_t cls, const char *fmt, ...)
     ESP_LOGI(TAG, "%s: %s", event_class_name(cls), e.text);
 }
 
-size_t event_log_count(void)
-{
-    portENTER_CRITICAL(&s_lock);
-    size_t n = s_count;
-    portEXIT_CRITICAL(&s_lock);
-    return n;
-}
-
 bool event_log_get(size_t index, event_t *out)
 {
     bool ok = false;

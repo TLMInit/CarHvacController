@@ -488,22 +488,6 @@ esp_err_t remote_gpio_set_level(int pin, int level)
     return send_command_binary(MSG_GPIO_SET, MSG_OK, payload, 2, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
-esp_err_t remote_gpio_get_level(int pin, int *level)
-{
-    uint8_t payload[1] = { (uint8_t)pin };
-    uint8_t resp_type;
-    uint8_t resp_data[2];
-    size_t resp_len = sizeof(resp_data);
-    
-    esp_err_t ret = send_command_binary(MSG_GPIO_GET, MSG_GPIO_VALUE, payload, 1, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
-    
-    if (ret == ESP_OK && resp_type == MSG_GPIO_VALUE && resp_len >= 2) {
-        if (level) *level = resp_data[1];  // [pin, level]
-        return ESP_OK;
-    }
-    return ret == ESP_OK ? ESP_FAIL : ret;
-}
-
 /*******************************************************************************
  * PWM Functions
  ******************************************************************************/
@@ -524,30 +508,9 @@ esp_err_t remote_pwm_set_duty(int pin, int duty)
     return send_command_binary(MSG_PWM_SET, MSG_OK, payload, 2, NULL, NULL, NULL, CMD_TIMEOUT_MS);
 }
 
-esp_err_t remote_pwm_stop(int pin)
-{
-    // Stop PWM by setting duty to 0
-    return remote_pwm_set_duty(pin, 0);
-}
-
 /*******************************************************************************
  * I2C Functions
  ******************************************************************************/
-
-esp_err_t remote_i2c_init(int bus_num, int sda_pin, int scl_pin, int freq_hz)
-{
-    // For binary protocol, I2C is pre-initialized on IO Node
-    // This is a no-op but returns success for compatibility
-    (void)bus_num; (void)sda_pin; (void)scl_pin; (void)freq_hz;
-    return ESP_OK;
-}
-
-esp_err_t remote_i2c_deinit(int bus_num)
-{
-    // No-op for binary protocol
-    (void)bus_num;
-    return ESP_OK;
-}
 
 esp_err_t remote_i2c_write(int bus_num, uint8_t addr, const uint8_t *data, size_t len)
 {
@@ -567,28 +530,6 @@ esp_err_t remote_i2c_write(int bus_num, uint8_t addr, const uint8_t *data, size_
     }
     
     return send_command_binary(MSG_I2C_WRITE, MSG_OK, payload, 3 + len - 1, NULL, NULL, NULL, CMD_TIMEOUT_MS);
-}
-
-esp_err_t remote_i2c_read(int bus_num, uint8_t addr, uint8_t *data, size_t len)
-{
-    // For read without write, we can't specify register - use write_read instead
-    // This is a simplified read that just reads len bytes
-    (void)bus_num;
-    
-    uint8_t payload[3] = { addr, 0, (uint8_t)len };  // reg=0, read len bytes
-    uint8_t resp_type;
-    uint8_t resp_data[COBS_MAX_PAYLOAD_SIZE];
-    size_t resp_len = sizeof(resp_data);
-    
-    esp_err_t ret = send_command_binary(MSG_I2C_READ, MSG_I2C_DATA, payload, 3, &resp_type, resp_data, &resp_len, CMD_TIMEOUT_MS);
-    
-    if (ret == ESP_OK && resp_type == MSG_I2C_DATA && resp_len >= 1) {
-        size_t data_len = resp_data[0];
-        if (data_len > len) data_len = len;
-        memcpy(data, &resp_data[1], data_len);
-        return ESP_OK;
-    }
-    return ret == ESP_OK ? ESP_FAIL : ret;
 }
 
 esp_err_t remote_i2c_write_read(int bus_num, uint8_t addr,
@@ -616,13 +557,6 @@ esp_err_t remote_i2c_write_read(int bus_num, uint8_t addr,
         return ESP_OK;
     }
     return ret == ESP_OK ? ESP_FAIL : ret;
-}
-
-esp_err_t remote_i2c_scan(int bus_num)
-{
-    // Not implemented in binary protocol
-    (void)bus_num;
-    return ESP_ERR_NOT_SUPPORTED;
 }
 
 /*******************************************************************************
@@ -668,21 +602,6 @@ esp_err_t remote_ads1115_read(int bus_num, uint8_t i2c_addr, uint8_t channel, in
 /*******************************************************************************
  * DS18B20 / 1-Wire Temperature Sensor Functions (Async Pattern)
  ******************************************************************************/
-
-esp_err_t remote_onewire_init(int pin)
-{
-    // 1-Wire is pre-initialized on IO Node
-    (void)pin;
-    return ESP_OK;
-}
-
-esp_err_t remote_onewire_scan(int pin, uint8_t rom_codes[][8], int max_devices, int *found_count)
-{
-    // Not implemented in compact binary protocol
-    (void)pin; (void)rom_codes; (void)max_devices;
-    if (found_count) *found_count = 0;
-    return ESP_ERR_NOT_SUPPORTED;
-}
 
 /**
  * @brief Start DS18B20 temperature conversion (async - fire and forget)

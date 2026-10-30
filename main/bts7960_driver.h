@@ -56,18 +56,6 @@ esp_err_t bts7960_init(void);
 void bts7960_enable(void);
 
 /**
- * @brief Disable BTS7960 driver
- */
-void bts7960_disable(void);
-
-/**
- * @brief Set blower motor speed
- * @param speed_percent Speed 0-100%
- * @return ESP_OK on success
- */
-esp_err_t bts7960_set_speed(uint8_t speed_percent);
-
-/**
  * @brief Set blower motor speed with ramping
  * @param speed_percent Target speed 0-100%
  * @param ramp_time_ms Time to reach target speed in milliseconds
@@ -88,12 +76,6 @@ uint8_t bts7960_get_speed(void);
 uint8_t bts7960_get_target_speed(void);
 
 /**
- * @brief Check if blower is enabled
- * @return true if enabled
- */
-bool bts7960_is_enabled(void);
-
-/**
  * @brief Check if blower is ramping
  * @return true if speed ramping in progress
  */
@@ -105,18 +87,6 @@ bool bts7960_is_ramping(void);
 void bts7960_stop(void);
 
 /**
- * @brief Emergency stop with brake
- */
-void bts7960_emergency_stop(void);
-
-/**
- * @brief Set blower speed from fan level
- * @param fan_level HVAC fan speed level
- * @return ESP_OK on success
- */
-esp_err_t bts7960_set_fan_level(hvac_fan_speed_t fan_level);
-
-/**
  * @brief Re-send the current duty to the node (restores it after a node reset)
  */
 void bts7960_refresh(void);
@@ -125,12 +95,6 @@ void bts7960_refresh(void);
  * @brief True if the node acknowledged the last blower PWM command (always true without remote IO)
  */
 bool bts7960_last_command_ok(void);
-
-/**
- * @brief Get blower state
- * @param state Pointer to state structure
- */
-void bts7960_get_state(blower_state_t *state);
 
 /**
  * @brief Blower control task - must be called periodically or run as FreeRTOS task

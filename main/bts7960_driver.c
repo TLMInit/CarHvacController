@@ -35,17 +35,6 @@ static int16_t ramp_step_size = 0;
 #define BLOWER_TASK_PERIOD_MS   20      // 50Hz update rate
 #define DEFAULT_RAMP_TIME_MS    500     // Default speed ramp time
 
-// Fan level to speed mapping (percentage)
-static const uint8_t fan_level_speeds[] = {
-    BTS7960_FAN_PERCENT_OFF,          // HVAC_FAN_OFF
-    BTS7960_FAN_PERCENT_LOW,          // HVAC_FAN_LOW
-    BTS7960_FAN_PERCENT_MEDIUM_LOW,   // HVAC_FAN_MEDIUM_LOW
-    BTS7960_FAN_PERCENT_MEDIUM,       // HVAC_FAN_MEDIUM
-    BTS7960_FAN_PERCENT_MEDIUM_HIGH,  // HVAC_FAN_MEDIUM_HIGH
-    BTS7960_FAN_PERCENT_HIGH,         // HVAC_FAN_HIGH
-    BTS7960_FAN_PERCENT_AUTO_DEFAULT, // HVAC_FAN_AUTO (default)
-};
-
 /*******************************************************************************
  * Private Functions
  ******************************************************************************/
@@ -121,55 +110,6 @@ void bts7960_enable(void)
     }
 }
 
-void bts7960_disable(void)
-{
-    ESP_LOGI(TAG, "Stopping BTS7960 blower");
-    
-    // Set PWM to 0 (cannot disable as R_EN is hardwired to 3V3)
-    set_pwm_duty(0);
-    
-    if (xSemaphoreTake(blower_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        blower_state.is_enabled = false;
-        blower_state.current_speed = 0;
-        blower_state.target_speed = 0;
-        blower_state.is_ramping = false;
-        xSemaphoreGive(blower_mutex);
-    }
-}
-
-esp_err_t bts7960_set_speed(uint8_t speed_percent)
-{
-    if (speed_percent > 100) {
-        speed_percent = 100;
-    }
-    
-    uint16_t duty = percent_to_duty(speed_percent);
-    
-    if (xSemaphoreTake(blower_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        if (!blower_state.is_enabled && speed_percent > 0) {
-            bts7960_enable();
-        }
-
-        // The AUTO fan calls this every 100 ms; only a change goes to the node
-        // (bts7960_refresh() re-sends it once a second anyway)
-        bool changed = (duty != blower_state.current_speed) || blower_state.is_ramping;
-        blower_state.target_speed = duty;
-        blower_state.current_speed = duty;
-        blower_state.is_ramping = false;
-
-        if (changed) {
-            set_pwm_duty(duty);
-        }
-        
-        ESP_LOGD(TAG, "Blower speed set to %d%% (duty: %d)", speed_percent, duty);
-        xSemaphoreGive(blower_mutex);
-    } else {
-        return ESP_ERR_TIMEOUT;
-    }
-    
-    return ESP_OK;
-}
-
 esp_err_t bts7960_set_speed_ramp(uint8_t speed_percent, uint32_t ramp_time_ms)
 {
     if (speed_percent > 100) {
@@ -232,16 +172,6 @@ uint8_t bts7960_get_target_speed(void)
     return speed;
 }
 
-bool bts7960_is_enabled(void)
-{
-    bool enabled = false;
-    if (xSemaphoreTake(blower_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        enabled = blower_state.is_enabled;
-        xSemaphoreGive(blower_mutex);
-    }
-    return enabled;
-}
-
 bool bts7960_is_ramping(void)
 {
     bool ramping = false;
@@ -258,33 +188,6 @@ void bts7960_stop(void)
     bts7960_set_speed_ramp(0, DEFAULT_RAMP_TIME_MS);
 }
 
-void bts7960_emergency_stop(void)
-{
-    ESP_LOGW(TAG, "Emergency stop!");
-    
-    // Immediate stop without ramping
-    set_pwm_duty(0);
-    
-    if (xSemaphoreTake(blower_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        blower_state.current_speed = 0;
-        blower_state.target_speed = 0;
-        blower_state.is_ramping = false;
-        xSemaphoreGive(blower_mutex);
-    }
-}
-
-esp_err_t bts7960_set_fan_level(hvac_fan_speed_t fan_level)
-{
-    if (fan_level >= HVAC_FAN_MAX) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    uint8_t speed = fan_level_speeds[fan_level];
-    ESP_LOGI(TAG, "Setting fan level %d -> %d%%", fan_level, speed);
-    
-    return bts7960_set_speed_ramp(speed, DEFAULT_RAMP_TIME_MS);
-}
-
 void bts7960_refresh(void)
 {
     if (xSemaphoreTake(blower_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -296,18 +199,6 @@ void bts7960_refresh(void)
 bool bts7960_last_command_ok(void)
 {
     return last_command_ok;
-}
-
-void bts7960_get_state(blower_state_t *state)
-{
-    if (state == NULL) {
-        return;
-    }
-    
-    if (xSemaphoreTake(blower_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        *state = blower_state;
-        xSemaphoreGive(blower_mutex);
-    }
 }
 
 void bts7960_task(void *pvParameters)

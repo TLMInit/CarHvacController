@@ -84,7 +84,6 @@ lv_obj_t *ui_make_body(lv_obj_t *parent, lv_coord_t y, lv_coord_t h);
 
 lv_obj_t *ui_modal_open(uint32_t border_color, lv_coord_t w, lv_coord_t h);
 void ui_modal_close(void);
-bool ui_modal_is_open(void);
 typedef void (*ui_confirm_cb_t)(void *data);
 void ui_modal_confirm(const char *title, const char *desc, const char *ok_text,
                       uint32_t ok_color, ui_confirm_cb_t cb, void *data);

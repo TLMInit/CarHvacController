@@ -139,20 +139,3 @@ esp_err_t ads1115_read_valve_position(ads1115_channel_t channel,
     *position = ads1115_voltage_to_position(voltage);
     return ESP_OK;
 }
-
-esp_err_t ads1115_deinit(void)
-{
-    if (!driver.initialized) {
-        return ESP_OK;
-    }
-    
-    if (driver.mutex) {
-        vSemaphoreDelete(driver.mutex);
-        driver.mutex = NULL;
-    }
-    
-    driver.initialized = false;
-    ESP_LOGI(TAG, "ADS1115 driver deinitialized");
-    
-    return ESP_OK;
-}

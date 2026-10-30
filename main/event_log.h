@@ -39,9 +39,6 @@ typedef struct {
 
 void event_log_add(event_class_t cls, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 
-/** Number of stored events (0..EVENT_LOG_SIZE). */
-size_t event_log_count(void);
-
 /** Copy event `index` (0 = newest). Returns false past the end. */
 bool event_log_get(size_t index, event_t *out);
 

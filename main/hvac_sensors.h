@@ -81,17 +81,6 @@ typedef struct {
 esp_err_t hvac_sensors_init(i2c_master_bus_handle_t i2c_bus);
 
 /**
- * @brief Deinitialize all sensors
- */
-void hvac_sensors_deinit(void);
-
-/**
- * @brief Read all sensors (call periodically)
- * @return ESP_OK if at least one sensor read successfully
- */
-esp_err_t hvac_sensors_read_all(void);
-
-/**
  * @brief Get specific sensor value
  * @param sensor_id Sensor identifier
  * @return Sensor value (NAN if error)
@@ -118,22 +107,10 @@ void hvac_sensors_get_all(hvac_sensor_readings_t *readings);
 float hvac_sensors_get_cabin_temp(void);
 
 /**
- * @brief Get cabin humidity
- * @return Humidity in %RH (NAN if error)
- */
-float hvac_sensors_get_cabin_humidity(void);
-
-/**
  * @brief Get duct air temperature
  * @return Temperature in °C (NAN if error)
  */
 float hvac_sensors_get_duct_temp(void);
-
-/**
- * @brief Check if sensors are healthy
- * @return true if all sensors are working
- */
-bool hvac_sensors_all_healthy(void);
 
 /**
  * @brief Enable/disable calibration mode for fast valve position reads
@@ -152,18 +129,6 @@ void hvac_sensors_task(void *pvParameters);
  * @return ESP_OK on success
  */
 esp_err_t hvac_sensors_start_task(void);
-
-/**
- * @brief Get sensor reading interval
- * @return Reading interval in milliseconds
- */
-uint32_t hvac_sensors_get_interval_ms(void);
-
-/**
- * @brief Set sensor reading interval
- * @param interval_ms Interval in milliseconds (min 100ms)
- */
-void hvac_sensors_set_interval_ms(uint32_t interval_ms);
 
 #ifdef __cplusplus
 }

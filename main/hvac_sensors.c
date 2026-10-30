@@ -201,7 +201,6 @@ static rom_slot_t s_roms[SENSOR_ROLES_MAX_ROMS];    // guarded by sensor_mutex
 static size_t s_rom_count;
 static bool s_roles_stored;                         // "rom_roles" exists in NVS (no 2.0 migration)
 static volatile bool s_search_requested;
-static volatile uint32_t s_roles_seq;
 
 // ROM in bus order (family code first) for the console
 static void rom_str(const uint8_t rom[8], char out[17])
@@ -311,7 +310,6 @@ static void roles_apply_search(uint8_t roms[][8], int found)
         roles_snapshot(recs);
         migrate = true;
     }
-    s_roles_seq++;
     xSemaphoreGive(sensor_mutex);
 
     ESP_LOGI(TAG, "1-Wire search: %d ROM(s)", found);
@@ -360,7 +358,6 @@ static void roles_store_reading(size_t i, const uint8_t rom[8], esp_err_t ret, f
             sensor_data[SENSOR_DUCT_TEMP].status = SENSOR_STATUS_ERROR;
         }
     } else {
-        if (s->temp_c != t) s_roles_seq++;
         s->temp_c = t;
         s->last_ms = now;
         if (is_duct) {
@@ -528,7 +525,6 @@ esp_err_t sensor_roles_assign(const uint8_t rom[8], sensor_role_t role)
     }
     rom_role_rec_t recs[SENSOR_ROLES_MAX_ROMS];
     roles_snapshot(recs);
-    s_roles_seq++;
     xSemaphoreGive(sensor_mutex);
 
     char hex[17];
@@ -566,11 +562,6 @@ const char *sensor_role_name(sensor_role_t role)
         case SENSOR_ROLE_OUTSIDE: return "Outside";
         default:                  return "Unused";
     }
-}
-
-uint32_t sensor_roles_seq(void)
-{
-    return s_roles_seq;
 }
 
 // Read BME280 temperature and humidity via remote I2C
@@ -746,29 +737,6 @@ esp_err_t hvac_sensors_init(i2c_master_bus_handle_t i2c_bus)
     return ESP_OK;
 }
 
-void hvac_sensors_deinit(void)
-{
-    if (sensor_mutex) {
-        vSemaphoreDelete(sensor_mutex);
-        sensor_mutex = NULL;
-    }
-}
-
-esp_err_t hvac_sensors_read_all(void)
-{
-    read_remote_temperature_sensors();
-    read_valve_positions();
-    
-    // Return OK if at least one sensor is working
-    for (int i = 0; i < SENSOR_MAX; i++) {
-        if (sensor_data[i].status == SENSOR_STATUS_OK) {
-            return ESP_OK;
-        }
-    }
-    
-    return ESP_FAIL;
-}
-
 // Status with staleness applied; caller holds sensor_mutex
 static sensor_status_t fresh_status(hvac_sensor_id_t id)
 {
@@ -849,29 +817,9 @@ float hvac_sensors_get_cabin_temp(void)
     return hvac_sensors_get_value(SENSOR_CABIN_TEMP);
 }
 
-float hvac_sensors_get_cabin_humidity(void)
-{
-    return hvac_sensors_get_value(SENSOR_CABIN_HUMIDITY);
-}
-
 float hvac_sensors_get_duct_temp(void)
 {
     return hvac_sensors_get_value(SENSOR_DUCT_TEMP);
-}
-
-bool hvac_sensors_all_healthy(void)
-{
-    bool healthy = true;
-    if (xSemaphoreTake(sensor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        for (int i = 0; i < SENSOR_MAX; i++) {
-            if (sensor_data[i].status != SENSOR_STATUS_OK) {
-                healthy = false;
-                break;
-            }
-        }
-        xSemaphoreGive(sensor_mutex);
-    }
-    return healthy;
 }
 
 void hvac_sensors_task(void *pvParameters)
@@ -921,19 +869,6 @@ esp_err_t hvac_sensors_start_task(void)
     }
     
     return ESP_OK;
-}
-
-uint32_t hvac_sensors_get_interval_ms(void)
-{
-    return sensor_interval_ms;
-}
-
-void hvac_sensors_set_interval_ms(uint32_t interval_ms)
-{
-    if (interval_ms < 100) {
-        interval_ms = 100;
-    }
-    sensor_interval_ms = interval_ms;
 }
 
 void hvac_sensors_set_calibration_mode(bool enabled)

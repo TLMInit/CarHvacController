@@ -436,11 +436,6 @@ void ui_modal_close(void)
     }
 }
 
-bool ui_modal_is_open(void)
-{
-    return modal != NULL;
-}
-
 bool ui_lang_da(void)
 {
     return s_lang_da;
@@ -1290,11 +1285,6 @@ void hvac_ui_update(void)
     }
 }
 
-lv_obj_t *hvac_ui_get_screen(void)
-{
-    return scr_main;
-}
-
 void hvac_ui_set_brightness(uint8_t brightness)
 {
     if (brightness > 100) brightness = 100;
@@ -1377,9 +1367,4 @@ void hvac_ui_show_error(const char *message)
 void hvac_ui_show_info(const char *message)
 {
     show_message("Info", message);
-}
-
-void hvac_ui_hide_message(void)
-{
-    if (msg_box) lv_obj_del(msg_box);
 }

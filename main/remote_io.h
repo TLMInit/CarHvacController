@@ -62,11 +62,6 @@ esp_err_t remote_gpio_set_mode(int pin, remote_gpio_mode_t mode);
  */
 esp_err_t remote_gpio_set_level(int pin, int level);
 
-/**
- * @brief Get GPIO input level
- */
-esp_err_t remote_gpio_get_level(int pin, int *level);
-
 // ==================== PWM Functions ====================
 
 /**
@@ -84,22 +79,7 @@ esp_err_t remote_pwm_configure(int pin, int freq_hz, int resolution_bits);
  */
 esp_err_t remote_pwm_set_duty(int pin, int duty);
 
-/**
- * @brief Stop PWM on a pin
- */
-esp_err_t remote_pwm_stop(int pin);
-
 // ==================== I2C Functions ====================
-
-/**
- * @brief Initialize I2C bus on IO Node
- */
-esp_err_t remote_i2c_init(int bus_num, int sda_pin, int scl_pin, int freq_hz);
-
-/**
- * @brief Deinitialize I2C bus
- */
-esp_err_t remote_i2c_deinit(int bus_num);
 
 /**
  * @brief Write data to I2C device
@@ -107,33 +87,11 @@ esp_err_t remote_i2c_deinit(int bus_num);
 esp_err_t remote_i2c_write(int bus_num, uint8_t addr, const uint8_t *data, size_t len);
 
 /**
- * @brief Read data from I2C device
- */
-esp_err_t remote_i2c_read(int bus_num, uint8_t addr, uint8_t *data, size_t len);
-
-/**
  * @brief Write then read I2C (combined transaction)
  */
 esp_err_t remote_i2c_write_read(int bus_num, uint8_t addr,
                                  const uint8_t *write_data, size_t write_len,
                                  uint8_t *read_data, size_t read_len);
-
-/**
- * @brief Scan I2C bus for devices
- */
-esp_err_t remote_i2c_scan(int bus_num);
-
-// ==================== 1-Wire Functions ====================
-
-/**
- * @brief Initialize 1-Wire bus on IO Node
- */
-esp_err_t remote_onewire_init(int pin);
-
-/**
- * @brief Scan for 1-Wire devices
- */
-esp_err_t remote_onewire_scan(int pin, uint8_t rom_codes[][8], int max_devices, int *found_count);
 
 // ==================== DS18B20 Async Functions ====================
 
