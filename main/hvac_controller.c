@@ -1170,7 +1170,7 @@ compressor:
     if (hvac_state.mode == HVAC_MODE_OFF) {
         interlock = true;
         ac_reason = "System OFF";
-    } else if (bts7960_get_speed() < cfg.fan_min) {
+    } else if (!bts7960_speed_at_least((uint8_t)cfg.fan_min)) {   // exact: Low itself passes
         // No airflow over the evaporator: it ices up. The limit is the configured Low duty
         // (SET_FAN_MIN_DUTY), so A/C runs in every manual level; the freeze cutout below
         // remains the guard for a low fan minimum.

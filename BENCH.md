@@ -19,8 +19,8 @@ which averages; or a scope), analog RC after the node README's filter (10 kΩ, 1
 
 1. **Clutch unchanged.** Compressor type Clutch (default): A/C on in a manual mode with fan
    Medium: relay on, diagnostics row `A/C REQ ON  COMP ON  RECIRC ..` as before; GPIO10 stays 0 V
-   and the node console shows no PWM_INIT_HZ. (In fan Low the clutch drops with `Interlock:
-   blower below Low`: a known, unchanged clutch issue, see DECISIONS.md.)
+   and the node console shows no PWM_INIT_HZ. Fan Low: the clutch stays on (before v2.4 it
+   dropped with `Interlock: blower below Low` because of a rounding error, now fixed).
 2. **Node without the capability.** With a v2.4 node set Compressor type Electric: event log
    `A/C electric output unavailable: node lacks PWM_HZ`, A/C reason `Electric: node lacks PWM_HZ`,
    relay stays off whatever is requested. Then flash node v2.5.
