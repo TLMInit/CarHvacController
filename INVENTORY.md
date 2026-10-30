@@ -368,40 +368,58 @@ label promises:
 | main/hvac_sensors.h:117 | fast reads "(50ms)" | 25 ms (hvac_sensors.c:44) |
 | this brief | tags `v2.2.1-display`, `v2.3.1-node` | not present; heads are `v2.2-display`, `v2.3-node` (the safety-fix tags that exist are `v2.1.1-display`, `v2.2.1-node`) |
 
-## 5. Constants that exist twice and must change together
+## 5. Coupled pairs
 
-- Link liveness: node `LINK_WATCHDOG_MS` 3000 (node_config.h:34) = display "connected"
-  window 3000 (remote_io_binary.c:733) > `MOTOR_LINK_REFRESH_MS` 1000 (motor_link.h:23)
-  = controller re-assert 1000 (hvac_controller.c:342); BENCH.md:17 and node README:190.
-- Command timeout 200 ms (remote_io_binary.c:45) vs the node's reply budgets: ADS poll
-  ≤ 20 ms (io_i2c.c:39-41), search 100 ms (io_onewire.c:25), DS18B20 3 retries
-  (io_onewire.c:22); node README:144, :202 and protocol_server.c:7.
-- Frame timeout 20 ms: remote_io_binary.c:46 and node_config.h:33.
-- `cobs_protocol.h` (payload 64, protocol 2, 4 ROMs, OTA_DATA_MAX 56, error codes) and
-  `ota_image.h`: byte-identical copies in both repos; `ionode_cli.py` ERR_NAMES mirrors the
-  error codes.
-- `SENSOR_ROLES_MAX_ROMS` 4 (sensor_roles.h:29) = `ONEWIRE_SEARCH_MAX_ROMS` 4 (cobs_protocol.h:44).
-- Blower PWM 25 kHz: bts7960_driver.c:87 and node_config.h:60 `{48, 25}`; node README:26.
-- Pin map: hvac_hw_config.h vs node_config.h:55, :60, :88 and the node README table.
-- `NODE_PROJECT_NAME` "CarHvacIoNode" (remote_io.h) vs `project(CarHvacIoNode)` in the node CMakeLists.txt:4.
-- Node image size: 1 MB in web_server.c:37 and index.html:139; the node slot is 960 KB (partitions.csv:6-7).
-- ADC full scale: display 4096/32767 mV (ads1115_driver.c:102) assumes the node's PGA ±4.096 V (io_i2c.c:35).
-- Fan Low 30: bts7960_driver.h:18, SET_FAN_MIN_DUTY default 30 (settings_table.c:87), the
-  A/C interlock (hvac_controller.c:986) and DECISIONS.md:37.
-- Deadband 0.5 °C: TEMP_DEADBAND (hvac_controller.c:36) and the AUTO fan lower knee (:767, :775).
-- Jog: UI resend 150 ms (hvac_ui_service.c:25) must stay below the driver dead-man 300 ms (tb6612fng_driver.c:204).
-- Humidity gap: 2 %RH (settings.c:184-190) vs 1 %RH (hvac_controller.c:207).
-- `cfg_*` fallback defaults (hvac_controller.c:204-243) repeat every table default; a changed
-  table default without the fallback changed is only visible when the table is broken.
-- Self-test maximum wait 60 s (selftest.c:28, DESIGN.md:293) vs calibration timeout 120 s (tb6612fng_driver.c:1166).
-- `DEFAULT_RAMP_TIME_MS` 500 (bts7960_driver.c:36) vs SET_SOFT_START_MS default 500.
-- Setpoint range 16..30: TEMP_MIN/MAX_C (hvac_controller.c:37-38), SET_DEFAULT_SETPOINT
-  range (settings_table.c:77), presets 30 and 16 (presets.c:6-7).
-- `VALVE_BOUNDARY_SAFE_MARGIN` 1 (tb6612fng_driver.c:100) vs SET_SAFE_MARGIN_PCT default 1;
-  `VALVE_MOTOR_SPEED` 80 / `COOLANT_MOTOR_SPEED` 255 vs SET_VALVE_SPEED_n "0 = default".
-- Node task watchdog 5 s (node sdkconfig) and README:193; OTA confirm 60 s (node_config.h:22),
-  both READMEs and DECISIONS.md:55; display validation 30 s / 5 min (ota_display.c:25-26),
-  README.md:43 and DECISIONS.md:55; chart 10 s (hvac_ui_diag.c:247) and BENCH.md:92.
+As of v2.3-display / v2.4-node (this section replaces the v2.2 list). Each site carries a
+one-line comment naming the other (file and symbol). Node paths are in `CarHvacIoNode/`.
+Enforcement: **assert** = `_Static_assert` in the build, **one source** = one constant or
+setting used by both sites, **HELLO** = sent over the link at every connect, **rule** = a
+cross-field rule in the settings table (clamped with a note at set time, fixed at load,
+host-tested), **comment** = both sites name each other, nothing checks it.
+
+| # | Site A | Site B | Rule | Enforced by |
+|---|---|---|---|---|
+| 1 | `REMOTE_IO_LINK_WINDOW_MS` 3000 (remote_io.h) | node `LINK_WATCHDOG_MS` / `s_watchdog_ms` (node_config.h, protocol_server.c) | equal | HELLO (u16 BE); node default 3000 before HELLO and for 2.3 nodes (comment) |
+| 2 | `REMOTE_IO_LINK_WINDOW_MS`; node `LINK_WATCHDOG_MS` | `LINK_WINDOW_MIN_MS` 2000 / `LINK_WINDOW_MAX_MS` 10000 (cobs_protocol.h, both repos) | min ≤ window ≤ max | assert (remote_io_binary.c, node protocol_server.c); the node clamps what HELLO carries |
+| 3 | `MOTOR_LINK_REFRESH_MS` 1000 (motor_link.h) | `REMOTE_IO_LINK_WINDOW_MS` | refresh ≤ window / 2 | assert (tb6612fng_driver.c) |
+| 4 | `CTRL_REASSERT_MS` 1000 (hvac_controller.c) | `REMOTE_IO_LINK_WINDOW_MS` | re-assert ≤ window / 2 | assert (hvac_controller.c) |
+| 5 | `FRAME_TIMEOUT_MS` 20 (remote_io_binary.c) | node `LINK_FRAME_TIMEOUT_MS` 20 (node_config.h) | equal | comment |
+| 6 | `CMD_TIMEOUT_MS` 200 (remote_io_binary.c) | node `ADS_POLL_MAX_STEPS` (~20 ms, io_i2c.c), `DS18B20_READ_ATTEMPTS` 3 (io_onewire.c) | node's slowest reply < timeout | comment |
+| 7 | `SEARCH_TIMEOUT_MS` 500 (remote_io_binary.c) | node `ONEWIRE_SEARCH_BUDGET_US` 100 ms + one ROM (io_onewire.c) | budget + one ROM < timeout | comment |
+| 8 | `OTA_REBOOT_WAIT_MS` 30 s (remote_io_binary.c) | node `OTA_CONFIRM_TIMEOUT_MS` 60 s (node_config.h) | display wait < confirm time, or a good image rolls back | comment |
+| 9 | `NODE_OTA_SLOT_SIZE` 0xF0000 (remote_io.h) | node ota_0 / ota_1 size (partitions.csv) | image ≤ slot | one source on the display (`remote_io_ota_node` refuses larger); the node checks its real slot at OTA_BEGIN. web_server.c `NODE_IMAGE_MAX` (1 MB upload buffer) and index.html "max 1 MB" still say 1 MB |
+| 10 | `NODE_PROJECT_NAME` (remote_io.h) | node `project(CarHvacIoNode)` (CMakeLists.txt) | equal | comment; a mismatch makes every node OTA fail the image check (visible, not silent) |
+| 11 | `REMOTE_IO_BAUD_RATE` 921600 (hvac_hw_config.h) | node `LINK_BAUD` (node_config.h) | equal | comment |
+| 12 | IO-node pins (hvac_hw_config.h) | node `NODE_BOOT_OUTPUT_PINS`, `NODE_BOOT_PWM_PINS`, `NODE_ALLOWED_PINS` (node_config.h), ionode_cli.py `VALVES` | same pins | comment |
+| 13 | blower `remote_pwm_configure(BTS7960_RPWM, 25000, 10)` (bts7960_driver.c) | node `{48, 25}` in `NODE_BOOT_PWM_PINS` | 25 kHz both | comment |
+| 14 | mV maths 4096 / 32767 (ads1115_driver.c) | node `ADS_CFG_PGA_4V096` (io_i2c.c) | same full scale | comment |
+| 15 | main/cobs_protocol.h, main/ota_image.h | the node's copies | byte-identical | comment (compare with `cmp` after any change; identical at v2.3 / v2.4) |
+| 16 | `cobs_error_t` (cobs_protocol.h) | node tools/ionode_cli.py `ERR_NAMES` | same codes | comment |
+| 17 | `SENSOR_ROLES_MAX_ROMS` 4 (sensor_roles.h) | `ONEWIRE_SEARCH_MAX_ROMS` 4 (cobs_protocol.h) | equal | assert (hvac_sensors.c) |
+| 18 | `JOG_REPEAT_MS` 150 (hvac_ui_service.c) | `SERVICE_JOG_TIMEOUT_MS` 300 (tb6612fng_driver.h) | resend < dead-man | assert (hvac_ui_service.c) |
+| 19 | `VALVE_PASS_EVENT_MS` 1000 (tb6612fng_driver.c) | `CONFIG_ESP_TASK_WDT_TIMEOUT_S` 10 (sdkconfig) | event ≤ watchdog / 10 | assert (tb6612fng_driver.c) |
+| 20 | `VALVE_WRAP_CLEAR_NEAR_PCT` | `VALVE_ADC_WRAPAROUND_THRESH` 40 (tb6612fng_driver.c) | clear < threshold | assert |
+| 21 | `TEMP_MIN_C` / `TEMP_MAX_C` (hvac_controller.c) | default-setpoint range, `SET_PRESET_COOL_C` min, `SET_PRESET_HEAT_C` max (settings_table.c) | same 16 / 30 °C | one source: `SETTINGS_SETPOINT_MIN_C` / `_MAX_C` (settings.h) |
+| 22 | `AC_MIN_BLOWER_PCT` 30 (hvac_controller.c) | `SET_FAN_MIN_DUTY` default 30 (settings_table.c) | default fan minimum ≥ interlock, so manual Low keeps the A/C with defaults (a lower setting drops the A/C on purpose) | comment |
+| 23 | `VALVE_BOUNDARY_SAFE_MARGIN` 1 and the clamp to 10 (tb6612fng_driver.c) | `SET_SAFE_MARGIN_PCT` default 1, max 10 (settings_table.c) | boot value = default, clamp = max | comment |
+| 24 | self-test maximum wait (selftest.c) | `SET_CAL_TIMEOUT_S` (settings_table.c) | wait ≥ longest calibration | one source: `tb6612fng_calib_max_ms()` = 2 × timeout + settle (items 10, 11) |
+| 25 | `SET_FAN_MIN_DUTY` ≤ Med-low ≤ Medium ≤ Med-high ≤ `SET_FAN_MAX_DUTY` | `g_fan_levels` (manual Low = fan minimum, High = fan maximum) | ascending | rule (item 5) |
+| 26 | `SET_HUMIDITY_OFF` (settings_table.c; controller hvac_controller.c) | `SET_HUMIDITY_ON` | off ≤ on − `SETTINGS_HUMIDITY_GAP` (2 %RH) | rule; the controller uses the same constant (item 8) |
+| 27 | `SET_DUCT_MIN` | `SET_DUCT_MAX` | min ≤ max − `SETTINGS_DUCT_GAP` (5 °C) | rule (item 9) |
+| 28 | `SET_HEAT_GAIN_MIN` ≤ `SET_HEAT_GAIN` | ≤ `SET_HEAT_GAIN_MAX` | ascending | rule (item 13) |
+| 29 | `SET_COLD_START_BELOW` | `SET_COLD_START_END_C` | end ≥ below + `SETTINGS_COLD_START_GAP` (1 °C) | rule (item 13) |
+| 30 | `SET_VALVE_MIN_PWM` | `SET_CAL_SPEED_PWM` | calibration speed ≥ minimum speed | rule (item 13) |
+| 31 | `SET_VALVE_SPEED_0..4` | `SET_VALVE_MIN_PWM` (coolant `SET_COOLANT_MIN_PWM`) | 0 (built-in) or ≥ floor | rule, `g_settings_floors` (item 7) |
+
+The count is 31, not the 22 the brief expected: the v2.2 list grouped several pairs per line
+(link liveness is rows 1–4, the command timeouts rows 6–7, the shared header rows 15–16, the
+baud rate was inside "pin map"); the settings release made four v2.2 pairs one source and
+they are no longer pairs (deadband and the AUTO fan knee are one setting, the `cfg_*`
+fallbacks read the table default, `DEFAULT_RAMP_TIME_MS` is gone, the humidity gap is one
+constant, now row 26); its cross-field rules are pairs in their own right (rows 25–31); and
+rows 8 and 19 were found while checking. The v2.2 line "node task watchdog 5 s, OTA confirm
+60 s, display validation 30 s / 5 min, chart 10 s" pairs code with documentation, not two
+constants: item 15 brought those documents in line.
 
 ## Not checked
 

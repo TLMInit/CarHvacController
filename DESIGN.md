@@ -306,3 +306,13 @@ scratchpad read per ROM (at most four); searches run in the same task.
 LVGL's 128 KB pool is one malloc in PSRAM (see the root `CMakeLists.txt`); draw buffers stay
 internal for DMA. Static internal RAM: 136 KB used of 342 KB. `wifi_ap.c` logs the free
 internal heap each time the AP starts.
+
+### Numbers shared with the IO node
+
+The link window is one number: `REMOTE_IO_LINK_WINDOW_MS` (3 s, `remote_io.h`) goes to the node in
+HELLO and becomes its watchdog; the 1 s re-asserts are asserted to stay at most half of it. The
+other cross-board pairs (frame timeout 20 ms, command and search timeouts vs the node's reply
+budgets, OTA reboot wait vs the node's 60 s confirm, node slot size, project name, baud, pin map,
+blower PWM 25 kHz, ADS1115 full scale, the byte-identical `cobs_protocol.h` / `ota_image.h`) carry
+a comment at both ends; the full list with the rule and its enforcement is `INVENTORY.md`
+section 5, the node's side is the table in its README.
