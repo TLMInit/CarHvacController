@@ -7,24 +7,11 @@
 #include "sensor_roles.h"
 #include "tb6612fng_driver.h"
 
-#include "esp_timer.h"
+#include "hvac_ui_common.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-
-static uint32_t now_ms(void)
-{
-    return (uint32_t)(esp_timer_get_time() / 1000);
-}
-
-static bool refresh_due(uint32_t *last, uint32_t period)
-{
-    uint32_t now = now_ms();
-    if ((uint32_t)(now - *last) < period) return false;
-    *last = now;
-    return true;
-}
 
 static void set_hidden(lv_obj_t *obj, bool hidden)
 {

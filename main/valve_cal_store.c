@@ -4,6 +4,7 @@
  */
 
 #include "valve_cal_store.h"
+#include "cobs_protocol.h"
 #include "settings.h"
 #include "esp_log.h"
 #include "nvs.h"
@@ -17,21 +18,9 @@ static nvs_handle_t s_h;
 static bool s_open;
 static uint32_t s_boot_counter;
 
-static uint16_t crc16_ccitt(const uint8_t *p, size_t n)
-{
-    uint16_t crc = 0xFFFF;
-    while (n--) {
-        crc ^= (uint16_t)(*p++) << 8;
-        for (int i = 0; i < 8; i++) {
-            crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
-        }
-    }
-    return crc;
-}
-
 static uint16_t record_crc(const valve_cal_record_t *rec)
 {
-    return crc16_ccitt((const uint8_t *)rec, offsetof(valve_cal_record_t, crc));
+    return cobs_crc16((const uint8_t *)rec, offsetof(valve_cal_record_t, crc));
 }
 
 static void key_for(hvac_valve_id_t valve, char *key)
