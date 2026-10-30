@@ -212,6 +212,75 @@ static void test_valve_speed_floor_follows_setting(void)
     CHECK(settings_get_int(SET_VALVE_SPEED_0) == 50);
 }
 
+static void test_cold_start_gap(void)
+{
+    fresh();                                                    /* starts below 15, ends at 18 */
+    CHECK(settings_set_float(SET_COLD_START_END_C, 15) == ESP_OK);
+    CHECK(settings_get_float(SET_COLD_START_END_C) == 15 + SETTINGS_COLD_START_GAP);
+    CHECKM(noted(SET_COLD_START_END_C, "must be at least 1 °C above Cold start below (15 °C)"), "note '%s'", s_note);
+    CHECK(settings_set_float(SET_COLD_START_BELOW, 18) == ESP_OK);
+    CHECK(settings_get_float(SET_COLD_START_BELOW) == 16 - SETTINGS_COLD_START_GAP);
+    CHECKM(noted(SET_COLD_START_BELOW, "must be at least 1 °C below Cold start ends at (16 °C)"), "note '%s'", s_note);
+
+    boot_with_f("cold_below", 18, "cold_end_c", 16);
+    CHECK(settings_get_float(SET_COLD_START_END_C) == 16);
+    CHECK(settings_get_float(SET_COLD_START_BELOW) == 16 - SETTINGS_COLD_START_GAP);
+}
+
+static void test_stall_retries_min(void)
+{
+    fresh();
+    CHECK(settings_def(SET_VALVE_STALL_RETRIES)->min == 1);
+    CHECK(settings_set_int(SET_VALVE_STALL_RETRIES, 0) == ESP_OK);
+    CHECK(settings_get_int(SET_VALVE_STALL_RETRIES) == 1);
+    boot_with_i32("v_retries", 0, NULL, 0);
+    CHECK(settings_get_int(SET_VALVE_STALL_RETRIES) == 1);
+}
+
+static void test_cal_speed_above_min(void)
+{
+    fresh();                                                    /* min PWM 30, calibration 50 */
+    CHECK(settings_set_int(SET_CAL_SPEED_PWM, 25) == ESP_OK);
+    CHECK(settings_get_int(SET_CAL_SPEED_PWM) == 30);
+    CHECKM(noted(SET_CAL_SPEED_PWM, "must not be below Butterfly min speed (30)"), "note '%s'", s_note);
+    CHECK(settings_set_int(SET_CAL_SPEED_PWM, 50) == ESP_OK);
+    CHECK(settings_set_int(SET_VALVE_MIN_PWM, 60) == ESP_OK);
+    CHECK(settings_get_int(SET_VALVE_MIN_PWM) == 50);
+    CHECKM(noted(SET_VALVE_MIN_PWM, "must not be above Calibration speed (50)"), "note '%s'", s_note);
+
+    boot_with_i32("v_min_pwm", 80, "cal_pwm", 40);
+    CHECK(settings_get_int(SET_CAL_SPEED_PWM) == 40);
+    CHECK(settings_get_int(SET_VALVE_MIN_PWM) == 40);
+}
+
+static void test_ac_min_off(void)
+{
+    fresh();
+    CHECK(settings_def(SET_AC_MIN_OFF_S)->min == 5);            /* compressor protection floor */
+    CHECK(settings_set_int(SET_AC_MIN_OFF_S, 2) == ESP_OK);
+    CHECK(settings_get_int(SET_AC_MIN_OFF_S) == 5);
+    boot_with_i32("ac_min_off_s", 1, NULL, 0);
+    CHECK(settings_get_int(SET_AC_MIN_OFF_S) == 5);
+}
+
+static void test_heat_gain_within_limits(void)
+{
+    fresh();                                                    /* min 10, gain 20, max 50 */
+    CHECK(settings_set_float(SET_HEAT_GAIN, 5) == ESP_OK);
+    CHECK(settings_get_float(SET_HEAT_GAIN) == 10);
+    CHECKM(noted(SET_HEAT_GAIN, "must not be below Heat gain minimum (10 %/°C)"), "note '%s'", s_note);
+    CHECK(settings_set_float(SET_HEAT_GAIN, 20) == ESP_OK);
+    CHECK(settings_set_float(SET_HEAT_GAIN_MAX, 15) == ESP_OK);
+    CHECK(settings_get_float(SET_HEAT_GAIN_MAX) == 20);
+    CHECKM(noted(SET_HEAT_GAIN_MAX, "must not be below Classic heat gain (20 %/°C)"), "note '%s'", s_note);
+    CHECK(settings_set_float(SET_HEAT_GAIN_MIN, 30) == ESP_OK);
+    CHECK(settings_get_float(SET_HEAT_GAIN_MIN) == 20);
+
+    boot_with_f("heat_gain", 40, "heat_gain_max", 30);
+    CHECK(settings_get_float(SET_HEAT_GAIN) == 30);
+    CHECK(settings_get_float(SET_HEAT_GAIN_MIN) <= 30);
+}
+
 int main(void)
 {
     RUN(test_fan_chain_pure);
@@ -223,5 +292,10 @@ int main(void)
     RUN(test_humidity_gap);
     RUN(test_duct_gap);
     RUN(test_valve_speed_floor_follows_setting);
+    RUN(test_cold_start_gap);
+    RUN(test_stall_retries_min);
+    RUN(test_cal_speed_above_min);
+    RUN(test_ac_min_off);
+    RUN(test_heat_gain_within_limits);
     T_DONE();
 }

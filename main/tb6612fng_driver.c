@@ -90,6 +90,9 @@ static TaskHandle_t valve_task_handle = NULL;
 #define VALVE_DEADZONE_LOW_PCT      2       // Minimum target clamp (%)
 #define VALVE_DEADZONE_HIGH_PCT     2       // Maximum target clamp (%)
 #define VALVE_ADC_WRAPAROUND_THRESH 40      // ADC jump larger than this indicates potentiometer wrap-around
+// A wrap block cleared "near the target" must clear inside the zone a wrap jump cannot reach
+_Static_assert(VALVE_WRAP_CLEAR_NEAR_PCT < VALVE_ADC_WRAPAROUND_THRESH,
+               "VALVE_WRAP_CLEAR_NEAR_PCT must stay below VALVE_ADC_WRAPAROUND_THRESH");
 #define VALVE_BOUNDARY_SAFE_MARGIN  1       // Safety margin from calibrated boundaries (1% = range 1-99%)
 
 // Coolant valve specific settings (linear valve, different motor characteristics)

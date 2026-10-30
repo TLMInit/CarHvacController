@@ -262,13 +262,19 @@ const size_t g_settings_floor_count = sizeof(g_settings_floors) / sizeof(g_setti
 static const setting_operand_t k_humidity[] = { SETTING(SET_HUMIDITY_OFF), SETTING(SET_HUMIDITY_ON) };
 /* min = max made the cascade hold its last output forever (cascade.c) */
 static const setting_operand_t k_duct[] = { SETTING(SET_DUCT_MIN), SETTING(SET_DUCT_MAX) };
-static const setting_operand_t k_heat_gain[] = { SETTING(SET_HEAT_GAIN_MIN), SETTING(SET_HEAT_GAIN_MAX) };
+static const setting_operand_t k_heat_gain[] = { SETTING(SET_HEAT_GAIN_MIN), SETTING(SET_HEAT_GAIN), SETTING(SET_HEAT_GAIN_MAX) };
+/* warm-up that ends at or below its own trigger would restart on the next AUTO entry */
+static const setting_operand_t k_cold_start[] = { SETTING(SET_COLD_START_BELOW), SETTING(SET_COLD_START_END_C) };
+/* calibration below the stiction floor stalls and fails */
+static const setting_operand_t k_cal_speed[] = { SETTING(SET_VALVE_MIN_PWM), SETTING(SET_CAL_SPEED_PWM) };
 
 const setting_chain_t g_settings_chains[] = {
     { g_fan_levels, SETTINGS_FAN_LEVELS, 0 },
     { k_humidity, 2, SETTINGS_HUMIDITY_GAP },
     { k_duct, 2, SETTINGS_DUCT_GAP },
-    { k_heat_gain, 2, 0 },
+    { k_heat_gain, 3, 0 },
+    { k_cold_start, 2, SETTINGS_COLD_START_GAP },
+    { k_cal_speed, 2, 0 },
 };
 const size_t g_settings_chain_count = sizeof(g_settings_chains) / sizeof(g_settings_chains[0]);
 

@@ -37,6 +37,7 @@ extern "C" {
 #define SETTINGS_STR_MAX        33      /* longest string value incl. NUL (AP password: 8..32 chars) */
 #define SETTINGS_HUMIDITY_GAP   2.0f    /* %RH: Humidity A/C off stays at least this far below on (a chain rule) */
 #define SETTINGS_DUCT_GAP       5.0f    /* degC: duct minimum stays at least this far below the maximum (a chain rule) */
+#define SETTINGS_COLD_START_GAP 1.0f    /* degC: cold start ends at least this far above where it starts (a chain rule) */
 
 typedef enum {
     SET_TYPE_BOOL = 0,
@@ -161,7 +162,7 @@ typedef enum {
     SET_COLD_START_BELOW,       /* float degC, 0..20 step 1, default 15: AUTO warm-up starts below */
     SET_COLD_START_MIN_S,       /* int s, 0..600 step 30, default 60 */
     SET_COLD_START_MAX_MIN,     /* int min, 1..15 step 1, default 5 */
-    SET_COLD_START_END_C,       /* float degC, 10..25 step 0.5, default 18 */
+    SET_COLD_START_END_C,       /* float degC, 10..25 step 0.5, default 18; >= SET_COLD_START_BELOW + SETTINGS_COLD_START_GAP (a chain rule) */
     SET_COLD_START_END_RH,      /* int %RH, 30..90 step 5, default 60 */
     SET_COLD_START_DUCT_C,      /* float degC, 20..70 step 1, default 40 */
     SET_DEFOG_RELEASE_C,        /* float degC, 0.5..5 step 0.5, default 2 */
@@ -181,7 +182,7 @@ typedef enum {
 
     /* Advanced (phone page only) */
     SET_HEAT_GAIN,              /* float %/degC, 5..50 step 1, default 20: classic law base gain */
-    SET_HEAT_GAIN_MIN,          /* float %/degC, 5..50 step 1, default 10; <= SET_HEAT_GAIN_MAX (a chain rule) */
+    SET_HEAT_GAIN_MIN,          /* float %/degC, 5..50 step 1, default 10; chain: minimum <= SET_HEAT_GAIN <= maximum */
     SET_HEAT_GAIN_MAX,          /* float %/degC, 10..100 step 1, default 50 */
     SET_AC_MIN_OFF_S,           /* int s, 5..60 step 5, default 10 */
     SET_AC_MIN_ON_S,            /* int s, 10..300 step 10, default 30: humidity-only clutch */
@@ -220,7 +221,7 @@ typedef enum {
     SET_COOLANT_RAMP_PCT,       /* int %, 5..60 step 5, default 20 */
     SET_JOG_PWM,                /* int PWM, 20..255 step 5, default 40: service jog */
     SET_LEARN_MS,               /* int ms, 300..3000 step 100, default 800: learn-direction move */
-    SET_CAL_SPEED_PWM,          /* int PWM, 20..255 step 5, default 50 */
+    SET_CAL_SPEED_PWM,          /* int PWM, 20..255 step 5, default 50; >= SET_VALVE_MIN_PWM (a chain rule) */
     SET_CAL_TIMEOUT_S,          /* int s, 30..300 step 10, default 120: per calibration phase */
 
     SET_COUNT
