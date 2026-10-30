@@ -233,7 +233,7 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     INT (SET_VALVE_MOVE_MAX_S,  SV, "Max move time", "Maks bevægelsestid", 5, 60, 5, 20, "s", "v_move_s", apply_valves),
     INT (SET_VALVE_STALL_RETRIES, SV, "Stall retries", "Stall-forsøg", 1, 10, 1, 3, NULL, "v_retries", apply_valves),
     INT (SET_VALVE_RETRY_S,     SV, "Stall retry wait", "Stall-ventetid", 5, 60, 5, 10, "s", "v_retry_s", apply_valves),
-    INT (SET_VALVE_MIN_PWM,     SV, "Butterfly min speed", "Spjæld min. fart", 10, 150, 5, 30, NULL, "v_min_pwm", apply_valves),
+    INT (SET_VALVE_MIN_PWM,     SV, "Butterfly min speed", "Spjæld min. fart", 10, 150, 5, 60, NULL, "v_min_pwm", apply_valves),
     INT (SET_VALVE_RAMP_PCT,    SV, "Butterfly slow band", "Spjæld bremsebånd", 5, 60, 5, 40, "%", "v_ramp", apply_valves),
     INT (SET_VALVE_FILTER,      SV, "Feedback filter", "Positionsfilter", 32, 255, 16, 128, NULL, "v_filter", apply_valves),
     INT (SET_COOLANT_MIN_PWM,   SV, "Coolant min speed", "Kølevand min. fart", 10, 255, 5, 100, NULL, "c_min_pwm", apply_valves),

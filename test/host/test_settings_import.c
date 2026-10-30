@@ -108,7 +108,7 @@ static void test_cross_field_refused(void)
     refused(FILE_OF("\"fan_min\":50"), true, ESP_ERR_INVALID_ARG, "Fan minimum (50 %) must not be above Fan level Med-low (45 %)");
     refused(FILE_OF("\"hum_off\":64"), true, ESP_ERR_INVALID_ARG,
             "Humidity A/C off (64 %RH) must be at least 2 %RH below Humidity A/C on (65 %RH)");
-    refused(FILE_OF("\"vspeed0\":20"), true, ESP_ERR_INVALID_ARG, "Speed center 1 (20): 0 = default, else at least Butterfly min speed (30)");
+    refused(FILE_OF("\"vspeed0\":20"), true, ESP_ERR_INVALID_ARG, "Speed center 1 (20): 0 = default, else at least Butterfly min speed (60)");
     CHECK(settings_get_int(SET_HUMIDITY_OFF) == 58);
 }
 

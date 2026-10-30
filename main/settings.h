@@ -235,7 +235,7 @@ typedef enum {
     SET_VALVE_MOVE_MAX_S,       /* int s, 5..60 step 5, default 20: one move longer than this = stall */
     SET_VALVE_STALL_RETRIES,    /* int, 1..10, default 3 (at least 1: a rule) */
     SET_VALVE_RETRY_S,          /* int s, 5..60 step 5, default 10: back-off step between retries */
-    SET_VALVE_MIN_PWM,          /* int PWM, 10..150 step 5, default 30: butterfly ramp floor; floor of SET_VALVE_SPEED_0..3 */
+    SET_VALVE_MIN_PWM,          /* int PWM, 10..150 step 5, default 60 (30 until v2.5.1: below ~50 the bench motors do not start): butterfly ramp floor; floor of SET_VALVE_SPEED_0..3 */
     SET_VALVE_RAMP_PCT,         /* int %, 5..60 step 5, default 40: butterfly slows below this error */
     SET_VALVE_FILTER,           /* int /256, 32..255 step 16, default 128: position EMA weight of a new reading */
     SET_COOLANT_MIN_PWM,        /* int PWM, 10..255 step 5, default 100: coolant ramp floor; floor of SET_VALVE_SPEED_4 */

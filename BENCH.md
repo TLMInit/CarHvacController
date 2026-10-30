@@ -96,7 +96,7 @@ using a value away from the default, run its check once on the bench:
 | Stall timeout (`v_stall_s`) | 6 s | 3 s, then 12 s | At 3 s: a slow valve (cold morning, low speed override) must not log `stall` while moving normally. At 12 s: hold one valve by hand; it keeps driving 12 s before the stall event; check the gearbox does not get hot. |
 | A/C minimum off (`ac_min_off_s`) | 10 s | 5 s | Let the humidity rule cycle the clutch (Humidity A/C on just above the cabin RH): the clutch must not chatter and the engine must not stumble on re-engagement. Listen for clutch slip. |
 | Fan minimum (`fan_min`) | 30 % | 15 % | Manual fan Low: the blower must start from standstill and keep turning. The A/C interlock follows Low, so the compressor runs at this airflow: with A/C on in Low on a humid day for 15 min, the duct temperature must stay above the freeze cutout (3 °C) and the event log must show no freeze interlock; if it does, keep the fan minimum higher. |
-| Calibration speed (`cal_pwm`) | 75 | 30 (= butterfly min speed), then 150 | Settings → Valves → Recalibrate at boot, reboot. At 30: every valve finishes within the calibration timeout and none logs `calibration FAILED`. At 120: the stored range (`V<n> calibrated a-b`) stays within a few % of the one at 75; a much smaller range means the marker is overshot. |
+| Calibration speed (`cal_pwm`) | 75 | 60 (= butterfly min speed), then 150 | Settings → Valves → Recalibrate at boot, reboot. At 60: every valve finishes within the calibration timeout and none logs `calibration FAILED`. At 120: the stored range (`V<n> calibrated a-b`) stays within a few % of the one at 75; a much smaller range means the marker is overshot. |
 
 ## Hotfix v2.2.1-display (items 1–4)
 

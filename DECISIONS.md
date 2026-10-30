@@ -161,5 +161,9 @@ Display wiring (output driver, controller, UI):
 - Not added: Danish page text (setting labels and enum names already arrive in the display's language); °F on the phone (the page shows °C, as before); hold-to-repeat on the phone's −/+ (one tap per step).
 - Page size: 12 525 -> 29 963 bytes (embedded in flash).
 
+## v2.5.1-display — butterfly minimum speed
+
+- Bench, v2.5: with a healthy supply V3 stalled 6-7 % short of its target at 39-41 PWM (the control loop slows a valve to its minimum near the target); with the minimum at 60 it started at 66 PWM and reached the target in 1.2 s. These motors do not start below roughly 40-50 PWM, so the old stiction floor of 30 left valves short of their targets. Default of `SET_VALVE_MIN_PWM` 30 -> 60. It is also the floor of the per-valve speed overrides (0 or >= 60) and must stay <= the calibration speed (75): both rules follow the setting. An earlier test at 70 was invalid because the motor supply's PDM channel had tripped.
+
 ## Models
 - Strongest available model (Opus) for WP-A, WP-B, WP-C, WP-G, WP-H; faster model (Sonnet) for WP-D, WP-E, WP-F, WP-T. WP-A is not named in the brief; it is the framework every package depends on, so it gets the stronger model.

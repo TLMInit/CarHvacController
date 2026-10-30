@@ -132,7 +132,7 @@ static void test_valve_speed_floor(void)
 {
     fresh();
     CHECK(settings_set_int(SET_VALVE_SPEED_0, 5) == ESP_OK);    /* + from 0 reaches the floor */
-    CHECK(settings_get_int(SET_VALVE_SPEED_0) == 30);
+    CHECK(settings_get_int(SET_VALVE_SPEED_0) == 60);                /* floor = butterfly min speed, default 60 */
     CHECKM(noted(SET_VALVE_SPEED_0, "0 = default"), "note '%s'", s_note);
     CHECK(settings_step(SET_VALVE_SPEED_0, -1) == ESP_OK);     /* - from the floor reaches 0 */
     CHECK(settings_get_int(SET_VALVE_SPEED_0) == 0);
@@ -141,9 +141,9 @@ static void test_valve_speed_floor(void)
     CHECK(settings_set_int(SET_VALVE_SPEED_1, 120) == ESP_OK);
     CHECK(settings_get_int(SET_VALVE_SPEED_1) == 120 && !noted(SET_VALVE_SPEED_1, ""));
 
-    boot_with_i32("vspeed2", 10, "vspeed3", 25);
+    boot_with_i32("vspeed2", 10, "vspeed3", 50);
     CHECK(settings_get_int(SET_VALVE_SPEED_2) == 0);
-    CHECK(settings_get_int(SET_VALVE_SPEED_3) == 30);
+    CHECK(settings_get_int(SET_VALVE_SPEED_3) == 60);
 }
 
 static void test_humidity_gap(void)
@@ -239,14 +239,14 @@ static void test_stall_retries_min(void)
 
 static void test_cal_speed_above_min(void)
 {
-    fresh();                                                    /* min PWM 30, calibration 50 */
+    fresh();                                                    /* min PWM 60, calibration 75 */
     CHECK(settings_set_int(SET_CAL_SPEED_PWM, 25) == ESP_OK);
-    CHECK(settings_get_int(SET_CAL_SPEED_PWM) == 30);
-    CHECKM(noted(SET_CAL_SPEED_PWM, "must not be below Butterfly min speed (30)"), "note '%s'", s_note);
-    CHECK(settings_set_int(SET_CAL_SPEED_PWM, 50) == ESP_OK);
-    CHECK(settings_set_int(SET_VALVE_MIN_PWM, 60) == ESP_OK);
-    CHECK(settings_get_int(SET_VALVE_MIN_PWM) == 50);
-    CHECKM(noted(SET_VALVE_MIN_PWM, "must not be above Calibration speed (50)"), "note '%s'", s_note);
+    CHECK(settings_get_int(SET_CAL_SPEED_PWM) == 60);
+    CHECKM(noted(SET_CAL_SPEED_PWM, "must not be below Butterfly min speed (60)"), "note '%s'", s_note);
+    CHECK(settings_set_int(SET_CAL_SPEED_PWM, 75) == ESP_OK);
+    CHECK(settings_set_int(SET_VALVE_MIN_PWM, 90) == ESP_OK);
+    CHECK(settings_get_int(SET_VALVE_MIN_PWM) == 75);
+    CHECKM(noted(SET_VALVE_MIN_PWM, "must not be above Calibration speed (75)"), "note '%s'", s_note);
 
     boot_with_i32("v_min_pwm", 80, "cal_pwm", 40);
     CHECK(settings_get_int(SET_CAL_SPEED_PWM) == 40);
