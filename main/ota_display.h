@@ -32,6 +32,10 @@ esp_err_t ota_display_write(const void *data, size_t len);
 esp_err_t ota_display_end(void);        /* then the caller schedules a restart */
 void ota_display_abort(void);
 
+/** Why the last image was refused (wrong project, wrong chip, too small), "" if it was not.
+ *  Set when write/end return ESP_ERR_INVALID_VERSION; nothing was written to flash then. */
+const char *ota_display_reject_reason(void);
+
 /** Start the 30 s "UI + link up" watch that marks a pending image valid (from app_main). */
 void ota_display_start_validation(void);
 

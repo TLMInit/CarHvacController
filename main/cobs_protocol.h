@@ -117,6 +117,7 @@ typedef enum {
     ERR_OTA_STATE       = 9,        // OTA command out of order
     ERR_OTA_WRITE       = 10,       // flash write failed / offset not contiguous
     ERR_OTA_VERIFY      = 11,       // size or sha256 mismatch at OTA_END
+    ERR_OTA_IMAGE       = 12,       // image header: not an ESP32-S3 app of this project
 } cobs_error_t;
 
 /*******************************************************************************

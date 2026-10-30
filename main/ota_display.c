@@ -3,11 +3,16 @@
  * @brief Display firmware update into the inactive slot, with rollback (WP-G).
  */
 
+#include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "esp_app_format.h"
+#include "esp_app_desc.h"
+#include "ota_image.h"
 #include "esp_system.h"
 #include "ota_display.h"
 #include "hvac_controller.h"
@@ -20,9 +25,21 @@ static const char *TAG = "OTA_DISP";
 #define VALIDATE_LINK_UP_S      30
 #define VALIDATE_GIVE_UP_S      (5 * 60)
 
+_Static_assert(offsetof(esp_image_header_t, chip_id) == OTA_IMAGE_CHIP_ID_OFFSET, "image header layout");
+_Static_assert(sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) == OTA_IMAGE_DESC_OFFSET,
+               "app description offset");
+_Static_assert(OTA_IMAGE_DESC_OFFSET + offsetof(esp_app_desc_t, project_name) == OTA_IMAGE_PROJECT_OFFSET,
+               "project name offset");
+_Static_assert(OTA_IMAGE_DESC_OFFSET + sizeof(esp_app_desc_t) == OTA_IMAGE_HEADER_LEN, "app description size");
+
 static esp_ota_handle_t s_handle;
 static const esp_partition_t *s_part;
 static volatile bool s_active;          /* between begin and end/abort */
+static bool s_flashing;                 /* esp_ota_begin done: header accepted */
+static size_t s_size;
+static uint8_t s_hdr[OTA_IMAGE_HEADER_LEN];
+static size_t s_hdr_len;
+static char s_reason[96];               /* why the last image was refused, "" if none */
 static volatile bool s_pending;         /* running image not yet marked valid */
 
 bool ota_allowed(char *why, size_t len)
@@ -53,14 +70,38 @@ esp_err_t ota_display_begin(size_t image_size)
     if (image_size == 0 || image_size > s_part->size) {
         return ESP_ERR_INVALID_SIZE;
     }
-    esp_err_t err = esp_ota_begin(s_part, image_size, &s_handle);
+    /* esp_ota_begin (which erases the slot) waits until the header has been checked */
+    s_size = image_size;
+    s_hdr_len = 0;
+    s_flashing = false;
+    s_reason[0] = '\0';
+    s_active = true;
+    event_log_add(EVT_OTA, "Display OTA begin, %u bytes -> %s", (unsigned)image_size, s_part->label);
+    return ESP_OK;
+}
+
+static esp_err_t refuse(const char *reason)
+{
+    snprintf(s_reason, sizeof(s_reason), "%s", reason);
+    ESP_LOGE(TAG, "Image refused: %s", s_reason);
+    event_log_add(EVT_OTA, "Display OTA refused: %s", s_reason);
+    return ESP_ERR_INVALID_VERSION;
+}
+
+// Accepts the image only once its first bytes show an ESP32-S3 app of this project
+static esp_err_t check_and_begin(void)
+{
+    char why[96];
+    if (!ota_image_check(s_hdr, s_hdr_len, esp_app_get_description()->project_name, why, sizeof(why))) {
+        return refuse(why);
+    }
+    esp_err_t err = esp_ota_begin(s_part, s_size, &s_handle);
     if (err != ESP_OK) {
         event_log_add(EVT_OTA, "Display OTA begin failed: %s", esp_err_to_name(err));
         return err;
     }
-    s_active = true;
-    event_log_add(EVT_OTA, "Display OTA begin, %u bytes -> %s", (unsigned)image_size, s_part->label);
-    return ESP_OK;
+    s_flashing = true;
+    return esp_ota_write(s_handle, s_hdr, s_hdr_len);
 }
 
 esp_err_t ota_display_write(const void *data, size_t len)
@@ -68,7 +109,27 @@ esp_err_t ota_display_write(const void *data, size_t len)
     if (!s_active) {
         return ESP_ERR_INVALID_STATE;
     }
-    return esp_ota_write(s_handle, data, len);
+    const uint8_t *p = data;
+    if (!s_flashing) {
+        size_t n = sizeof(s_hdr) - s_hdr_len < len ? sizeof(s_hdr) - s_hdr_len : len;
+        memcpy(&s_hdr[s_hdr_len], p, n);
+        s_hdr_len += n;
+        p += n;
+        len -= n;
+        if (s_hdr_len < sizeof(s_hdr)) {
+            return ESP_OK;
+        }
+        esp_err_t err = check_and_begin();
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+    return len ? esp_ota_write(s_handle, p, len) : ESP_OK;
+}
+
+const char *ota_display_reject_reason(void)
+{
+    return s_reason;
 }
 
 esp_err_t ota_display_end(void)
@@ -77,6 +138,10 @@ esp_err_t ota_display_end(void)
         return ESP_ERR_INVALID_STATE;
     }
     s_active = false;
+    if (!s_flashing) {
+        return refuse("Image too small");
+    }
+    s_flashing = false;
     esp_err_t err = esp_ota_end(s_handle);     /* verifies the image (header, segments, hash) */
     if (err == ESP_OK) {
         err = esp_ota_set_boot_partition(s_part);
@@ -95,7 +160,10 @@ void ota_display_abort(void)
         return;
     }
     s_active = false;
-    esp_ota_abort(s_handle);
+    if (s_flashing) {
+        s_flashing = false;
+        esp_ota_abort(s_handle);
+    }
     event_log_add(EVT_OTA, "Display OTA aborted");
 }
 

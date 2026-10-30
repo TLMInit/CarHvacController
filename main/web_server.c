@@ -24,6 +24,7 @@
 #include "web_server.h"
 #include "wifi_ap.h"
 #include "ota_display.h"
+#include "ota_image.h"
 #include "settings.h"
 #include "hvac_controller.h"
 #include "remote_io.h"
@@ -459,14 +460,22 @@ static esp_err_t ota_display_post(httpd_req_t *req)
     free(buf);
     if (s_disp.done < s_disp.total) {
         ota_display_abort();
-        set_status(&s_disp, "error", no_mem ? "Out of memory" : "Upload interrupted (%s)", esp_err_to_name(err));
+        if (err == ESP_ERR_INVALID_VERSION) {
+            set_status(&s_disp, "error", "%s", ota_display_reject_reason());
+        } else {
+            set_status(&s_disp, "error", no_mem ? "Out of memory" : "Upload interrupted (%s)", esp_err_to_name(err));
+        }
         atomic_store(&s_ota_busy, false);
         return reply(req, "400 Bad Request", false, s_disp.msg);
     }
     set_status(&s_disp, "flashing", "Verifying");
     err = ota_display_end();
     if (err != ESP_OK) {
-        set_status(&s_disp, "error", "Image rejected: %s", esp_err_to_name(err));
+        if (err == ESP_ERR_INVALID_VERSION) {
+            set_status(&s_disp, "error", "%s", ota_display_reject_reason());
+        } else {
+            set_status(&s_disp, "error", "Image rejected: %s", esp_err_to_name(err));
+        }
         atomic_store(&s_ota_busy, false);
         return reply(req, "400 Bad Request", false, s_disp.msg);
     }
@@ -497,7 +506,8 @@ static void node_ota_task(void *arg)
         set_status(&s_node, "done", "Node updated and answering");
         event_log_add(EVT_OTA, "Node OTA OK");
     } else {
-        set_status(&s_node, "error", "Node update failed: %s", esp_err_to_name(err));
+        set_status(&s_node, "error", "Node update failed: %s", err == ESP_ERR_INVALID_VERSION
+                   ? "the node refused the image (not a CarHvacIoNode build)" : esp_err_to_name(err));
         event_log_add(EVT_OTA, "Node OTA failed: %s", esp_err_to_name(err));
     }
     atomic_store(&s_ota_busy, false);
@@ -536,6 +546,16 @@ static esp_err_t ota_node_post(httpd_req_t *req)
     ok = ok && psa_hash_finish(&op, s_node_sha, sizeof(s_node_sha), &hlen) == PSA_SUCCESS;
     psa_hash_abort(&op);
     free(buf);
+    char why[96];
+    if (ok && !ota_image_check((const uint8_t *)s_node_img, s_node_len, NODE_PROJECT_NAME, why, sizeof(why))) {
+        heap_caps_free(s_node_img);
+        s_node_img = NULL;
+        set_status(&s_node, "error", "%s", why);
+        ESP_LOGE(TAG, "Node image refused: %s", why);
+        event_log_add(EVT_OTA, "Node OTA refused: %s", why);
+        atomic_store(&s_ota_busy, false);
+        return reply(req, "400 Bad Request", false, s_node.msg);
+    }
     if (!ok || xTaskCreate(node_ota_task, "node_ota", 4096, NULL, 4, NULL) != pdPASS) {
         heap_caps_free(s_node_img);
         s_node_img = NULL;

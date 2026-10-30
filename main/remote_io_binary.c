@@ -14,6 +14,7 @@
 #include "remote_io.h"
 #include "cobs_protocol.h"
 #include "event_log.h"
+#include "ota_image.h"
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -917,7 +918,7 @@ static esp_err_t ota_command(uint8_t cmd, const uint8_t *payload, size_t len, in
     esp_err_t ret = send_command_binary(cmd, MSG_OTA_ACK, payload, len, &resp_type, data, &resp_len, timeout_ms);
     if (ret == ESP_FAIL && resp_type == MSG_ERROR && resp_len >= 1) {
         ESP_LOGW(TAG, "%s: node error %u", cmd_name(cmd), data[0]);
-        return ESP_FAIL;
+        return data[0] == ERR_OTA_IMAGE ? ESP_ERR_INVALID_VERSION : ESP_FAIL;
     }
     if (ret != ESP_OK || resp_type != MSG_OTA_ACK || resp_len < 5) {
         return ret == ESP_OK ? ESP_ERR_INVALID_RESPONSE : ret;
@@ -952,6 +953,11 @@ esp_err_t remote_io_ota_node(const uint8_t *image, size_t len, const uint8_t sha
     }
     if (!(s_node_caps & NODE_CAP_OTA)) {
         return ESP_ERR_NOT_SUPPORTED;
+    }
+    char why[96];
+    if (!ota_image_check(image, len, NODE_PROJECT_NAME, why, sizeof(why))) {
+        ESP_LOGE(TAG, "Node OTA refused: %s", why);
+        return ESP_ERR_INVALID_VERSION;
     }
     const uint32_t total = (uint32_t)len;
     uint8_t payload[4 + OTA_DATA_MAX];
