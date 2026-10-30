@@ -1,12 +1,49 @@
-# Bench and car check — v2.2-display with v2.3-node
+# Bench and car check — v2.3-display with v2.4-node
 
-Flash sets with SHA-256 sums are in `../releases/v2.2-display` and `../releases/v2.3-node`.
+Flash sets with SHA-256 sums are in `../releases/v2.3-display` and `../releases/v2.4-node`.
 Check the sums first (`Get-FileHash *.bin`) against `SHA256SUMS.txt`.
 
-Coming from v2.1/v2.2 or v2.1.1/v2.2.1 the partition tables are unchanged: the phone page or
-the full `@flash_args` set both work. Coming from v2.0 or earlier, flash the full set once
-(section 1). The checks below go in this order: the safety fixes (also valid for v2.1.1), the
--O2 build, then the general v2.1 procedure in sections 1–8.
+Coming from v2.1 or later the partition tables are unchanged: the phone page or the full
+`@flash_args` set both work. Coming from v2.0 or earlier, flash the full set once (section 1).
+Stored settings carry over; values that break a new cross-field rule are fixed at the first
+boot and each fix is logged (`SETTINGS:` lines). Order of the checks: the settings release,
+the settings edge checks (only before changing those settings), the hotfix, the safety fixes,
+the -O2 build, then the general procedure in sections 1–8.
+
+## Settings release v2.3-display / v2.4-node (items 5–16)
+
+1. **Defaults unchanged.** First boot: no `SETTINGS:` fix lines unless you had changed fan,
+   humidity or duct values before. Drive AUTO for ten minutes: same behaviour as v2.2.
+2. **Rules with a note (5, 8, 9, 13).** Settings → Fan → Fan minimum: step it up past
+   Med-low (45): it stops at 45 and the editor shows `Set to 45 %: ...`. Climate → Humidity
+   A/C off: step it to within 1 of ON: it stops 2 below ON with a note. Control → duct min/max
+   keep 5 °C apart. Console `set fan_min 70` prints `note: ...`.
+3. **Fan Low = fan minimum (5).** Fan minimum 40, manual fan Low: blower at 40 %.
+4. **Mode OFF ramp (6).** Fan soft start 2000 ms, run on High, switch OFF: the blower runs
+   down over about 2 s.
+5. **Air distribution grid (12).** Settings → Valves → Air distribution: in Face mode change
+   centre 1 from 100 to 60: that valve moves within a second; set it back.
+6. **Service settings (11).** Valve service → SETTINGS: with mode AUTO the rows are read-only
+   with the reason; with mode OFF they edit. Phone page: changing a Service row with mode AUTO
+   is refused (409).
+7. **Link window (14).** Node console after boot: `Link watchdog 3000 ms (display's link
+   window)` once.
+8. **Export/import (16).** Phone page → Settings → System: Export downloads
+   `hvac-settings-<version>.json`; Import the same file: `Imported: 0 settings changed`. Edit
+   one value in the file (e.g. `"fan_max": 90`) and import: `1 settings changed`. A value out
+   of range (e.g. `"fan_max": 120`) is refused and nothing changes.
+
+## Settings edge checks
+
+These settings accept values whose effect on this car's hardware has not been tried. Before
+using a value away from the default, run its check once on the bench:
+
+| Setting (console key) | Default | Try | Watch |
+|---|---|---|---|
+| Stall timeout (`v_stall_s`) | 6 s | 3 s, then 12 s | At 3 s: a slow valve (cold morning, low speed override) must not log `stall` while moving normally. At 12 s: hold one valve by hand; it keeps driving 12 s before the stall event; check the gearbox does not get hot. |
+| A/C minimum off (`ac_min_off_s`) | 10 s | 5 s | Let the humidity rule cycle the clutch (Humidity A/C on just above the cabin RH): the clutch must not chatter and the engine must not stumble on re-engagement. Listen for clutch slip. |
+| Fan minimum (`fan_min`) | 30 % | 15 % | Manual fan Low: the blower must start from standstill and keep turning. Below 30 % the A/C interlock drops the compressor in Low (A/C reason `Interlock: blower below 30 %`), so do not use Low with A/C on hot days. |
+| Calibration speed (`cal_pwm`) | 50 | 30 (= butterfly min speed), then 120 | Settings → Valves → Recalibrate at boot, reboot. At 30: every valve finishes within the calibration timeout and none logs `calibration FAILED`. At 120: the stored range (`V<n> calibrated a-b`) stays within a few % of the one at 50; a much smaller range means the marker is overshot. |
 
 ## Hotfix v2.2.1-display (items 1–4)
 
@@ -80,9 +117,9 @@ on the bench with the car's valves, blower and sensors connected:
 ## 1. Flash (both boards change partition table: full flash once)
 
 ```
-cd ..\releases\v2.3-node
+cd ..\releases\v2.4-node
 python -m esptool --chip esp32s3 -p COM_NODE -b 921600 write_flash "@flash_args"
-cd ..\v2.2-display
+cd ..\v2.3-display
 python -m esptool --chip esp32s3 -p COM_DISPLAY -b 921600 write_flash "@flash_args"
 ```
 
@@ -94,7 +131,7 @@ Later updates can go over the phone page.
 | Expect | Means |
 |---|---|
 | `SETTINGS: hvac_cfg schema 1: N keys loaded, 0 rejected, 141 rows total` | settings loaded |
-| `HELLO: node protocol 2, caps 0x03 (search ota), ionode 2.3 (...)` | handshake; pad off from here |
+| `HELLO: node protocol 2, caps 0x03 (search ota), ionode 2.4 (...)` | handshake; pad off from here |
 | `1-Wire search: 1 ROM(s)` and `Sensor roles: single ROM assigned DUCT (migration from 2.0)` | existing duct sensor kept its role |
 | `V0: recalibrating: no stored calibration (...)` then `CALIBRATED`, same for V1–V3; `V4: fixed calibration (linear valve)` | first boot stores calibration |
 | `SELFTEST: PASS ...` lines, then `EVENT: INFO: Self-test OK` | all checks pass |

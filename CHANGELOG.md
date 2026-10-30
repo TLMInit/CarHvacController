@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.3-display (with node v2.4)
+
+Hotfix v2.2.1 plus the settings release from `INVENTORY.md`; details in `DECISIONS.md`.
+
+- No valve commands while the link is down; all valves re-sent on its return. Valve-task
+  pass time on the status line; a pass over 1 s is an event. Wi-Fi start failures retried
+  and shown on the diagnostics tab.
+- Settings now keep their promises: fan Low is the fan minimum, mode OFF uses the soft
+  start, speed overrides cap every valve move, one humidity gap, duct min/max 5 °C apart,
+  self-test waits for calibration. Cross-field rules clamp with a visible note.
+- 58 hard-coded tunables became settings (User on the display, Service on the valve service
+  page with mode OFF, Advanced on the phone page), plus a 5×4 air-distribution grid.
+- Coupled constants: 31 pairs named at both ends; the node's link watchdog comes from the
+  display in HELLO.
+- Settings export/import on the phone page, validated as a whole.
+- Docs checked number by number against the code.
+
 ## v2.2-display (with node v2.3)
 
 The eleven findings of the second review; details in `REVIEW.md` (status) and `DECISIONS.md`.
