@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.1-display (with node v2.2)
+
+Defaults keep v2.0 behaviour except that leaving DEF restores the A/C choice. Details and
+reasons in `DECISIONS.md`; bench procedure in `BENCH.md`.
+
+- Settings: 66 rows in eight groups (English/Danish), saved to NVS with a schema number,
+  editable on the display, the USB console and the phone page.
+- Valves: calibration stored per valve and reused after a plausibility check; per-valve
+  speed and direction overrides; service page with jog, stop, recalibrate, learn direction.
+- Control: presets (Defog, Max heat, Max cool, Eco); heater delay; dew-point defog with an
+  outside sensor; reheat while dehumidifying; cascade control (duct target -> coolant valve)
+  selectable next to classic, which stays the default. Recirc only when fitted (setting).
+- Link: protocol 2 with HELLO, 1-Wire search with sensor roles (duct, coolant, outside),
+  node OTA, link health (RTT last/p95, timeouts per minute). S-11 trailing-zero fix.
+- Diagnostics: event log, link health, boot self-test, 10-minute trend chart.
+- Phone: Wi-Fi access point with a status/settings/log page and firmware upload for both
+  boards; updates roll back unless the new image proves itself.
+- Memory: LVGL pool in PSRAM, leaving room for Wi-Fi.
+- Host unit tests and GitHub Actions CI.
+
 ## Unreleased — OEM Minimal touch UI
 
 - Replaced the slider-based Main screen with five large top-row controls (including explicit A/C/recirculation ON/OFF text), a dominant 44 px setpoint, repeatable temperature/fan steps and an actual blower percentage readout.

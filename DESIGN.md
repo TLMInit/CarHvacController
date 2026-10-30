@@ -249,3 +249,55 @@ Colour is supplementary rather than the sole on/off or fault signal. Normal and 
 ## 9. Photo list when a compatible PC simulator is unavailable
 
 See `HARDWARE_PHOTO_CHECKLIST.md`. The required set is Main normal, AUTO, DEF, night mode, each fault class (sensor/valve/link), Diagnostics including valve actual/target and link stats, the mode picker, and both calibration-confirmation outcomes.
+
+## 10. v2.1 additions (as built)
+
+### Page map
+
+```
+main  <-swipe->  diagnostics  <-swipe->  settings home
+                                           |- Presets (also: long press AUTO)
+                                           |- Display / Climate / Fan / Comfort / Control / Valves / Connect / System
+                                           |- Diagnostics: Event log, Link health, Self-test, Trend chart
+                                           '- Service: Valve service (mode OFF only), Sensor roles
+```
+
+Settings rows are 48 px, label left and value right. BOOL toggles, ENUM steps, INT/FLOAT open
+an editor (−/+ with repeat, DEFAULT, OK), ACTION rows confirm in a modal. Inside a sub-page
+swipes do nothing and BACK is explicit, so a held jog cannot be interrupted. New pages use
+generated Montserrat 14/16 subsets with æ/ø/å; the main page keeps its fonts.
+
+### Modules
+
+| Module | Role |
+|---|---|
+| `settings.c`, `settings_table.c` | One table of all preferences; RAM cache, debounced NVS writes (2 s), apply callbacks, schema per namespace |
+| `console_cmds.c` | USB console `list/get/set/reset` |
+| `event_log.c` | 50-entry ring, newest first, fed by link, valves, controller, self-test, OTA |
+| `valve_cal_store.c` | Per-valve calibration records with CRC in `hvac_cal` |
+| `presets.c`, `comfort.c`, `cascade.c` | Presets; dew point, defog and heater-delay logic; cascade PI (pure, host-tested) |
+| `selftest.c` | One-shot boot check after calibration |
+| `hvac_ui_settings.c`, `hvac_ui_diag.c`, `hvac_ui_service.c` | The new pages |
+| `wifi_ap.c`, `web_server.c`, `web/index.html` | Phone access point and page |
+| `ota_display.c` | Display update into the inactive slot, 30 s validation |
+
+### New tasks
+
+| Task | Prio | Period | Note |
+|---|---|---|---|
+| `settings_nvs` | 1 | event + 2 s debounce | only task that writes `hvac_cfg` values |
+| `console_repl` | 2 | on input | runs apply callbacks of what it sets |
+| `selftest` | 2 | once, then deleted | waits for calibration, max 60 s |
+| `wifi_ap` | 3 | event | starts/stops the AP and the HTTP server |
+| `httpd` | IDF default | on request | thread-safe getters only; OTA uploads stream in chunks |
+| `node_ota` | — | per upload | streams a node image over the link, one command per mutex hold |
+| `ota_valid` | — | until validated | marks a fresh display image valid after 30 s UI + link up |
+
+The sensors task now does one broadcast Convert T per second and, on the next cycle, one
+scratchpad read per ROM (at most four); searches run in the same task.
+
+### Memory
+
+LVGL's 128 KB pool is one malloc in PSRAM (see the root `CMakeLists.txt`); draw buffers stay
+internal for DMA. Static internal RAM: 136 KB used of 342 KB. `wifi_ap.c` logs the free
+internal heap each time the AP starts.

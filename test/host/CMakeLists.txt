@@ -6,13 +6,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 enable_testing()
 
-option(RUN_KNOWN_BUG_TESTS "Also build the checks that document known firmware bugs (they fail)" OFF)
-
 set(MAIN ${CMAKE_CURRENT_SOURCE_DIR}/../../main)
 add_compile_options(-Wall -Wextra)
-if(RUN_KNOWN_BUG_TESTS)
-  add_compile_definitions(KNOWN_BUG_TESTS=1)
-endif()
 
 # settings.c + settings_table.c against the fake IDF (fakes/) and stubbed apply callbacks.
 add_library(fw_settings STATIC ${MAIN}/settings.c ${MAIN}/settings_table.c stubs.c fakes/fake_idf.c)

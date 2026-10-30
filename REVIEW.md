@@ -37,7 +37,7 @@ Corrections to the brief, found while reading:
 ## Status
 
 Display hashes are in this repo; node hashes (marked *node*) are in `CarHvacIoNode/`.
-"Authorised" = in scope of the go-ahead of 2026-10-29, not started yet.
+"Authorised" = in scope of the go-ahead of 2026-10-29, not started yet. v2.1 rows refer to the `v2.1/integration` branch (tag `v2.1-display`) and node `v2.2/integration` (tag `v2.2-node`); decisions behind them are in `DECISIONS.md`.
 
 | ID | Title | Phase | Status |
 |---|---|---|---|
@@ -49,33 +49,33 @@ Display hashes are in this repo; node hashes (marked *node*) are in `CarHvacIoNo
 | S-06 | Use-after-free in the link queue | 1 | **done** 957b16a |
 | S-07 | A/C without blower interlock | 1 (via C-01) | **done** via C-01 936b1bc |
 | S-08 | Controller steers on frozen sensor value | 1 | **done** 3b6ca2f |
-| S-09 | Calibration runs blind with node absent | 1 | calibration gives up on lost feedback (b9840e9), is skipped when the node never answered at boot (17d2878), UI shows "IO node offline" (30e556d); calibrating when the node appears later is open |
+| S-09 | Calibration runs blind with node absent | 1 | calibration gives up on lost feedback (b9840e9), is skipped when the node never answered at boot (17d2878), UI shows "IO node offline" (30e556d); v2.1: each valve waits for its first position reading and uses its stored calibration (097566d); calibrating when the node appears later is still open (reboot) |
 | S-10 | Two tasks commanding one motor | 1 | **done** 9e2e069 |
-| S-11 | Trailing-zero bug | 2b | held |
-| L-01 | Fixed tick waits per round trip | 2a | authorised |
-| L-02 | Unchanged commands re-sent under `valve_mutex` | 2a | authorised |
+| S-11 | Trailing-zero bug | 2b | **done** v2.1: decoder no longer strips (94bb6c9), node pads only until HELLO (*node* c741024), pad rule in DECISIONS.md; *node* 3a6a1e8 (buffer for a padded full-size reply) |
+| L-01 | Fixed tick waits per round trip | 2a | **done** ba77250 |
+| L-02 | Unchanged commands re-sent under `valve_mutex` | 2a | **done** 41132d2 |
 | L-03 | Semaphore churn | 1 (via S-06) | **done** via S-06 957b16a |
-| L-04 | Replies not matched to command | 2a | authorised |
-| L-05 | Dead or misleading link API | 2a (stats getter in 1) | stats getter declared 99ca320; rest authorised (2a) |
+| L-04 | Replies not matched to command | 2a | **done** c1858c9 |
+| L-05 | Dead or misleading link API | 2a (stats getter in 1) | **done** 99ca320, c5fdc46; link health getter 94bb6c9 |
 | L-06 / L-07 | Bulk read, full-state exchange | 2b | held |
 | C-01 | A/C interlocks | 1 | **done** 936b1bc, b434e5b |
 | C-02 | Valve targets flap within a cycle | 1 | **done** e4c4acf |
 | C-03 | Valve positioning resolution and units | 3 | held |
-| C-04 | Calibration at every boot | 3 | held |
-| C-05 | Thermal adaptation / cascade PI | 3 | held |
+| C-04 | Calibration at every boot | 3 | **done** v2.1 097566d: stored calibration with a plausibility check per valve, recalibrate per valve from the service page |
+| C-05 | Thermal adaptation / cascade PI | 3 | **done** v2.1 5a8715e: cascade (duct target -> coolant valve) selectable; classic with thermal adaptation stays the default; gains need tuning in the car |
 | C-06 | AUTO fan unreachable | 1 (selection only) | **done** 6e32f15 |
 | C-07 | Saved settings half-applied | 1 | **done** e4a1acc (no OFF button: layout, for the UI branch) |
 | C-08 | Recirc / rear defrost without actuator | 1 (remove rear defrost) | **done** 5b55235 (rear defrost removed; recirc kept as a flag) |
 | C-09 | AUTO cannot cool | 3 | held (owner: default yes) |
-| SN-01 | Sensor task blocks 750 ms | 2a | authorised |
+| SN-01 | Sensor task blocks 750 ms | 2a | **done** 9911146; v2.1 multi-ROM roles 94bb6c9 |
 | SN-02 | No plausibility checks | 1 | **done** 70f977e |
 | SN-03 | BME280 driver details | 3 | held |
 | SN-04 | Dead local path | 4 | held |
 | SN-05 | Sensor fault pop-up at every boot | 1 | **done** e438b8b |
 | U-01 | UI thread does link I/O | 1 (keep last snapshot only) | minimal form **done** 2a85ec6; queue refactor held |
 | U-02 | Update cadence and drawing cost | 4 | held |
-| U-03 | Diagnostics page | 1 (link stats, node uptime only) | link stats + node info **done** a465c59; rest held |
-| U-04 | Fault pop-ups | 5 | held |
+| U-03 | Diagnostics page | 1 (link stats, node uptime only) | **done** a465c59; v2.1 event log, link health, self-test, chart, valve service 580ce5f |
+| U-04 | Fault pop-ups | 5 | v2.1: faults go to the event log and the boot self-test (8e947b3) instead of pop-ups |
 | U-05 | LVGL mutex discipline | — | no action |
 | M-01 / M-02 | Module layout, shared protocol code | 4 | held |
 | B-01 | `sdkconfig.defaults` does not reproduce the build | 0 | **done** da769b8 |

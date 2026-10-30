@@ -1,38 +1,48 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C6 | ESP32-H2 | ESP32-S2 | ESP32-S3 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- |
+# CarHvacController — display firmware
 
-# _Sample project_
+Touch display and controller for a retrofitted car HVAC. Runs on a Waveshare
+ESP32-S3-Touch-LCD-2 (320×240, 16 MB flash, 8 MB PSRAM) with ESP-IDF 6.1 and LVGL 8.4.
+All actuators and the 1-Wire sensors sit on the IO node (`CarHvacIoNode/`, its own repo
+and README), reached over UART at 921600 baud with COBS + CRC16 frames.
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+| Doc | What is in it |
+|---|---|
+| `BENCH.md` | How to flash and check a release on the bench and in the car |
+| `DECISIONS.md` | Every decision taken for v2.1 / v2.2 and why |
+| `DESIGN.md` | UI design, page map, module and task layout |
+| `REVIEW.md` | The review findings and their status |
+| `CHANGELOG.md` | What changed per release |
 
-This is the simplest buildable example. The example is used by command `idf.py create-project`
-that copies the project to user specified path and set it's name. For more information follow the [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project)
+## Build
 
-
-
-## How to use example
-We encourage the users to use the example as a template for the new projects.
-A recommended way is to follow the instructions on a [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project).
-
-## Example folder contents
-
-The project **sample_project** contains one source file in C language [main.c](main/main.c). The file is located in folder [main](main).
-
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt`
-files that provide set of directives and instructions describing the project's source files and targets
-(executable, library, or both). 
-
-Below is short explanation of remaining files in the project folder.
+ESP-IDF v6.1, target esp32s3. Managed components are pinned in `dependencies.lock`.
 
 ```
-├── CMakeLists.txt
-├── main
-│   ├── CMakeLists.txt
-│   └── main.c
-└── README.md                  This is the file you are currently reading
+idf.py set-target esp32s3     # once
+idf.py build
+idf.py -p COMx flash monitor
 ```
-Additionally, the sample project contains Makefile and component.mk files, used for the legacy Make based build system. 
-They are not used or needed when building with CMake and idf.py.
+
+Since v2.1 the partition table has two app slots (`partitions.csv`). Coming from v2.0 or
+earlier, the first flash must write bootloader, partition table and otadata: `idf.py flash`
+does, or `esptool ... write_flash "@flash_args"` from a release folder. NVS keeps its old
+place, so settings, valve calibration and thermal learning survive.
+
+## Using it
+
+- **Pages**: swipe main ↔ diagnostics ↔ settings. Settings holds the presets, the eight
+  setting groups, diagnostics (event log, link health, self-test, trend chart) and service
+  (valve jog/recalibrate/learn direction, sensor roles). Valve service needs mode OFF.
+- **Presets**: long press AUTO, or the first settings row.
+- **Console** (USB, same port as the log): `list [group]`, `get <key>`, `set <key> <value>`,
+  `reset <key|all>`, `help`. Example: `set fan_max 80`.
+- **Phone page**: Settings → Connect → Phone Wi-Fi (off / 10 min / always). Join
+  `HVAC-xxxx` with the password shown there and open `http://192.168.4.1`: status, settings,
+  event log, diagnostics and firmware upload for the display and the node. Uploads are
+  refused unless the system is OFF and the blower has stopped.
+- **Updates**: a new display image is kept only after it has run the UI for 30 s with the
+  node link up; otherwise the bootloader rolls back. The node does the same after one PING
+  and one VERSION within 60 s.
 
 ## Tests
 
@@ -46,6 +56,5 @@ cmake --build ../tbuild-display
 ctest --test-dir ../tbuild-display --output-on-failure
 ```
 
-Add `-DRUN_KNOWN_BUG_TESTS=ON` to also build checks that document known firmware bugs (they fail).
 CI (`.github/workflows/ci.yml`) runs these tests, then builds with `espressif/idf:v6.1` and fails on any
 compiler warning from `main/`.
