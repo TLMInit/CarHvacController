@@ -114,6 +114,12 @@ Step C (expose the inventory):
 
 - N-1 (owner: "follow low"): the A/C blower interlock is the configured Low duty (`SET_FAN_MIN_DUTY`), not a fixed 30 %. With a low fan minimum the compressor runs at that airflow; the duct freeze cutout (and, with the evaporator role assigned, the evaporator limiter) is the guard. The fan-minimum edge check in BENCH.md now tests exactly that. This supersedes the step B note above that kept `AC_MIN_BLOWER_PCT`.
 - Protocol: `PWM_INIT_HZ` 0x22 and a 3-byte `PWM_SET` (16-bit raw duty), both announced by `NODE_CAP_PWM_HZ`. The 16-bit form is an addition to the brief: the node's PWM_SET duty was 8-bit, which would have made 10-13-bit resolution useless.
+- Node LEDC: a timer is shared only by channels with the same frequency and resolution; unused timers are freed. No timer or channel left returns the existing `ERR_OVERFLOW` (8) (the shared header was frozen). Frequencies are also refused below the driver's own limit (freq × 2^bits ≥ 78126 Hz). Re-INIT with a new resolution zeroes the duty.
+- Safety gap found by the node work: an MCP4725 is not an LEDC output, so the safe state left it at its last value. The node now remembers DAC addresses written with fast writes and its link task writes 0 to them after any safe state (about 0.1 s; I2C cannot run in the watchdog timer). The display stores 0 in the DAC EEPROM once, for power-up. With Invert on, the safe state reads as full speed to an inverting controller: the row is labelled "Invert (needs enable)" and BENCH checks the relay drops with the output.
+- RC filter numbers corrected against the brief: 10 kΩ + 10 µF gives 1.6 Hz cutoff as stated, but the ripple at 20 kHz 8-bit is about 0.4 mV p-p, not 25 mV; the 8-bit step (12.9 mV) is the resolution limit. The filter needs a ≥ 1 MΩ load or a follower.
+- Clutch A/C in manual Low: the interlock compared a rounded-down blower percentage with Low and tripped at Low itself. Fixed for the clutch as well (exact duty comparison), in its own commit.
+- `ac_enable_pin` is the fixed relay output GPIO6, not a setting: pins are coupled to the node's pin map.
+- The phone page status card shows the compressor line and the evaporator; the node announces caps 0x07; version prefix `ionode 2.5`.
 
 Display wiring (output driver, controller, UI):
 - Payload layouts (PWM_INIT_HZ, 3-byte PWM_SET, I2C_WRITE) live in the pure `link_payload.c`, used by `remote_io_binary.c` and the host test, not in `cobs_protocol.h`, which stays byte-identical with the node's. `remote_i2c_write` sends the same bytes as before.

@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.4-display (with node v2.5)
+
+- Compressor type setting: Clutch (default, unchanged) or Electric, with output PWM (100 Hz
+  to 20 kHz, up to 13 bits), analog via an RC filter, or an MCP4725 DAC; the relay becomes
+  the compressor enable. Soft-start ramp, minimum speed, idle-off.
+- Evaporator sensor role: a PI loop holds the evaporator target in electric mode, and in
+  both modes the freeze cutout uses the evaporator instead of the duct when assigned.
+- Compressor test on the valve service page (mode OFF, blower Low on request, 60 s dead-man).
+- The A/C blower interlock follows the configured fan Low; A/C no longer drops out in Low
+  (a rounding error tripped it).
+- Valve-link pauses are in the event log, a bouncing link summarised per minute.
+- Node: PWM_INIT_HZ and 16-bit PWM_SET; MCP4725 DACs go to 0 with the safe state.
+
 ## v2.3-display (with node v2.4)
 
 Hotfix v2.2.1 plus the settings release from `INVENTORY.md`; details in `DECISIONS.md`.

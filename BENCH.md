@@ -1,6 +1,6 @@
-# Bench and car check — v2.3-display with v2.4-node
+# Bench and car check — v2.4-display with v2.5-node
 
-Flash sets with SHA-256 sums are in `../releases/v2.3-display` and `../releases/v2.4-node`.
+Flash sets with SHA-256 sums are in `../releases/v2.4-display` and `../releases/v2.5-node`.
 Check the sums first (`Get-FileHash *.bin`) against `SHA256SUMS.txt`.
 
 Coming from v2.1 or later the partition tables are unchanged: the phone page or the full
@@ -170,9 +170,9 @@ on the bench with the car's valves, blower and sensors connected:
 ## 1. Flash (both boards change partition table: full flash once)
 
 ```
-cd ..\releases\v2.4-node
+cd ..\releases\v2.5-node
 python -m esptool --chip esp32s3 -p COM_NODE -b 921600 write_flash "@flash_args"
-cd ..\v2.3-display
+cd ..\v2.4-display
 python -m esptool --chip esp32s3 -p COM_DISPLAY -b 921600 write_flash "@flash_args"
 ```
 
@@ -184,7 +184,7 @@ Later updates can go over the phone page.
 | Expect | Means |
 |---|---|
 | `SETTINGS: hvac_cfg schema 1: N keys loaded, 0 rejected, 141 rows total` | settings loaded |
-| `HELLO: node protocol 2, caps 0x03 (search ota), ionode 2.4 (...)` | handshake; pad off from here |
+| `HELLO: node protocol 2, caps 0x07 (search ota pwm_hz), ionode 2.5 (...)` | handshake; pad off from here |
 | `1-Wire search: 1 ROM(s)` and `Sensor roles: single ROM assigned DUCT (migration from 2.0)` | existing duct sensor kept its role |
 | `V0: recalibrating: no stored calibration (...)` then `CALIBRATED`, same for V1–V3; `V4: fixed calibration (linear valve)` | first boot stores calibration |
 | `SELFTEST: PASS ...` lines, then `EVENT: INFO: Self-test OK` | all checks pass |
