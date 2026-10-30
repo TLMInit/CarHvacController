@@ -86,7 +86,6 @@ static TaskHandle_t valve_task_handle = NULL;
 #define VALVE_STALL_RETRIES         3        // Retries after a stall (10 s, 20 s, 30 s), then latched
 #define VALVE_STALL_RETRY_MS        10000    // Back-off step between retries
 #define VALVE_MOVEMENT_THRESHOLD    2       // Minimum change considered movement
-#define VALVE_MIN_SPEED             30      // Minimum PWM to overcome stiction
 #define VALVE_RAMP_START_ERROR      40      // Start ramping down speed when error is below this % (was 20)
 #define VALVE_DEBUG_LOG_MS          300     // Periodic debug log interval
 #define VALVE_PLATEAU_ZONE          5      // Dead zone at 0% and 100% where readings are unreliable
@@ -102,7 +101,6 @@ static TaskHandle_t valve_task_handle = NULL;
 
 // Coolant valve specific settings (linear valve, different motor characteristics)
 #define COOLANT_MOTOR_SPEED         255     // Maximum motor speed for coolant valve (0-255)
-#define COOLANT_MIN_SPEED           100      // Minimum PWM for coolant valve
 #define COOLANT_RAMP_START_ERROR    20      // Start ramping down when error is below this %
 
 // Forward declarations
@@ -231,6 +229,13 @@ static uint8_t valve_max_speed(int i)
         return valve_speed_ovr[i];
     }
     return (i == HVAC_VALVE_COOLANT) ? COOLANT_MOTOR_SPEED : VALVE_MOTOR_SPEED;
+}
+
+// A speed override is the valve's speed limit: learn, jog and calibration keep their own
+// (slower) speeds but never run faster than the override
+static uint8_t valve_capped(int i, uint8_t speed)
+{
+    return (valve_speed_ovr[i] != 0 && valve_speed_ovr[i] < speed) ? valve_speed_ovr[i] : speed;
 }
 
 static void valve_save_calibration(int i)
@@ -450,7 +455,7 @@ static bool valve_service_tick(int i, uint32_t now_ms, uint32_t *recal_mask, uin
         valve_svc_learn_ms[i] = now_ms;
         valve_svc_learn_prev[i] = adc;
         valve_svc_learn_net[i] = 0;
-        queue_motor(i, TB6612_DIR_FORWARD, VALVE_MOTOR_SPEED);
+        queue_motor(i, TB6612_DIR_FORWARD, valve_capped(i, VALVE_MOTOR_SPEED));
         return true;
     }
     if (valve_svc_learn_run[i]) {
@@ -487,7 +492,7 @@ static bool valve_service_tick(int i, uint32_t now_ms, uint32_t *recal_mask, uin
             valve_service_end(i, now_ms);
             return false;
         }
-        queue_motor(i, valve_svc_jog_dir[i] > 0 ? TB6612_DIR_FORWARD : TB6612_DIR_REVERSE, SERVICE_JOG_SPEED);
+        queue_motor(i, valve_svc_jog_dir[i] > 0 ? TB6612_DIR_FORWARD : TB6612_DIR_REVERSE, valve_capped(i, SERVICE_JOG_SPEED));
         valve_adc_last_stable[i] = adc;
         return true;
     }
@@ -1282,7 +1287,7 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
                 prog->last_direction = 0;
                 
                 // Start rotating forward
-                motor_now(valve_id, TB6612_DIR_FORWARD, CALIB_MOTOR_SPEED, prog->start_adc);
+                motor_now(valve_id, TB6612_DIR_FORWARD, valve_capped(valve_id, CALIB_MOTOR_SPEED), prog->start_adc);
                 
                 ESP_LOGI(TAG, "V%d: Starting rotation from ADC=%d%%", valve_id, prog->start_adc);
                 prog->state = CALIB_STATE_ROTATING;
@@ -1504,7 +1509,7 @@ esp_err_t tb6612fng_start_calibration(hvac_valve_id_t valve_id)
         seek_dir = TB6612_DIR_REVERSE;
     }
     
-    motor_now(valve_id, seek_dir, CALIB_MOTOR_SPEED, current_adc);
+    motor_now(valve_id, seek_dir, valve_capped(valve_id, CALIB_MOTOR_SPEED), current_adc);
     
     return ESP_OK;
 }

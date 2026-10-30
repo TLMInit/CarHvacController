@@ -154,6 +154,17 @@ const setting_operand_t g_fan_levels[SETTINGS_FAN_LEVELS] = {
     SETTING(SET_FAN_MAX_DUTY),
 };
 
+/* A valve speed override is 0 (built-in default) or at least the stiction floor: below it the
+ * driver lowers its ramp minimum to the override and the valve may not move at all. */
+const setting_floor_t g_settings_floors[] = {
+    { SET_VALVE_SPEED_0, VALVE_MIN_SPEED },
+    { SET_VALVE_SPEED_1, VALVE_MIN_SPEED },
+    { SET_VALVE_SPEED_2, VALVE_MIN_SPEED },
+    { SET_VALVE_SPEED_3, VALVE_MIN_SPEED },
+    { SET_VALVE_SPEED_4, COOLANT_MIN_SPEED },
+};
+const size_t g_settings_floor_count = sizeof(g_settings_floors) / sizeof(g_settings_floors[0]);
+
 const setting_chain_t g_settings_chains[] = {
     { g_fan_levels, SETTINGS_FAN_LEVELS, 0 },
 };
@@ -173,13 +184,23 @@ float settings_rules_clamp(setting_id_t id, float v, const float vals[SET_COUNT]
             if (ch->ops[i].id != id) continue;
             if (i + 1 < ch->n && v > op_val(&ch->ops[i + 1], vals) - ch->gap) {
                 v = op_val(&ch->ops[i + 1], vals) - ch->gap;
-                h = (setting_rule_hit_t){ ch, &ch->ops[i + 1], true };
+                h = (setting_rule_hit_t){ .chain = ch, .other = &ch->ops[i + 1], .other_above = true };
             }
             if (i > 0 && v < op_val(&ch->ops[i - 1], vals) + ch->gap) {
                 v = op_val(&ch->ops[i - 1], vals) + ch->gap;
-                h = (setting_rule_hit_t){ ch, &ch->ops[i - 1], false };
+                h = (setting_rule_hit_t){ .chain = ch, .other = &ch->ops[i - 1], .other_above = false };
             }
         }
+    }
+    for (size_t f = 0; f < g_settings_floor_count; f++) {
+        const setting_floor_t *fl = &g_settings_floors[f];
+        if (fl->id != id || v == 0.0f || v >= fl->floor) continue;
+        /* nearest of 0 and the floor; one that is the current value goes the other way, so a
+         * -/+ step from the floor reaches 0 and a step from 0 reaches the floor */
+        float near = (v < fl->floor / 2.0f) ? 0.0f : fl->floor;
+        if (near == vals[id]) near = fl->floor - near;
+        v = near;
+        h = (setting_rule_hit_t){ .floor = fl };
     }
     if (hit) *hit = h;
     return v;
@@ -201,6 +222,14 @@ int settings_rules_fix(float vals[SET_COUNT])
                 vals[hi->id] = op_val(lo, vals) + ch->gap;
                 changed++;
             }
+        }
+    }
+    for (size_t f = 0; f < g_settings_floor_count; f++) {
+        const setting_floor_t *fl = &g_settings_floors[f];
+        float v = vals[fl->id];
+        if (v != 0.0f && v < fl->floor) {
+            vals[fl->id] = (v < fl->floor / 2.0f) ? 0.0f : fl->floor;
+            changed++;
         }
     }
     return changed;

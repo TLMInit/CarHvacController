@@ -120,7 +120,7 @@ typedef enum {
     SET_DUCT_MAX,               /* float degC, 30..80, default 60 */
 
     /* Valves (index = hvac_valve_id_t) */
-    SET_VALVE_SPEED_0,          /* int PWM, 0 = built-in default .. 255; one per valve */
+    SET_VALVE_SPEED_0,          /* int PWM, 0 = built-in default, else 30..255 (coolant 100..255); one per valve; caps every move */
     SET_VALVE_SPEED_1,
     SET_VALVE_SPEED_2,
     SET_VALVE_SPEED_3,
@@ -197,7 +197,8 @@ void settings_format(setting_id_t id, char *buf, size_t len);
 const char *settings_label(setting_id_t id);
 
 /* ---- Cross-field rules (data and checker in settings_table.c, host-tested) ----
- * A chain lists operands, each a setting or a fixed value, with op[i] + gap <= op[i+1].
+ * A chain lists operands, each a setting or a fixed value, with op[i] + gap <= op[i+1];
+ * a floor keeps a value at 0 or at least the floor (to the nearer of the two at load).
  * A set that would break a chain is clamped to the nearest legal value; the other setting
  * is never moved. The setter leaves a note (settings_last_note). settings_init applies the
  * chains to stored values: the lower setting moves down, or the upper one up when the lower
@@ -214,14 +215,23 @@ typedef struct {
     float gap;
 } setting_chain_t;
 
+/* A value that is either 0 (= built-in default) or at least floor. */
 typedef struct {
-    const setting_chain_t *chain;   /* NULL: no rule changed the value */
-    const setting_operand_t *other; /* the operand that bounds the value */
-    bool other_above;               /* true: the value had to stay below other */
+    setting_id_t id;
+    float floor;
+} setting_floor_t;
+
+typedef struct {                    /* chain and floor both NULL: no rule changed the value */
+    const setting_chain_t *chain;
+    const setting_operand_t *other; /* chain: the operand that bounds the value */
+    bool other_above;               /* chain: true = the value had to stay below other */
+    const setting_floor_t *floor;
 } setting_rule_hit_t;
 
 extern const setting_chain_t g_settings_chains[];
 extern const size_t g_settings_chain_count;
+extern const setting_floor_t g_settings_floors[];
+extern const size_t g_settings_floor_count;
 
 /* Manual fan levels Low..High in %: the one source for the controller and the fan chain. */
 #define SETTINGS_FAN_LEVELS 5

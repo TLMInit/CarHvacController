@@ -203,6 +203,12 @@ static void make_note(setting_id_t id, const setting_rule_hit_t *hit, char *buf,
     bool da = lang_da();
     char val[24], other_val[24], gap[24], rel[64];
     settings_format(id, val, sizeof(val));
+    if (hit->floor) {
+        snprintf(buf, len, da ? "Sat til %s: 0 = standard, ellers mindst %g (ventilen kan sidde fast)"
+                              : "Set to %s: 0 = default, else at least %g (the valve may not move)",
+                 val, (double)hit->floor->floor);
+        return;
+    }
     fmt_amount(d, settings_operand_value(o), false, other_val, sizeof(other_val));
     const char *other = o->id < SET_COUNT ? settings_label(o->id) : (da ? o->name_da : o->name_en);
     if (hit->chain->gap > 0.0f) {
@@ -250,7 +256,7 @@ static esp_err_t set_value(setting_id_t id, float value)
     taskEXIT_CRITICAL(&s_lock);
 
     char note[SETTINGS_NOTE_MAX] = "";
-    if (hit.chain) {
+    if (hit.chain || hit.floor) {
         make_note(id, &hit, note, sizeof(note));
         ESP_LOGI(TAG, "%s: %s", d->nvs_key, note);
     }

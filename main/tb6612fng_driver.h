@@ -17,6 +17,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Lowest PWM that overcomes stiction; also the floor of a non-zero SET_VALVE_SPEED_n (settings_table.c)
+#define VALVE_MIN_SPEED             30      // butterfly valves
+#define COOLANT_MIN_SPEED           100     // coolant valve
+
 #ifdef __cplusplus
 extern "C" {
 #endif

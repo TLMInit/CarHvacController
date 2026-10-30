@@ -81,11 +81,30 @@ static void test_fan_load_time(void)
     CHECK(settings_get_int(SET_FAN_MIN_DUTY) == 30);
 }
 
+static void test_valve_speed_floor(void)
+{
+    fresh();
+    CHECK(settings_set_int(SET_VALVE_SPEED_0, 5) == ESP_OK);    /* + from 0 reaches the floor */
+    CHECK(settings_get_int(SET_VALVE_SPEED_0) == 30);
+    CHECKM(noted(SET_VALVE_SPEED_0, "0 = default"), "note '%s'", s_note);
+    CHECK(settings_step(SET_VALVE_SPEED_0, -1) == ESP_OK);     /* - from the floor reaches 0 */
+    CHECK(settings_get_int(SET_VALVE_SPEED_0) == 0);
+    CHECK(settings_set_int(SET_VALVE_SPEED_4, 60) == ESP_OK);   /* coolant floor is 100 */
+    CHECK(settings_get_int(SET_VALVE_SPEED_4) == 100);
+    CHECK(settings_set_int(SET_VALVE_SPEED_1, 120) == ESP_OK);
+    CHECK(settings_get_int(SET_VALVE_SPEED_1) == 120 && !noted(SET_VALVE_SPEED_1, ""));
+
+    boot_with_i32("vspeed2", 10, "vspeed3", 25);
+    CHECK(settings_get_int(SET_VALVE_SPEED_2) == 0);
+    CHECK(settings_get_int(SET_VALVE_SPEED_3) == 30);
+}
+
 int main(void)
 {
     RUN(test_fan_chain_pure);
     RUN(test_defaults_obey_rules);
     RUN(test_fan_set_time);
     RUN(test_fan_load_time);
+    RUN(test_valve_speed_floor);
     T_DONE();
 }
