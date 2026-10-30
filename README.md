@@ -40,9 +40,19 @@ place, so settings, valve calibration and thermal learning survive.
   `reset <key|all>`, `help`. Example: `set fan_max 80`.
 - **Phone page**: Settings → Connect → Phone Wi-Fi (Off / Auto off / Always; Auto off after
   Connect → Wi-Fi auto-off after, default 10 min). Join
-  `HVAC-xxxx` with the password shown there and open `http://192.168.4.1`: status, settings,
-  event log, diagnostics and firmware upload for the display and the node. Uploads are
-  refused unless the system is OFF and the blower has stopped.
+  `HVAC-xxxx` with the password shown there and open the address the Connect page shows
+  (`http://192.168.4.1`). Since v2.5 the phone does everything the screen does:
+  - **Control**: setpoint, the seven airflow modes, AUTO / DEF, presets, fan, A/C, RECIRC (only
+    with the flap fitted), DAY / NIGHT and brightness.
+  - **Service** (mode OFF): valve service (pick a valve, hold − or + to jog, STOP,
+    RECALIBRATE, LEARN DIR), sensor roles, compressor test. A jog runs only while you hold the
+    button: the page repeats it every 150 ms and the valve stops by itself 0.3 s after the
+    last repeat, so a dropped phone or Wi-Fi stops the motor.
+  - **Settings** (the Air distribution grid as on the display; action rows such as Calibrate
+    valve, Factory reset and Restart IO node ask for confirmation, the last two twice),
+    **Log** (Clear), **Diagnostics** (trend chart, thermal model RESET CAL / SAVE CAL, valves,
+    self-test, link), **Update** (firmware for the display and the node; refused unless the
+    system is OFF and the blower has stopped).
 - **Electric compressor** (v2.4, needs node v2.5): Settings → A/C → Compressor type =
   Electric shows the output rows. Speed output PWM (GPIO10, 100–20000 Hz), Analog (RC) (GPIO10
   through the node README's 10 kΩ / 10 µF filter, 0–3.3 V) or DAC MCP4725 (node I2C, 0x60/0x61).

@@ -404,3 +404,84 @@ blower interlock, minimum off time, freeze limits and link checks stay. BLOWER L
 blower at Low for the test, because a compressor without airflow ices the evaporator within
 minutes. The controller ends the test 60 s after the last touch, on a mode change, on STOP and
 when the page closes: demand 0 at once and the test's blower off.
+
+## 12. Phone parity (v2.5)
+
+Owner: "add jog and every interface from screen to the phone". The phone page
+(`http://192.168.4.1`, `main/web/index.html`, embedded in flash) now offers every function
+of the touch screen. Every handler calls the public API the screen calls, under the same
+gate; POST bodies are parsed by the pure `main/web_req.c` (host test `test_web_req`).
+
+### Inventory: screen function -> phone
+
+| Screen function | Phone before v2.5 | v2.5 |
+|---|---|---|
+| Mode picker (7 modes) | shown only | Control tab |
+| Setpoint − / + | shown only | Control tab |
+| Fan − / + / AUTO | shown only | Control tab |
+| A/C | shown only | Control tab |
+| Recirc (only if fitted) | shown only | Control tab, hidden without the flap; 409 if not fitted |
+| Quick AUTO / DEF | no | Control tab |
+| Presets (long press AUTO) | shown only | Control tab |
+| DAY / NIGHT, brightness day/night | settings rows | Control tab (and the rows) |
+| Status line, fault badge | partly | Control tab, with the faulted valves' names |
+| Diagnostics rows (valves, heat/cool/reached, thermal, uptime, link, Wi-Fi) | link, heap, Wi-Fi | all |
+| RESET CAL (confirm) / SAVE CAL | no | Diagnostics tab |
+| Settings groups, rule notes, visibility | yes | yes |
+| Air distribution 5×4 grid | plain rows | 5×4 grid with −/+ |
+| ACTION rows (calibrate valve N, factory reset, restart IO node) | refused | Run + confirm; second confirm for the System actions |
+| Recalibrate all at boot | bool row | bool row |
+| Service settings (mode OFF) | 409 gate | 409 gate |
+| Event log, clear (confirm) | log only | Clear added |
+| Link health, self-test | yes | yes |
+| Trend chart (60 points) | no | inline SVG from `/api/trend` |
+| Valve service: info, jog −/+, STOP, recalibrate (confirm), learn direction, mode-OFF reason | no | Service tab |
+| Sensor roles: search, ROMs with temperatures, role selector | no | Service tab |
+| Compressor test: demand −/+, BLOWER LOW, STOP, 60 s dead-man | no | Service tab |
+| Connect: AP state, SSID, address | state, SSID | the display now shows Address and page URL |
+| Danish page text | no | not added: setting labels arrive translated, page text stays English |
+| Hold delay/repeat, night screen-off wake | display input only | n/a |
+
+### Phone page map
+
+```
+Control | Status | Settings | Service | Log | Diagnostics | Update
+Control:     status + faults, setpoint −/+, 7 modes, AUTO / DEF, 4 presets, fan −/AUTO/+,
+             A/C, RECIRC (if fitted), DAY/NIGHT, brightness day / night
+Settings:    the groups as before; Air distribution as a 5×4 grid; ACTION rows with Run
+Service:     valve service (pick a valve, hold to jog, STOP, RECALIBRATE, LEARN DIR),
+             sensor roles, compressor test; the reason when blocked
+Log:         events, Clear
+Diagnostics: trend chart, controller (thermal model, RESET CAL / SAVE CAL), valves,
+             self-test, IO link
+```
+
+### Endpoints
+
+| Route | Body / answer |
+|---|---|
+| `GET /api/state` | + `preset_id`, `recirc_fitted`, `night`, `bright_day`, `bright_night`, `valve_fault_mask`, `heating`, `cooling`, `reached`, `ac_test` |
+| `GET /api/diag` | + `uptime_s`, `thermal{heat_rate,cool_rate,gain,samples,calibrated}` |
+| `POST /api/control` | exactly one of `mode` 0..6, `setpoint` 16..30, `setpoint_step` ±1, `fan` 0..6, `fan_step` ±1, `ac`, `recirc`, `preset` 1..4, `quick` "auto"/"def" |
+| `GET /api/service` | `mode_off`, `jog_timeout_ms`, `valves[]` (pos, target, adc, cal, inverted, pwm, moving, busy, fault, fitted, `can`, `why`), `sensors[]` (rom, role, present, temp), `roles[]`, `comp{}` (electric, test, blower, demand, output, enable, evap, blower_pct, reason, `can`, `why`) |
+| `POST /api/service/valve` | `{valve 0..4, action jog_plus\|jog_minus\|stop\|recalibrate\|learn}`; 409 + reason when blocked, 429 for jogs < 50 ms apart |
+| `POST /api/service/sensors` | `{action:"search"}` or `{action:"assign", rom:"<16 hex>", role 0..4}` |
+| `POST /api/service/compressor` | `{demand 0..100, blower}` or `{stop:true}` |
+| `POST /api/action` | `{action: log_clear\|thermal_reset\|thermal_save}` or `{action:"setting", id}` (ACTION rows only) |
+| `GET /api/trend` | `{interval_s, points, cabin[], duct[], setpoint[]}`, oldest first, null = no reading |
+
+19 routes; `max_uri_handlers` is the route table's size. Answers are `{"ok","msg"}`; a refused
+request gets a 4xx with the reason the screen would show.
+
+### Jog over Wi-Fi
+
+The driver stops a jog that is not repeated within `SERVICE_JOG_TIMEOUT_MS` (300 ms). The page
+sends a jog on pointerdown and repeats it every 150 ms (as the screen does), with at most one
+request in flight so no stale jog is queued. Pointerup / cancel / leave, touchend / touchcancel,
+window blur, page hidden and leaving the tab stop the timer and send STOP (again after a jog still
+in flight). If the phone, the page or the Wi-Fi drops, the repeats stop and the driver's dead-man
+stops the motor; the page says so. The server ignores jogs closer than 50 ms (429) and sends a
+stop when it refuses a jog (mode left OFF, calibration started).
+
+The display's Connect page shows `Address: <ip>` and `Phone page: http://<ip>` from esp_netif
+while the AP is on.

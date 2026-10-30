@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.5-display
+
+- Phone page parity: a Control tab (setpoint, modes, AUTO / DEF, presets, fan, A/C, recirc,
+  DAY/NIGHT, brightness), a Service tab (valve jog / stop / recalibrate / learn direction,
+  sensor roles, compressor test), action rows with confirmation, the air distribution grid,
+  event log clear, thermal RESET CAL / SAVE CAL and the trend chart.
+- Jog over Wi-Fi keeps the driver's 300 ms dead-man: a dropped phone or Wi-Fi stops the valve.
+- The display's Connect page shows the AP address and the phone page URL.
+
 ## v2.4-display (with node v2.5)
 
 - Compressor type setting: Clutch (default, unchanged) or Electric, with output PWM (100 Hz

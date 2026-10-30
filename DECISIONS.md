@@ -145,5 +145,21 @@ Display wiring (output driver, controller, UI):
 - Owner: "make the default move some faster": butterfly default move speed (`VALVE_MOTOR_SPEED`, used when `v_speedN` is 0) 80 -> 120, calibration speed default 50 -> 75, jog default 40 -> 60 (about +50 % each). Only defaults change: a stored setting keeps its value, and the speed-override cap and floor rules are unchanged.
 - V3 (windscreen) still failed on the bench with a 15 s stall time: its reading barely moves while driven. That is a wiring/pot or mechanical problem, not firmware.
 
+## v2.5-display — phone parity
+
+- Owner: "add jog and every interface from screen to the phone". The inventory (screen function -> phone) is in DESIGN.md section 12 and in the API commit's body.
+- Same APIs, same gates: each handler calls what the screen's button calls (`hvac_controller_*`, `tb6612fng_service_*`, `sensor_roles_*`, `hvac_controller_ac_test*`, `event_log_clear`, thermal reset/save, `settings_set_int` for ACTION rows). The valve and compressor gates repeat `hvac_ui_service.c`'s conditions and wording (mode OFF, fitted, no calibration; electric and mode OFF). The fan −/+ step moved into `hvac_controller_fan_step()` so screen and phone use one rule.
+- Jog safety stays in the driver: the page repeats every 150 ms, the driver's 300 ms dead-man stops a jog that is not repeated. No server-side jog timer: it would only duplicate the driver's. At most one jog request is in flight (a slow answer makes the motor stutter, never run on); STOP is sent on release and again after an in-flight jog. Jogs < 50 ms apart get 429. A refused jog also sends a stop.
+- One control per `/api/control` request (two fields = 400): a request is one tap, so a half-applied request cannot happen. A/C and RECIRC take the wanted value rather than "toggle", so a repeated request cannot flip twice.
+- DAY/NIGHT and brightness use the existing `POST /api/settings` keys (`night_mode`, `bright_day`, `bright_night`): they are settings already, so no new route.
+- ACTION rows run through `POST /api/action` with the row id (they have no NVS key). The display asks once; the page asks once, and twice for the System actions (factory reset, restart IO node), as the owner asked. Calibrate valve N has no mode gate on the display, so none on the phone either; a Service-group action would get the 409 gate (none exists today). Factory reset answers first, waits 1 s, then runs (it restarts inside the call). "Recalibrate all" is the existing bool row "Recalibrate at boot", already on the phone.
+- Compressor test: the owner asked that the page refresh the 60 s dead-man while open. The page repeats the last command every 20 s only while the Service tab is open and the page in front; leaving the tab, hiding the page or STOP ends the test. The controller's 60 s dead-man is unchanged, so a lost phone ends the test within 60 s. On the display the test still ends 60 s after the last touch.
+- Trend: `hvac_ui_trend_copy()` copies the display's chart ring under a spinlock (the ring is written in the LVGL task); the page draws it as inline SVG with the display's 5 °C range rounding. No library, no CDN.
+- `/api/service` returns valves, sensors and the compressor in one answer (polled every 1.5 s while the tab is open); the Diagnostics tab reuses it for the valve rows.
+- `max_uri_handlers` is the size of the route table (19), so a new route cannot be dropped silently; a failed registration is logged.
+- Connect page address from `esp_netif_get_ip_info()` on the AP netif, shown only while the AP is on.
+- Not added: Danish page text (setting labels and enum names already arrive in the display's language); °F on the phone (the page shows °C, as before); hold-to-repeat on the phone's −/+ (one tap per step).
+- Page size: 12 525 -> 29 963 bytes (embedded in flash).
+
 ## Models
 - Strongest available model (Opus) for WP-A, WP-B, WP-C, WP-G, WP-H; faster model (Sonnet) for WP-D, WP-E, WP-F, WP-T. WP-A is not named in the brief; it is the framework every package depends on, so it gets the stronger model.

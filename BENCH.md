@@ -232,6 +232,36 @@ least 2 %RH above Humidity A/C off (the other setting is never moved), so `get h
    the link unplugged: after 5 min the event log shows `rolling back`, the display reboots into
    the previous image and logs `Rolled back: image in ota_x was rejected`.
 
+## 6b. Phone parity (v2.5)
+
+Phone joined to `HVAC-xxxx`; the display's Connect page shows `Address: 192.168.4.1` and
+`Phone page: http://192.168.4.1` (both empty with Phone Wi-Fi off). Tick each:
+
+- [ ] Control: setpoint − / + moves 0.5 °C on the display; each of the 7 modes; AUTO; DEF;
+      each preset (marked on both); fan − / + / AUTO; A/C on/off; RECIRC hidden with
+      Recirc flap fitted = no, works with yes; DAY/NIGHT and both brightness sliders change the
+      backlight.
+- [ ] Status / fault text: pull a valve's feedback, its name appears on the phone.
+- [ ] Settings: Air distribution grid − / + changes the cell on the display; Run on
+      Calibrate center 1 asks once and the valve calibrates; Restart IO node asks twice and
+      the node restarts (event log); Factory reset asks twice (cancel the second).
+- [ ] A Service settings row with mode AUTO: refused, "Service settings change only with mode OFF".
+- [ ] Valve service with mode AUTO: buttons greyed, "Set airflow mode OFF to jog or service".
+- [ ] Jog, mode OFF: hold + → the valve moves; release → it stops at once.
+- [ ] Jog, Wi-Fi off mid-jog: hold +, switch the phone's Wi-Fi off (or walk out of range)
+      while holding → the valve stops within 0.3 s (watch the shaft or the ADC reading on the
+      display's valve service page).
+- [ ] Jog: hold +, press the phone's home button → stops. Switch the mode to AUTO on the
+      display while holding → stops, the phone shows the reason.
+- [ ] STOP, RECALIBRATE (confirm; drives both end stops), LEARN DIR (event log).
+- [ ] Sensor roles: Search lists the ROMs with live temperatures; change a role, the display's
+      Sensor roles page shows it.
+- [ ] Compressor test (electric, mode OFF): BLOWER LOW starts the blower; + raises the demand;
+      STOP ends it; leave the tab → ends within a second; lock the phone → ends; with the tab
+      open and in front it keeps running past 60 s.
+- [ ] Log: Clear (confirm) empties the log on both. Diagnostics: the trend matches the
+      display's chart; RESET CAL (confirm) / SAVE CAL give their message; valve positions match.
+
 ## 7. Link loss
 
 Unplug the link cable for 5 s with the system running: `LINK LOST` badge, event log
