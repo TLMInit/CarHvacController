@@ -429,6 +429,7 @@ static void link_task(void *arg)
     esp_task_wdt_add(NULL);
 
     while (1) {
+        io_i2c_service();
         if (xQueueReceive(s_uart_queue, &event, pdMS_TO_TICKS(100)) == pdTRUE) {
             switch (event.type) {
             case UART_DATA: {

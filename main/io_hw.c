@@ -18,6 +18,7 @@
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "esp_log.h"
+#include "io_i2c.h"
 #include "soc/soc_caps.h"
 #include "io_status_led.h"
 
@@ -340,6 +341,7 @@ void io_outputs_safe_state(void)
             gpio_set_level((gpio_num_t)pin, 0);
         }
     }
+    io_i2c_request_dac_zero();      /* I2C cannot run here (timer context): the link task does it */
 }
 
 esp_err_t io_hw_init(void)

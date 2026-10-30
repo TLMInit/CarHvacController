@@ -126,10 +126,38 @@ static esp_err_t get_device(uint8_t addr, i2c_master_dev_handle_t *dev)
     return ESP_OK;
 }
 
+#define MCP4725_ADDR_LO     0x60
+#define MCP4725_ADDR_HI     0x61
+#define MCP4725_FAST_MAX    0x3F    /* first byte of a fast write: 00 PD1 PD0 D11..D8 */
+
+static volatile uint8_t s_dac_seen;         /* bit 0: 0x60, bit 1: 0x61 */
+static volatile uint8_t s_dac_zero_pending;
+
+void io_i2c_request_dac_zero(void)
+{
+    s_dac_zero_pending = s_dac_seen;
+}
+
+void io_i2c_service(void)
+{
+    uint8_t pending = __atomic_exchange_n(&s_dac_zero_pending, 0, __ATOMIC_ACQ_REL);
+    for (int i = 0; i < 2; i++) {
+        if (pending & (1u << i)) {
+            static const uint8_t zero = 0;
+            esp_err_t err = io_i2c_write(MCP4725_ADDR_LO + i, 0x00, &zero, 1);  /* fast write, value 0 */
+            ESP_LOGW(TAG, "DAC 0x%02X set to 0 with the outputs' safe state: %s",
+                     MCP4725_ADDR_LO + i, esp_err_to_name(err));
+        }
+    }
+}
+
 esp_err_t io_i2c_write(uint8_t addr, uint8_t reg, const uint8_t *data, size_t len)
 {
     if (len > 62) {
         return ESP_ERR_INVALID_SIZE;
+    }
+    if ((addr == MCP4725_ADDR_LO || addr == MCP4725_ADDR_HI) && reg <= MCP4725_FAST_MAX && len == 1) {
+        s_dac_seen |= (uint8_t)(1u << (addr - MCP4725_ADDR_LO));
     }
     i2c_master_dev_handle_t dev;
     esp_err_t err = get_device(addr, &dev);
