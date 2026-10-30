@@ -36,6 +36,7 @@ extern "C" {
 #define SETTINGS_SCHEMA         1
 #define SETTINGS_STR_MAX        33      /* longest string value incl. NUL (AP password: 8..32 chars) */
 #define SETTINGS_HUMIDITY_GAP   2.0f    /* %RH: Humidity A/C off stays at least this far below on (a chain rule) */
+#define SETTINGS_DUCT_GAP       5.0f    /* degC: duct minimum stays at least this far below the maximum (a chain rule) */
 
 typedef enum {
     SET_TYPE_BOOL = 0,
@@ -117,7 +118,7 @@ typedef enum {
     SET_CASCADE_OUTER_KI,       /* float per minute, 0..5, default 0.5 */
     SET_CASCADE_INNER_KP,       /* float % valve per degC duct error, 0..20, default 3 */
     SET_CASCADE_INNER_KI,       /* float per minute, 0..10, default 1 */
-    SET_DUCT_MIN,               /* float degC, 0..30, default 10 */
+    SET_DUCT_MIN,               /* float degC, 0..30, default 10; <= DUCT_MAX - SETTINGS_DUCT_GAP (a chain rule) */
     SET_DUCT_MAX,               /* float degC, 30..80, default 60 */
 
     /* Valves (index = hvac_valve_id_t) */

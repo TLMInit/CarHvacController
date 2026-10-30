@@ -138,6 +138,25 @@ static void test_humidity_gap(void)
     CHECK(settings_get_float(SET_HUMIDITY_OFF) == 60 - SETTINGS_HUMIDITY_GAP);
 }
 
+static void test_duct_gap(void)
+{
+    fresh();                                                    /* min 10, max 60 */
+    CHECK(settings_set_float(SET_DUCT_MIN, 30) == ESP_OK);
+    CHECK(settings_set_float(SET_DUCT_MAX, 32) == ESP_OK);      /* below min + 5 */
+    CHECK(settings_get_float(SET_DUCT_MAX) == 30 + SETTINGS_DUCT_GAP);
+    CHECKM(noted(SET_DUCT_MAX, "must be at least 5 °C above Duct temp minimum (30 °C)"), "note '%s'", s_note);
+    CHECK(settings_set_float(SET_DUCT_MIN, 10) == ESP_OK);
+    CHECK(settings_set_float(SET_DUCT_MAX, 33) == ESP_OK);
+    CHECK(settings_set_float(SET_DUCT_MIN, 31) == ESP_OK);      /* max - 2 */
+    CHECK(settings_get_float(SET_DUCT_MIN) == 33 - SETTINGS_DUCT_GAP);
+    CHECKM(noted(SET_DUCT_MIN, "must be at least 5 °C below Duct temp maximum (33 °C)"), "note '%s'", s_note);
+    CHECK(settings_get_float(SET_DUCT_MAX) == 33);
+
+    boot_with_f("duct_min", 30, "duct_max", 30);               /* accepted by older firmware */
+    CHECK(settings_get_float(SET_DUCT_MIN) == 30 - SETTINGS_DUCT_GAP);
+    CHECK(settings_get_float(SET_DUCT_MAX) == 30);
+}
+
 int main(void)
 {
     RUN(test_fan_chain_pure);
@@ -146,5 +165,6 @@ int main(void)
     RUN(test_fan_load_time);
     RUN(test_valve_speed_floor);
     RUN(test_humidity_gap);
+    RUN(test_duct_gap);
     T_DONE();
 }
