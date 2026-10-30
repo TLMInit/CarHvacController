@@ -47,6 +47,7 @@ static TaskHandle_t s_persist_task;
 static char s_ap_default[11];   /* AP password used while the user has set none; written once by settings_init */
 static setting_id_t s_note_id = SET_COUNT;     /* setting the note belongs to */
 static char s_note[SETTINGS_NOTE_MAX];          /* written by the setter, read by settings_last_note (both under s_lock) */
+static uint16_t s_order[SET_COUNT];             /* display order, filled once by settings_init */
 
 const setting_def_t *settings_def(setting_id_t id)
 {
@@ -56,10 +57,15 @@ const setting_def_t *settings_def(setting_id_t id)
 void settings_iterate(bool (*cb)(const setting_def_t *def, void *ctx), void *ctx)
 {
     for (int i = 0; i < SET_COUNT; i++) {
-        if (!cb(&g_settings_table[i], ctx)) {
+        if (!cb(&g_settings_table[s_order[i]], ctx)) {
             return;
         }
     }
+}
+
+bool settings_visible(setting_id_t id)
+{
+    return settings_rules_visible(id, s_val);
 }
 
 uint32_t settings_seq(void)
@@ -617,6 +623,7 @@ esp_err_t settings_init(void)
 {
     /* A broken table is a build mistake: stop loudly on the first bench boot. */
     ESP_ERROR_CHECK(table_ok() ? ESP_OK : ESP_ERR_INVALID_STATE);
+    settings_display_order(s_order);
 
     for (int i = 0; i < SET_COUNT; i++) {
         const setting_def_t *d = &g_settings_table[i];

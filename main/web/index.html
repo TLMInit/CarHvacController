@@ -96,7 +96,8 @@ async function loadState(){
  }catch(e){$("link").textContent="Not reachable";$("link").className="bad"}
 }
 
-const GROUPS=["Display","Climate","Fan","Comfort","Control","Valves","Connectivity","System","Service (changes only with mode OFF)","Advanced","Air distribution (per manual mode)"];
+const GROUPS=["Display","Climate","Fan","Comfort","Control","Valves","Connectivity","System","Service (changes only with mode OFF)","Advanced","Air distribution (per manual mode)","A/C"];
+const GROUP_ORDER=[0,1,11,2,3,4,5,6,7,8,9,10];
 async function save(key,value,msg){
  msg.textContent="Saving…";msg.className="mut";
  try{const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key,value})});
@@ -105,18 +106,20 @@ async function save(key,value,msg){
 async function loadSettings(){
  let rows;try{rows=await getJ("/api/settings")}catch(e){$("settings").replaceChildren(el("p","Could not load settings","bad"));return}
  const box=$("settings");box.replaceChildren();
- GROUPS.forEach((g,gi)=>{const card=el("div",null,"card");card.append(el("h3",g));
+ GROUP_ORDER.forEach(gi=>{const g=GROUPS[gi],card=el("div",null,"card");card.append(el("h3",g));
   for(const r of rows.filter(r=>r.group===gi)){
    const row=el("div",null,"row"),lab=el("label",r.label),msg=el("small",r.formatted);lab.append(msg);row.append(lab);
    let inp;
    if(r.type==="action"){msg.textContent="Run from the display";}
    else if(r.type==="bool"){inp=el("input");inp.type="checkbox";inp.checked=!!r.value;inp.onchange=()=>save(r.key,inp.checked,msg)}
-   else if(r.type==="enum"){inp=el("select");(r.enum||[]).forEach((t,i)=>{const o=el("option",t);o.value=i;inp.append(o)});inp.value=r.value;inp.onchange=()=>save(r.key,+inp.value,msg)}
+   else if(r.type==="enum"){inp=el("select");(r.enum||[]).forEach((t,i)=>{const o=el("option",t);o.value=i;inp.append(o)});inp.value=r.value;inp.onchange=async()=>{await save(r.key,+inp.value,msg);loadSettings()}}
    else if(r.type==="string"){inp=el("input");inp.type="text";inp.value=r.value;inp.minLength=r.min;inp.maxLength=r.max;inp.autocomplete="off";
     inp.onchange=()=>{if(inp.value.length<r.min||inp.value.length>r.max){msg.textContent=r.min+".."+r.max+" characters";msg.className="bad";return}save(r.key,inp.value,msg)}}
    else{inp=el("input");inp.type="number";inp.min=r.min;inp.max=r.max;inp.step=r.step||"any";inp.value=r.value;inp.inputMode="decimal";
     inp.onchange=()=>{const v=parseFloat(inp.value);if(isNaN(v)){msg.textContent="Enter a number";msg.className="bad";return}save(r.key,v,msg)}}
-   if(inp)row.append(inp);card.append(row)}
+   if(inp)row.append(inp);
+   if(r.visible===false){row.style.opacity=".45";lab.title="Not used with the current choices";if(inp)inp.disabled=true}
+   card.append(row)}
   if(gi===7)card.append(backup);// next to Factory reset
   if(card.children.length>1)box.append(card)});
 }

@@ -15,7 +15,10 @@ static int chars(const char *s)     /* UTF-8 code points: the display counts gly
 static int expected_enum_count(setting_id_t id)
 {
     switch (id) {
+    case SET_AC_OUT_PIN: return 1;                                  /* SETTINGS_AC_OUT_PINS */
     case SET_TEMP_UNIT: case SET_LANGUAGE: case SET_CONTROL_MODE: return 2;
+    case SET_AC_COMPRESSOR: case SET_AC_OUT_FULL_SCALE: case SET_AC_DAC_ADDR: return 2;
+    case SET_AC_OUT_TYPE: return 3;
     case SET_POWER_UP_STATE: case SET_AUTO_CURVE: case SET_WIFI_AP_MODE:
     case SET_VALVE_DIR_0: case SET_VALVE_DIR_1: case SET_VALVE_DIR_2: case SET_VALVE_DIR_3: case SET_VALVE_DIR_4: return 3;
     case SET_HEATER_DELAY_FAN: return 6;      /* OFF, LOW, MED-LOW, MEDIUM, MED-HIGH, HIGH */
@@ -209,6 +212,100 @@ static void test_service_defaults(void)
     }
 }
 
+/* v2.4 A/C group: defaults keep the clutch, keys as documented, rows moved with their keys. */
+static void test_ac_rows(void)
+{
+    static const struct { setting_id_t id; setting_group_t g; const char *key; float min, max, def; } k[] = {
+        { SET_AC_COMPRESSOR, SET_GROUP_AC, "compressor_type", 0, 1, SET_AC_CLUTCH },
+        { SET_AC_OUT_TYPE, SET_GROUP_AC, "ac_out_type", 0, 2, SET_AC_OUT_PWM },
+        { SET_AC_OUT_PIN, SET_GROUP_AC, "ac_out_pin", 0, 0, 0 },
+        { SET_AC_OUT_FREQ_HZ, SET_GROUP_AC, "ac_out_freq_hz", 100, 20000, 1000 },
+        { SET_AC_OUT_INVERT, SET_GROUP_AC, "ac_out_invert", 0, 1, 0 },
+        { SET_AC_OUT_MIN_PCT, SET_GROUP_AC, "ac_out_min_pct", 0, 100, 10 },
+        { SET_AC_OUT_MAX_PCT, SET_GROUP_AC, "ac_out_max_pct", 0, 100, 100 },
+        { SET_AC_OUT_FULL_SCALE, SET_GROUP_AC, "ac_out_fs_v", 0, 1, SET_AC_FS_3V3 },
+        { SET_AC_DAC_ADDR, SET_GROUP_AC, "ac_dac_addr", 0, 1, SET_AC_DAC_0X60 },
+        { SET_AC_RAMP_PCT_S, SET_GROUP_AC, "ac_ramp_pct_s", 1, 100, 20 },
+        { SET_AC_MIN_SPEED_PCT, SET_GROUP_AC, "ac_min_speed", 0, 100, 20 },
+        { SET_AC_IDLE_OFF_S, SET_GROUP_AC, "ac_idle_off_s", 0, 600, 30 },
+        { SET_EVAP_TARGET, SET_GROUP_AC, "evap_target", -2, 10, 4 },
+        { SET_EVAP_OFF, SET_GROUP_AC, "evap_off", -2, 8, 1 },
+        { SET_EVAP_ON, SET_GROUP_AC, "evap_on", 0, 10, 4 },
+        { SET_AC_EVAP_KP, SET_GROUP_ADVANCED, "ac_evap_kp", 0, 50, 10 },
+        { SET_AC_EVAP_KI, SET_GROUP_ADVANCED, "ac_evap_ki", 0, 5, 0.5f },
+        /* moved from Climate, keys unchanged */
+        { SET_AUTO_REQUESTS_AC, SET_GROUP_AC, "auto_ac", 0, 1, 0 },
+        { SET_HUMIDITY_ON, SET_GROUP_AC, "hum_on", 50, 90, 65 },
+        { SET_HUMIDITY_OFF, SET_GROUP_AC, "hum_off", 40, 85, 58 },
+        { SET_DEF_RESTORES_AC, SET_GROUP_AC, "def_restore_ac", 0, 1, 1 },
+    };
+    for (size_t i = 0; i < sizeof(k) / sizeof(k[0]); i++) {
+        const setting_def_t *d = settings_def(k[i].id);
+        CHECKM(d->group == k[i].g && strcmp(d->nvs_key, k[i].key) == 0, "%s: group %d key %s", k[i].key, d->group, d->nvs_key);
+        CHECKM(d->min == k[i].min && d->max == k[i].max && d->def == k[i].def, "%s: %g..%g def %g", k[i].key,
+               (double)d->min, (double)d->max, (double)d->def);
+    }
+    CHECK(settings_def(SET_AC_MIN_OFF_S)->group == SET_GROUP_ADVANCED);
+    CHECK(settings_def(SET_AC_MIN_ON_S)->group == SET_GROUP_ADVANCED);
+    static const int pins[] = SETTINGS_AC_OUT_PINS;
+    CHECK((int)(sizeof(pins) / sizeof(pins[0])) == (int)settings_def(SET_AC_OUT_PIN)->max + 1 && pins[0] == 10);
+}
+
+/* Display order: every id once; the A/C group starts with the compressor type, the moved rows last. */
+static void test_display_order(void)
+{
+    uint16_t order[SET_COUNT];
+    int seen[SET_COUNT] = { 0 };
+    settings_display_order(order);
+    for (int i = 0; i < SET_COUNT; i++) {
+        CHECK(order[i] < SET_COUNT);
+        if (order[i] < SET_COUNT) seen[order[i]]++;
+    }
+    for (int i = 0; i < SET_COUNT; i++) CHECKM(seen[i] == 1, "id %d seen %d times", i, seen[i]);
+    setting_id_t ac[SET_COUNT];
+    int n = 0;
+    for (int i = 0; i < SET_COUNT; i++) {
+        if (settings_def((setting_id_t)order[i])->group == SET_GROUP_AC) ac[n++] = (setting_id_t)order[i];
+    }
+    static const setting_id_t want[] = {
+        SET_AC_COMPRESSOR, SET_AC_OUT_TYPE, SET_AC_OUT_PIN, SET_AC_OUT_FREQ_HZ, SET_AC_OUT_INVERT,
+        SET_AC_OUT_MIN_PCT, SET_AC_OUT_MAX_PCT, SET_AC_OUT_FULL_SCALE, SET_AC_DAC_ADDR, SET_AC_RAMP_PCT_S,
+        SET_AC_MIN_SPEED_PCT, SET_AC_IDLE_OFF_S, SET_EVAP_TARGET, SET_EVAP_OFF, SET_EVAP_ON,
+        SET_AUTO_REQUESTS_AC, SET_HUMIDITY_ON, SET_HUMIDITY_OFF, SET_DEF_RESTORES_AC,
+    };
+    CHECK(n == (int)(sizeof(want) / sizeof(want[0])));
+    for (int i = 0; i < n && i < (int)(sizeof(want) / sizeof(want[0])); i++) CHECKM(ac[i] == want[i], "A/C row %d: id %d", i, ac[i]);
+    /* other groups keep id order */
+    int last = -1;
+    for (int i = 0; i < SET_COUNT; i++) {
+        if (settings_def((setting_id_t)order[i])->group != SET_GROUP_CLIMATE) continue;
+        CHECK((int)order[i] > last);
+        last = order[i];
+    }
+}
+
+/* Electric rows only with compressor = electric; per output type the pin / frequency / DAC rows. */
+static void test_visibility(void)
+{
+    float v[SET_COUNT];
+    for (int i = 0; i < SET_COUNT; i++) v[i] = settings_def((setting_id_t)i)->def;
+    CHECK(settings_rules_visible(SET_AC_COMPRESSOR, v));
+    CHECK(settings_rules_visible(SET_EVAP_OFF, v) && settings_rules_visible(SET_EVAP_ON, v));   /* both types */
+    CHECK(settings_rules_visible(SET_HUMIDITY_ON, v) && settings_rules_visible(SET_TEMP_UNIT, v));
+    for (int id = SET_AC_OUT_TYPE; id <= SET_EVAP_TARGET; id++) CHECKM(!settings_rules_visible((setting_id_t)id, v), "clutch: %d", id);
+    CHECK(!settings_rules_visible(SET_AC_EVAP_KP, v) && !settings_rules_visible(SET_AC_EVAP_KI, v));
+    v[SET_AC_COMPRESSOR] = SET_AC_ELECTRIC;
+    CHECK(settings_rules_visible(SET_AC_OUT_PIN, v) && settings_rules_visible(SET_AC_OUT_FREQ_HZ, v));
+    CHECK(!settings_rules_visible(SET_AC_OUT_FULL_SCALE, v) && !settings_rules_visible(SET_AC_DAC_ADDR, v));
+    CHECK(settings_rules_visible(SET_EVAP_TARGET, v) && settings_rules_visible(SET_AC_EVAP_KI, v));
+    v[SET_AC_OUT_TYPE] = SET_AC_OUT_ANALOG_RC;
+    CHECK(settings_rules_visible(SET_AC_OUT_PIN, v) && !settings_rules_visible(SET_AC_OUT_FREQ_HZ, v));
+    v[SET_AC_OUT_TYPE] = SET_AC_OUT_DAC_MCP4725;
+    CHECK(!settings_rules_visible(SET_AC_OUT_PIN, v) && !settings_rules_visible(SET_AC_OUT_FREQ_HZ, v));
+    CHECK(settings_rules_visible(SET_AC_OUT_FULL_SCALE, v) && settings_rules_visible(SET_AC_DAC_ADDR, v));
+    CHECK(settings_rules_visible(SET_AC_OUT_MIN_PCT, v) && settings_rules_visible(SET_AC_OUT_INVERT, v));
+}
+
 int main(void)
 {
     RUN(test_rows_in_order);
@@ -219,5 +316,8 @@ int main(void)
     RUN(test_old_constant_defaults);
     RUN(test_air_grid_defaults);
     RUN(test_service_defaults);
+    RUN(test_ac_rows);
+    RUN(test_display_order);
+    RUN(test_visibility);
     T_DONE();
 }

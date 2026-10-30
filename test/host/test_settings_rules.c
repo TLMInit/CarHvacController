@@ -281,6 +281,42 @@ static void test_heat_gain_within_limits(void)
     CHECK(settings_get_float(SET_HEAT_GAIN_MIN) <= 30);
 }
 
+/* v2.4: electric output min + 5 <= max */
+static void test_ac_out_gap(void)
+{
+    fresh();                                                    /* min 10, max 100 */
+    CHECK(settings_set_int(SET_AC_OUT_MAX_PCT, 12) == ESP_OK);
+    CHECK(settings_get_int(SET_AC_OUT_MAX_PCT) == 10 + SETTINGS_AC_OUT_GAP);
+    CHECKM(noted(SET_AC_OUT_MAX_PCT, "must be at least 5 % above Output at min speed (10 %)"), "note '%s'", s_note);
+    CHECK(settings_set_int(SET_AC_OUT_MIN_PCT, 14) == ESP_OK);
+    CHECK(settings_get_int(SET_AC_OUT_MIN_PCT) == 15 - SETTINGS_AC_OUT_GAP);
+    CHECK(settings_get_int(SET_AC_OUT_MAX_PCT) == 15);         /* the other one never moves */
+    CHECK(settings_set_int(SET_AC_OUT_MAX_PCT, 80) == ESP_OK && settings_set_int(SET_AC_OUT_MIN_PCT, 75) == ESP_OK);
+    CHECK(settings_get_int(SET_AC_OUT_MIN_PCT) == 75 && !noted(SET_AC_OUT_MIN_PCT, ""));
+
+    boot_with_i32("ac_out_min_pct", 60, "ac_out_max_pct", 50); /* written by hand or an older build */
+    CHECK(settings_get_int(SET_AC_OUT_MAX_PCT) == 50);
+    CHECK(settings_get_int(SET_AC_OUT_MIN_PCT) == 50 - SETTINGS_AC_OUT_GAP);
+    boot_with_i32("ac_out_min_pct", 3, "ac_out_max_pct", 2);   /* min cannot go below 0: max moves up */
+    CHECK(settings_get_int(SET_AC_OUT_MIN_PCT) == 3 && settings_get_int(SET_AC_OUT_MAX_PCT) == 8);
+}
+
+/* v2.4: evaporator cut-out + 1 <= cut-in */
+static void test_evap_gap(void)
+{
+    fresh();                                                    /* off 1, on 4 */
+    CHECK(settings_set_float(SET_EVAP_OFF, 3.5f) == ESP_OK);
+    CHECK(settings_get_float(SET_EVAP_OFF) == 4 - SETTINGS_EVAP_GAP);
+    CHECKM(noted(SET_EVAP_OFF, "must be at least 1 °C below Evaporator cut-in (4 °C)"), "note '%s'", s_note);
+    CHECK(settings_set_float(SET_EVAP_ON, 2) == ESP_OK);
+    CHECK(settings_get_float(SET_EVAP_ON) == 3 + SETTINGS_EVAP_GAP);
+    CHECK(settings_set_float(SET_EVAP_ON, 6) == ESP_OK && settings_get_float(SET_EVAP_ON) == 6);
+
+    boot_with_f("evap_off", 5, "evap_on", 4);
+    CHECK(settings_get_float(SET_EVAP_ON) == 4);
+    CHECK(settings_get_float(SET_EVAP_OFF) == 4 - SETTINGS_EVAP_GAP);
+}
+
 int main(void)
 {
     RUN(test_fan_chain_pure);
@@ -297,5 +333,7 @@ int main(void)
     RUN(test_cal_speed_above_min);
     RUN(test_ac_min_off);
     RUN(test_heat_gain_within_limits);
+    RUN(test_ac_out_gap);
+    RUN(test_evap_gap);
     T_DONE();
 }

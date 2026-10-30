@@ -36,6 +36,13 @@ static const char *const k_vdir_en[]    = { "Auto", "Normal", "Inverted" };
 static const char *const k_vdir_da[]    = { "Auto", "Normal", "Omvendt" };
 static const char *const k_ap_en[]      = { "Off", "Auto off", "Always" };   /* Auto off: SET_AP_IDLE_MIN */
 static const char *const k_ap_da[]      = { "Fra", "Auto-fra", "Altid" };
+static const char *const k_comp_en[]    = { "Clutch", "Electric" };
+static const char *const k_comp_da[]    = { "Kobling", "Elektrisk" };
+static const char *const k_acout_en[]   = { "PWM", "Analog (RC)", "DAC MCP4725" };
+static const char *const k_acpin_en[]   = { "GPIO10" };            /* = SETTINGS_AC_OUT_PINS */
+static const char *const k_acfs_en[]    = { "3.3 V", "5.0 V" };
+static const char *const k_acfs_da[]    = { "3,3 V", "5,0 V" };
+static const char *const k_dac_en[]     = { "0x60", "0x61" };
 
 #define ROW(i, g, en, da, t, mn, mx, st, df, ee, ed, u, key, cb) \
     [i] = { .id = i, .group = g, .label_en = en, .label_da = da, .type = t, \
@@ -63,6 +70,7 @@ static const char *const k_ap_da[]      = { "Fra", "Auto-fra", "Altid" };
 #define AD SET_GROUP_ADVANCED
 #define SV SET_GROUP_SERVICE
 #define AR SET_GROUP_AIR
+#define AC SET_GROUP_AC
 
 const setting_def_t g_settings_table[SET_COUNT] = {
     /* Display: no callback, the UI polls settings_seq() */
@@ -79,12 +87,12 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     FLT (SET_SETPOINT_STEP,    CL, "Setpoint step", "Trin for setpunkt", 0.1f, 1.0f, 0.1f, 0.5f, "°C", "sp_step", apply_controller),
     FLT (SET_DEFAULT_SETPOINT, CL, "Default setpoint", "Standard setpunkt", SETTINGS_SETPOINT_MIN_C, SETTINGS_SETPOINT_MAX_C, 0.5f, 22, "°C", "sp_default", apply_controller),
     ENUM(SET_POWER_UP_STATE,   CL, "At power-up", "Ved opstart", 3, SET_POWERUP_RESTORE, k_powerup_en, k_powerup_da, "power_up", apply_controller),
-    BOOL(SET_AUTO_REQUESTS_AC, CL, "AUTO uses A/C", "AUTO bruger A/C", 0, "auto_ac", apply_controller),
-    FLT (SET_HUMIDITY_ON,      CL, "Humidity A/C on", "Fugt A/C til", 50, 90, 1, 65, "%RH", "hum_on", apply_controller),
-    FLT (SET_HUMIDITY_OFF,     CL, "Humidity A/C off", "Fugt A/C fra", 40, 85, 1, 58, "%RH", "hum_off", apply_controller),
+    BOOL(SET_AUTO_REQUESTS_AC, AC, "AUTO uses A/C", "AUTO bruger A/C", 0, "auto_ac", apply_controller),
+    FLT (SET_HUMIDITY_ON,      AC, "Humidity A/C on", "Fugt A/C til", 50, 90, 1, 65, "%RH", "hum_on", apply_controller),
+    FLT (SET_HUMIDITY_OFF,     AC, "Humidity A/C off", "Fugt A/C fra", 40, 85, 1, 58, "%RH", "hum_off", apply_controller),
     BOOL(SET_RECIRC_FITTED,    CL, "Recirc flap fitted", "Recirk.-spjæld", 0, "recirc_fitted", apply_controller),
     INT (SET_RECIRC_AUTO_CANCEL_MIN, CL, "Recirc auto-cancel", "Recirk. auto-stop", 0, 60, 1, 0, "min", "recirc_cancel", apply_controller),
-    BOOL(SET_DEF_RESTORES_AC,  CL, "DEF restores A/C", "DEF gendanner A/C", 1, "def_restore_ac", apply_controller),
+    BOOL(SET_DEF_RESTORES_AC,  AC, "DEF restores A/C", "DEF gendanner A/C", 1, "def_restore_ac", apply_controller),
 
     /* Fan */
     /* also the A/C blower interlock threshold (hvac_controller.c: blower below Low drops the A/C) */
@@ -234,6 +242,26 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     INT (SET_LEARN_MS,          SV, "Learn-direction move", "Lær-retning bevægelse", 300, 3000, 100, 800, "ms", "learn_ms", apply_valves),
     INT (SET_CAL_SPEED_PWM,     SV, "Calibration speed", "Kalibreringsfart", 20, 255, 5, 50, NULL, "cal_pwm", apply_valves),
     INT (SET_CAL_TIMEOUT_S,     SV, "Calibration timeout", "Kalibreringstimeout", 30, 300, 10, 120, "s", "cal_timeout_s", apply_valves),
+
+    /* A/C: defaults = the clutch as before; electric rows are hidden unless electric (k_visible) */
+    ENUM(SET_AC_COMPRESSOR,     AC, "Compressor type", "Kompressortype", 2, SET_AC_CLUTCH, k_comp_en, k_comp_da, "compressor_type", apply_controller),
+    ENUM(SET_AC_OUT_TYPE,       AC, "Speed output", "Hastighedsudgang", 3, SET_AC_OUT_PWM, k_acout_en, k_acout_en, "ac_out_type", apply_controller),
+    ENUM(SET_AC_OUT_PIN,        AC, "Output pin (node)", "Udgangsben (node)", 1, 0, k_acpin_en, k_acpin_en, "ac_out_pin", apply_controller),
+    INT (SET_AC_OUT_FREQ_HZ,    AC, "PWM frequency", "PWM-frekvens", 100, 20000, 100, 1000, "Hz", "ac_out_freq_hz", apply_controller),
+    BOOL(SET_AC_OUT_INVERT,     AC, "Invert output", "Vend udgang", 0, "ac_out_invert", apply_controller),
+    INT (SET_AC_OUT_MIN_PCT,    AC, "Output at min speed", "Udgang ved min. fart", 0, 100, 1, 10, "%", "ac_out_min_pct", apply_controller),
+    INT (SET_AC_OUT_MAX_PCT,    AC, "Output at max speed", "Udgang ved maks. fart", 0, 100, 1, 100, "%", "ac_out_max_pct", apply_controller),
+    ENUM(SET_AC_OUT_FULL_SCALE, AC, "DAC full scale", "DAC fuldt udslag", 2, SET_AC_FS_3V3, k_acfs_en, k_acfs_da, "ac_out_fs_v", apply_controller),
+    ENUM(SET_AC_DAC_ADDR,       AC, "DAC address", "DAC-adresse", 2, SET_AC_DAC_0X60, k_dac_en, k_dac_en, "ac_dac_addr", apply_controller),
+    INT (SET_AC_RAMP_PCT_S,     AC, "Speed ramp", "Fartrampe", 1, 100, 1, 20, "%/s", "ac_ramp_pct_s", apply_controller),
+    INT (SET_AC_MIN_SPEED_PCT,  AC, "Minimum speed", "Minimum fart", 0, 100, 5, 20, "%", "ac_min_speed", apply_controller),
+    INT (SET_AC_IDLE_OFF_S,     AC, "Off after no demand", "Fra efter intet behov", 0, 600, 5, 30, "s", "ac_idle_off_s", apply_controller),
+    FLT (SET_EVAP_TARGET,       AC, "Evaporator target", "Fordamper mål", -2, 10, 0.5f, 4, "°C", "evap_target", apply_controller),
+    FLT (SET_EVAP_OFF,          AC, "Evaporator cut-out", "Fordamper stop", -2, 8, 0.5f, 1, "°C", "evap_off", apply_controller),
+    FLT (SET_EVAP_ON,           AC, "Evaporator cut-in", "Fordamper start", 0, 10, 0.5f, 4, "°C", "evap_on", apply_controller),
+    /* ADVANCED: 1 degC above target asks 10 % more speed; Ti = Kp/Ki = 20 s, about the evaporator's time constant */
+    FLT (SET_AC_EVAP_KP,        AD, "Evaporator loop Kp", "Fordampersløjfe Kp", 0, 50, 1, 10, "%/°C", "ac_evap_kp", apply_controller),
+    FLT (SET_AC_EVAP_KI,        AD, "Evaporator loop Ki", "Fordampersløjfe Ki", 0, 5, 0.1f, 0.5f, "%/°C/s", "ac_evap_ki", apply_controller),
 };
 
 /* ---- Cross-field rules (see settings.h) ---- */
@@ -269,6 +297,10 @@ static const setting_operand_t k_heat_gain[] = { SETTING(SET_HEAT_GAIN_MIN), SET
 static const setting_operand_t k_cold_start[] = { SETTING(SET_COLD_START_BELOW), SETTING(SET_COLD_START_END_C) };
 /* calibration below the stiction floor stalls and fails */
 static const setting_operand_t k_cal_speed[] = { SETTING(SET_VALVE_MIN_PWM), SETTING(SET_CAL_SPEED_PWM) };
+/* min = max would make the electric compressor's speed range a single output level */
+static const setting_operand_t k_ac_out[] = { SETTING(SET_AC_OUT_MIN_PCT), SETTING(SET_AC_OUT_MAX_PCT) };
+/* cut-in at or below the cut-out would restart the compressor straight into the freeze cut */
+static const setting_operand_t k_evap[] = { SETTING(SET_EVAP_OFF), SETTING(SET_EVAP_ON) };
 
 const setting_chain_t g_settings_chains[] = {
     { g_fan_levels, SETTINGS_FAN_LEVELS, 0 },
@@ -277,8 +309,63 @@ const setting_chain_t g_settings_chains[] = {
     { k_heat_gain, 3, 0 },
     { k_cold_start, 2, SETTINGS_COLD_START_GAP },
     { k_cal_speed, 2, 0 },
+    { k_ac_out, 2, SETTINGS_AC_OUT_GAP },
+    { k_evap, 2, SETTINGS_EVAP_GAP },
 };
 const size_t g_settings_chain_count = sizeof(g_settings_chains) / sizeof(g_settings_chains[0]);
+
+/* ---- Row visibility (see settings.h): rows without a predicate are always shown ---- */
+
+static bool electric(const float v[SET_COUNT]) { return v[SET_AC_COMPRESSOR] == SET_AC_ELECTRIC; }
+static bool electric_pin(const float v[SET_COUNT]) { return electric(v) && v[SET_AC_OUT_TYPE] != SET_AC_OUT_DAC_MCP4725; }
+static bool electric_pwm(const float v[SET_COUNT]) { return electric(v) && v[SET_AC_OUT_TYPE] == SET_AC_OUT_PWM; }
+static bool electric_dac(const float v[SET_COUNT]) { return electric(v) && v[SET_AC_OUT_TYPE] == SET_AC_OUT_DAC_MCP4725; }
+
+static const struct {
+    setting_id_t id;
+    bool (*visible)(const float v[SET_COUNT]);
+} k_visible[] = {
+    { SET_AC_OUT_TYPE, electric },
+    { SET_AC_OUT_PIN, electric_pin },
+    { SET_AC_OUT_FREQ_HZ, electric_pwm },      /* analog RC runs at SETTINGS_AC_RC_FREQ_HZ */
+    { SET_AC_OUT_INVERT, electric },
+    { SET_AC_OUT_MIN_PCT, electric },
+    { SET_AC_OUT_MAX_PCT, electric },
+    { SET_AC_OUT_FULL_SCALE, electric_dac },
+    { SET_AC_DAC_ADDR, electric_dac },
+    { SET_AC_RAMP_PCT_S, electric },
+    { SET_AC_MIN_SPEED_PCT, electric },
+    { SET_AC_IDLE_OFF_S, electric },
+    { SET_EVAP_TARGET, electric },
+    { SET_AC_EVAP_KP, electric },
+    { SET_AC_EVAP_KI, electric },
+};
+
+bool settings_rules_visible(setting_id_t id, const float vals[SET_COUNT])
+{
+    for (size_t i = 0; i < sizeof(k_visible) / sizeof(k_visible[0]); i++) {
+        if (k_visible[i].id == id) return k_visible[i].visible(vals);
+    }
+    return true;
+}
+
+/* Rows moved into the A/C group (older ids): shown after its last row, in this order. */
+static const setting_id_t k_ac_moved[] = { SET_AUTO_REQUESTS_AC, SET_HUMIDITY_ON, SET_HUMIDITY_OFF, SET_DEF_RESTORES_AC };
+#define AC_LAST_ROW SET_EVAP_ON
+
+void settings_display_order(uint16_t out[SET_COUNT])
+{
+    size_t n = 0, nm = sizeof(k_ac_moved) / sizeof(k_ac_moved[0]);
+    for (int i = 0; i < SET_COUNT; i++) {
+        bool moved = false;
+        for (size_t m = 0; m < nm; m++) moved |= k_ac_moved[m] == (setting_id_t)i;
+        if (moved) continue;
+        out[n++] = (uint16_t)i;
+        if (i == AC_LAST_ROW) {
+            for (size_t m = 0; m < nm; m++) out[n++] = (uint16_t)k_ac_moved[m];
+        }
+    }
+}
 
 static float op_val(const setting_operand_t *op, const float vals[SET_COUNT])
 {

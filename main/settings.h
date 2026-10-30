@@ -40,6 +40,8 @@ extern "C" {
 #define SETTINGS_HUMIDITY_GAP   2.0f    /* %RH: Humidity A/C off stays at least this far below on (a chain rule) */
 #define SETTINGS_DUCT_GAP       5.0f    /* degC: duct minimum stays at least this far below the maximum (a chain rule) */
 #define SETTINGS_COLD_START_GAP 1.0f    /* degC: cold start ends at least this far above where it starts (a chain rule) */
+#define SETTINGS_AC_OUT_GAP     5.0f    /* %: electric compressor output minimum stays this far below the maximum (a chain rule) */
+#define SETTINGS_EVAP_GAP       1.0f    /* degC: evaporator freeze cut-in stays this far above the cut-out (a chain rule) */
 
 typedef enum {
     SET_TYPE_BOOL = 0,
@@ -62,6 +64,7 @@ typedef enum {
     SET_GROUP_SERVICE,          /* valve service page only, editable with mode OFF */
     SET_GROUP_ADVANCED,         /* phone page only */
     SET_GROUP_AIR,              /* air distribution grid: a sub-page of Valves on the display */
+    SET_GROUP_AC,               /* A/C: compressor type, electric compressor output, freeze limits, A/C requests */
     SET_GROUP_COUNT
 } setting_group_t;
 
@@ -77,8 +80,24 @@ typedef enum { SET_CURVE_ECO = 0, SET_CURVE_NORMAL, SET_CURVE_MAX } set_curve_t;
 typedef enum { SET_VDIR_AUTO = 0, SET_VDIR_NORMAL, SET_VDIR_INVERTED } set_valve_dir_t;
 typedef enum { SET_AP_OFF = 0, SET_AP_10MIN, SET_AP_ALWAYS } set_ap_mode_t;
 typedef enum { SET_CONTROL_CLASSIC = 0, SET_CONTROL_CASCADE } set_control_mode_t;
+typedef enum { SET_AC_CLUTCH = 0, SET_AC_ELECTRIC } set_ac_compressor_t;
+/* Electric compressor speed output. The enable is always the clutch relay (AC_RELAY_PIN, node GPIO6):
+ * for the electric compressor it is its run/enable line, not a setting. */
+typedef enum {
+    SET_AC_OUT_PWM = 0,         /* PWM on SET_AC_OUT_PIN at SET_AC_OUT_FREQ_HZ */
+    SET_AC_OUT_ANALOG_RC,       /* PWM at a fixed SETTINGS_AC_RC_FREQ_HZ into an RC filter = 0..3.3 V */
+    SET_AC_OUT_DAC_MCP4725,     /* MCP4725 DAC on the node's I2C bus at SET_AC_DAC_ADDR */
+} set_ac_out_type_t;
+#define SETTINGS_AC_RC_FREQ_HZ  20000
+/* SET_AC_OUT_PIN is an index into this list: node GPIOs that are on the node's allow-list
+ * (node_config.h NODE_ALLOWED_PINS) and used by nothing else. Today only GPIO10 (the node
+ * boots it as an output, low). */
+#define SETTINGS_AC_OUT_PINS    { 10 }
+typedef enum { SET_AC_FS_3V3 = 0, SET_AC_FS_5V0 } set_ac_full_scale_t;      /* DAC: display/scaling information */
+typedef enum { SET_AC_DAC_0X60 = 0, SET_AC_DAC_0X61 } set_ac_dac_addr_t;    /* I2C address 0x60 + value */
 
-/* Every setting. Order is the display order within a group. Append only; never renumber. */
+/* Every setting. Order is the display order within a group (except as settings_display_order says).
+ * Append only; never renumber. */
 typedef enum {
     /* Display */
     SET_TEMP_UNIT = 0,          /* enum set_unit_t, default C */
@@ -226,6 +245,29 @@ typedef enum {
     SET_CAL_SPEED_PWM,          /* int PWM, 20..255 step 5, default 50; >= SET_VALVE_MIN_PWM (a chain rule) */
     SET_CAL_TIMEOUT_S,          /* int s, 30..300 step 10, default 120: per calibration phase */
 
+    /* A/C (v2.4). Display order: SET_AC_COMPRESSOR first, then the electric block, the freeze
+     * limits, then the older A/C rows moved here (SET_AUTO_REQUESTS_AC, SET_HUMIDITY_ON/OFF,
+     * SET_DEF_RESTORES_AC; see settings_display_order). Electric rows are visible only with
+     * SET_AC_COMPRESSOR = electric (settings_visible); defaults keep the clutch behaviour. */
+    SET_AC_COMPRESSOR,          /* enum set_ac_compressor_t, default CLUTCH */
+    SET_AC_OUT_TYPE,            /* enum set_ac_out_type_t, default PWM (electric) */
+    SET_AC_OUT_PIN,             /* enum: index into SETTINGS_AC_OUT_PINS, default 0 = GPIO10 (electric, PWM / analog RC) */
+    SET_AC_OUT_FREQ_HZ,         /* int Hz, 100..20000 step 100, default 1000 (electric, PWM only) */
+    SET_AC_OUT_INVERT,          /* bool, default no: output = 100 - mapped (electric) */
+    SET_AC_OUT_MIN_PCT,         /* int %, 0..100, default 10: output at the lowest speed; + SETTINGS_AC_OUT_GAP <= max (a chain rule) */
+    SET_AC_OUT_MAX_PCT,         /* int %, 0..100, default 100: output at full speed (electric) */
+    SET_AC_OUT_FULL_SCALE,      /* enum set_ac_full_scale_t, default 3.3 V (electric, DAC only) */
+    SET_AC_DAC_ADDR,            /* enum set_ac_dac_addr_t, default 0x60 (electric, DAC only) */
+    SET_AC_RAMP_PCT_S,          /* int %/s, 1..100, default 20: speed ramp up and down (electric) */
+    SET_AC_MIN_SPEED_PCT,       /* int %, 0..100 step 5, default 20: lowest running speed (electric) */
+    SET_AC_IDLE_OFF_S,          /* int s, 0..600 step 5, default 30: no demand this long = enable off (electric) */
+    SET_EVAP_TARGET,            /* float degC, -2..10 step 0.5, default 4: evaporator loop target (electric);
+                                 * ac_electric uses max(target, SET_EVAP_ON), no rule (the row is hidden for clutch) */
+    SET_EVAP_OFF,               /* float degC, -2..8 step 0.5, default 1: evaporator freeze cut-out (both types) */
+    SET_EVAP_ON,                /* float degC, 0..10 step 0.5, default 4: cut-in; >= SET_EVAP_OFF + SETTINGS_EVAP_GAP (a chain rule) */
+    SET_AC_EVAP_KP,             /* ADVANCED float %/degC, 0..50 step 1, default 10: evaporator PI (electric) */
+    SET_AC_EVAP_KI,             /* ADVANCED float %/(degC s), 0..5 step 0.1, default 0.5 */
+
     SET_COUNT
 } setting_id_t;
 
@@ -260,7 +302,7 @@ esp_err_t settings_init(void);
 /** Table row for an id (never NULL for id < SET_COUNT). */
 const setting_def_t *settings_def(setting_id_t id);
 
-/** Visit every row in table order. Stop early by returning false. */
+/** Visit every row in display order (settings_display_order). Stop early by returning false. */
 void settings_iterate(bool (*cb)(const setting_def_t *def, void *ctx), void *ctx);
 
 int32_t settings_get_int(setting_id_t id);      /* BOOL/INT/ENUM; FLOAT rounded */
@@ -280,6 +322,18 @@ void settings_format(setting_id_t id, char *buf, size_t len);
 
 /** Label in the current language. */
 const char *settings_label(setting_id_t id);
+
+/** Pure (settings_table.c): does row id apply with these values? False e.g. for the electric
+ * compressor rows with SET_AC_COMPRESSOR = clutch. The display hides such a row, the phone page
+ * greys it out; its value is kept, settable, exported and imported as usual. */
+bool settings_rules_visible(setting_id_t id, const float vals[SET_COUNT]);
+
+/** settings_rules_visible against the current values. */
+bool settings_visible(setting_id_t id);
+
+/** Pure (settings_table.c): every id once, in display order (= id order except the rows moved
+ * into a group after it existed, which follow that group's last row). settings_iterate uses it. */
+void settings_display_order(uint16_t out[SET_COUNT]);
 
 /* ---- Cross-field rules (data and checker in settings_table.c, host-tested) ----
  * A chain lists operands, each a setting or a fixed value, with op[i] + gap <= op[i+1];

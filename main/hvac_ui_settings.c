@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MAX_ROWS        26      /* Valves group: 17 rows; air distribution grid: 20 cells; Service: 26 rows */
+#define MAX_ROWS        26      /* Valves group: 17 rows; air distribution grid: 20 cells; Service: 26 rows; A/C: 19 */
 #define ROW_H           48
 #define INFO_ROW_H      24
 #define WIFI_REFRESH_MS 500U
@@ -34,6 +34,14 @@ static const name_t k_groups[SET_GROUP_COUNT] = {
     {"Comfort", "Komfort"}, {"Control", "Regulering"}, {"Valves", "Ventiler"},
     {"Connect", "Forbindelse"}, {"System", "System"},
     {"Service settings", "Indstillinger"}, {"Advanced", "Avanceret"}, {"Air distribution", "Luftfordeling"},
+    {"A/C", "A/C"},
+};
+
+/* Home list: SERVICE goes on the valve service page, ADVANCED is on the phone page only,
+ * AIR is the grid under Valves */
+static const setting_group_t k_home_groups[] = {
+    SET_GROUP_DISPLAY, SET_GROUP_CLIMATE, SET_GROUP_AC, SET_GROUP_FAN, SET_GROUP_COMFORT,
+    SET_GROUP_CONTROL, SET_GROUP_VALVES, SET_GROUP_CONNECT, SET_GROUP_SYSTEM,
 };
 
 static const name_t k_air_modes[SETTINGS_AIR_MODES] = {
@@ -297,7 +305,7 @@ typedef struct {
 static bool build_row(const setting_def_t *d, void *ctx)
 {
     build_ctx_t *b = ctx;
-    if ((int)d->group != b->group || s_nrows >= MAX_ROWS) return true;
+    if ((int)d->group != b->group || !settings_visible(d->id) || s_nrows >= MAX_ROWS) return true;
 
     row_t *r = &s_rows[s_nrows++];
     memset(r, 0, sizeof(*r));
@@ -326,6 +334,21 @@ static bool build_row(const setting_def_t *d, void *ctx)
                             UI_COLOR_ACCENT, LV_TEXT_ALIGN_RIGHT);
     }
     return true;
+}
+
+/* A group view whose visible rows (settings_visible) are no longer the ones built */
+static bool group_rows_changed(void)
+{
+    size_t n = 0;
+    for (int i = 0; i < SET_COUNT; i++) {
+        const setting_def_t *d = settings_def((setting_id_t)i);
+        if ((int)d->group != s_group || !settings_visible(d->id)) continue;
+        bool built = false;
+        for (size_t r = 0; r < s_nrows; r++) built |= s_rows[r].id == d->id;
+        if (!built) return true;
+        n++;
+    }
+    return n != s_nrows;
 }
 
 static void refresh_rows(void)
@@ -513,9 +536,8 @@ static void open_view(view_t view, int group, const ui_page_t *page)
         lv_coord_t y = 0;
         add_nav_row(y, tr("Presets", "Forindstillinger"), home_tap, (void *)(intptr_t)HOME_PRESETS);
         y += ROW_H;
-        /* SERVICE goes on the valve service page, ADVANCED is on the phone page only,
-         * AIR is the grid under Valves */
-        for (int g = 0; g < SET_GROUP_SERVICE; ++g, y += ROW_H) {
+        for (size_t i = 0; i < sizeof(k_home_groups) / sizeof(k_home_groups[0]); ++i, y += ROW_H) {
+            setting_group_t g = k_home_groups[i];
             add_nav_row(y, tr(k_groups[g].en, k_groups[g].da), home_tap, (void *)(intptr_t)g);
         }
         add_nav_row(y, tr("Diagnostics", "Diagnostik"), home_tap, (void *)(intptr_t)HOME_DIAG);
@@ -608,6 +630,10 @@ void ui_settings_update(void)
     uint32_t seq = settings_seq();
     if (seq != s_seq) {
         s_seq = seq;
+        if (s_view == V_GROUP && group_rows_changed()) {
+            open_view(V_GROUP, s_group, NULL);      /* e.g. compressor type: rows appear or go */
+            return;
+        }
         if (s_view == V_GROUP || s_view == V_AIR) refresh_rows();
     }
     refresh_wifi();

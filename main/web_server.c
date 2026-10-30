@@ -204,12 +204,13 @@ static bool settings_row_cb(const setting_def_t *d, void *ctx)
         snprintf(val, sizeof(val), "%g", (double)settings_get_float(d->id));
     }
     if (chunkf(req, "%s{\"id\":%d,\"key\":%s%s%s,\"group\":%d,\"label\":\"%s\",\"type\":\"%s\","
-               "\"min\":%g,\"max\":%g,\"step\":%g,\"unit\":\"%s\",\"value\":%s,\"formatted\":\"%s\"",
+               "\"min\":%g,\"max\":%g,\"step\":%g,\"unit\":\"%s\",\"value\":%s,\"formatted\":\"%s\",\"visible\":%s",
                c->n++ ? "," : "", (int)d->id,
                d->nvs_key ? "\"" : "", d->nvs_key ? jesc(key, sizeof(key), d->nvs_key) : "null", d->nvs_key ? "\"" : "",
                (int)d->group, jesc(label, sizeof(label), settings_label(d->id)), k_type_name[d->type],
                (double)d->min, (double)d->max, (double)d->step,
-               jesc(unit, sizeof(unit), d->unit ? d->unit : ""), val, jesc(fmt, sizeof(fmt), fmt_raw)) != ESP_OK) {
+               jesc(unit, sizeof(unit), d->unit ? d->unit : ""), val, jesc(fmt, sizeof(fmt), fmt_raw),
+               settings_visible(d->id) ? "true" : "false") != ESP_OK) {
         return false;
     }
     if (d->type == SET_TYPE_ENUM) {
