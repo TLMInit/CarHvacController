@@ -297,18 +297,18 @@ static void lvgl_task(void *pvParameter)
     vTaskDelay(pdMS_TO_TICKS(100));
     
     uint32_t task_delay_ms = 10;
-    uint32_t ui_update_counter = 0;
-    
+    uint32_t last_ui_update = lv_tick_get();
+
     while (1) {
         if (xSemaphoreTakeRecursive(lvgl_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             task_delay_ms = lv_timer_handler();
-            
-            // Update HVAC UI every 10 iterations (~100ms)
-            if (++ui_update_counter >= 10) {
+
+            // Every 100 ms of time, not every N passes: a pass lasts 1..500 ms
+            if (lv_tick_elaps(last_ui_update) >= 100) {
                 hvac_ui_update();
-                ui_update_counter = 0;
+                last_ui_update = lv_tick_get();
             }
-            
+
             xSemaphoreGiveRecursive(lvgl_mutex);
         }
         
