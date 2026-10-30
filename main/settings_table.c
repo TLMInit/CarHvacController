@@ -264,6 +264,8 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     /* ADVANCED: 1 degC above target asks 10 % more speed; Ti = Kp/Ki = 20 s, about the evaporator's time constant */
     FLT (SET_AC_EVAP_KP,        AD, "Evaporator loop Kp", "Fordampersløjfe Kp", 0, 50, 1, 10, "%/°C", "ac_evap_kp", apply_controller),
     FLT (SET_AC_EVAP_KI,        AD, "Evaporator loop Ki", "Fordampersløjfe Ki", 0, 5, 0.1f, 0.5f, "%/°C/s", "ac_evap_ki", apply_controller),
+    /* SERVICE: the motors share one supply channel; starting them together tripped the PDM on the bench */
+    INT (SET_VALVE_START_MS,    SV, "Valve start spacing", "Ventil-startafstand", 0, 2000, 50, 300, "ms", "v_start_ms", apply_valves),
 };
 
 /* ---- Cross-field rules (see settings.h) ---- */

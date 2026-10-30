@@ -267,6 +267,8 @@ typedef enum {
     SET_EVAP_ON,                /* float degC, 0..10 step 0.5, default 4: cut-in; >= SET_EVAP_OFF + SETTINGS_EVAP_GAP (a chain rule) */
     SET_AC_EVAP_KP,             /* ADVANCED float %/degC, 0..50 step 1, default 10: evaporator PI (electric) */
     SET_AC_EVAP_KI,             /* ADVANCED float %/(degC s), 0..5 step 0.1, default 0.5 */
+    SET_VALVE_START_MS,         /* SERVICE int ms, 0..2000 step 50, default 300: minimum time between two valve
+                                   starts (motor inrush on a shared PDM channel); 0 = no spacing */
 
     SET_COUNT
 } setting_id_t;

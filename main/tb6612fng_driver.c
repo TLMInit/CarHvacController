@@ -110,8 +110,24 @@ typedef struct {
     uint8_t alpha;                          // position EMA weight of a new reading, /256
     uint8_t jog_pwm, cal_pwm;
     uint32_t stall_ms, move_max_ms, retry_ms, learn_ms, cal_timeout_ms;
+    uint32_t start_ms;                      // minimum time between two valve starts (SET_VALVE_START_MS)
 } valve_cfg_t;
 static valve_cfg_t s_vc;
+
+// Staggered starts (valve task only): a motor may start only if no other valve started within
+// s_vc.start_ms. Starting all motors at once tripped the motor supply's PDM channel on the bench.
+// Claims the slot when it returns true.
+static uint32_t s_last_start_ms;
+static bool s_any_start;
+static bool valve_start_slot(uint32_t now_ms)
+{
+    if (s_any_start && now_ms - s_last_start_ms < s_vc.start_ms) {
+        return false;
+    }
+    s_any_start = true;
+    s_last_start_ms = now_ms;
+    return true;
+}
 static volatile bool valve_fitted[HVAC_VALVE_MAX];          // SET_VALVE_FITTED_n
 static bool valve_unfit_stop[HVAC_VALVE_MAX];               // just set to not fitted: the valve task stops it once
 static bool valve_boot_started;                             // tb6612fng_auto_calibrate_all() has run
@@ -442,6 +458,9 @@ static bool valve_service_tick(int i, uint32_t now_ms, uint32_t *recal_mask, uin
     uint8_t adc = valve_adc_pos[i];
 
     if (valve_svc_recal_req[i]) {
+        if (!valve_start_slot(now_ms)) {
+            return true;
+        }
         valve_svc_recal_req[i] = false;
         valve_svc_recal_run[i] = true;
         *recal_mask |= 1u << i;
@@ -457,6 +476,9 @@ static bool valve_service_tick(int i, uint32_t now_ms, uint32_t *recal_mask, uin
     }
 
     if (valve_svc_learn_req[i]) {
+        if (!valve_start_slot(now_ms)) {
+            return true;
+        }
         valve_svc_learn_req[i] = false;
         if (valve_feedback_fault[i] || !valve_have_reading[i]) {
             event_log_add(EVT_CAL, "V%d dir learn failed: no feedback", i);
@@ -503,6 +525,10 @@ static bool valve_service_tick(int i, uint32_t now_ms, uint32_t *recal_mask, uin
             queue_motor(i, TB6612_DIR_BRAKE, 0);
             valve_service_end(i, now_ms);
             return false;
+        }
+        bool driven = motor_link[i].want_dir == TB6612_DIR_FORWARD || motor_link[i].want_dir == TB6612_DIR_REVERSE;
+        if (!driven && !valve_start_slot(now_ms)) {
+            return true;    // a held jog starts with the next free slot; its repeats pass straight through
         }
         queue_motor(i, valve_svc_jog_dir[i] > 0 ? TB6612_DIR_FORWARD : TB6612_DIR_REVERSE, valve_capped(i, s_vc.jog_pwm));
         valve_adc_last_stable[i] = adc;
@@ -796,7 +822,7 @@ void tb6612fng_valve_task(void *pvParameters)
 
                 // Boot: no control until the first position reading has decided stored-or-calibrate
                 if (valve_boot_wait[i]) {
-                    if (valve_have_reading[i] && !valve_feedback_fault[i]) {
+                    if (valve_have_reading[i] && !valve_feedback_fault[i] && valve_start_slot(now_ms)) {
                         valve_boot_wait[i] = false;
                         boot_mask |= 1u << i;
                     }
@@ -1164,6 +1190,9 @@ void tb6612fng_valve_task(void *pvParameters)
                 // Stall detection on the raw pot reading (monotonic through the butterfly's centre).
                 // A reversal starts a new move; the no-motion timer keeps running across it.
                 if (!state->is_moving) {
+                    if (!valve_start_slot(now_ms)) {
+                        continue;   // stays stopped this pass; the stall timer starts with the real start
+                    }
                     state->last_motion_ms = now_ms;
                     state->last_sample_pos = adc_pos;
                     valve_move_start_ms[i] = now_ms;
@@ -1864,6 +1893,7 @@ void tb6612fng_apply_settings(void)
         .retry_ms = (uint32_t)settings_get_int(SET_VALVE_RETRY_S) * 1000u,
         .learn_ms = (uint32_t)settings_get_int(SET_LEARN_MS),
         .cal_timeout_ms = (uint32_t)settings_get_int(SET_CAL_TIMEOUT_S) * 1000u,
+        .start_ms = (uint32_t)settings_get_int(SET_VALVE_START_MS),
     };
     // A short wait like tb6612fng_stop_valve(); on a timeout the values are written anyway
     // (a pass may then mix old and new ones once) rather than dropped
