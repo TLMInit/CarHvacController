@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HVAC</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--fg:#1d2330;--mut:#6b7280;--acc:#0b6bcb;--bad:#c62828;--ok:#2e7d32;--line:#e3e6ea}
+@media(prefers-color-scheme:dark){:root{--bg:#111418;--card:#1b1f25;--fg:#e8eaed;--mut:#9aa0a6;--acc:#5aa6f0;--bad:#ef6b6b;--ok:#6cc070;--line:#2c323a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:12px;align-items:center;z-index:1}
+header b{flex:1}
+nav{display:flex;gap:6px;overflow-x:auto;padding:8px 16px}
+nav button{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:16px;padding:6px 12px;font:inherit}
+nav button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+main{padding:0 16px 32px;max-width:640px;margin:0 auto}
+section{display:none}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0}
+.card h3{margin:0 0 8px;font-size:15px}
+.kv{display:grid;grid-template-columns:1fr auto;gap:4px 12px}
+.kv span:nth-child(odd){color:var(--mut)}
+.row{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0}
+.row label{flex:1}
+.row small{display:block;color:var(--mut)}
+input,select{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px;max-width:150px}
+input[type=checkbox]{width:22px;height:22px}
+button.go{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:8px 14px;font:inherit}
+button.go:disabled{opacity:.5}
+.mut{color:var(--mut)}.bad{color:var(--bad)}.ok{color:var(--ok)}
+progress{width:100%;height:14px}
+.log{font-size:13px}.log div{padding:4px 0;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header><b id="title">HVAC</b><span id="link" class="mut"></span></header>
+<nav id="tabs"></nav>
+<main>
+<section id="s-state">
+ <div class="card"><h3>Climate</h3><div class="kv" id="state"></div></div>
+ <div class="card"><h3>Connection</h3><div class="kv" id="conn"></div></div>
+</section>
+<section id="s-settings"><div id="settings"></div></section>
+<section id="s-log"><div class="card log" id="log"></div></section>
+<section id="s-diag">
+ <div class="card"><h3 id="stsum">Self-test</h3><div class="kv" id="selftest"></div></div>
+ <div class="card"><h3>IO link</h3><div class="kv" id="linkdiag"></div></div>
+</section>
+<section id="s-update">
+ <div class="card"><p id="otawhy" class="mut"></p></div>
+ <div class="card"><h3>Display firmware (.bin)</h3>
+  <input type="file" id="f-display" accept=".bin"><p><button class="go" id="b-display">Upload</button></p>
+  <progress id="p-display" max="1" value="0"></progress><p id="m-display" class="mut"></p></div>
+ <div class="card"><h3>IO node firmware (.bin, max 1 MB)</h3>
+  <input type="file" id="f-node" accept=".bin"><p><button class="go" id="b-node">Upload</button></p>
+  <progress id="p-node" max="1" value="0"></progress><p id="m-node" class="mut"></p></div>
+</section>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+// Every piece of device data goes in through textContent, never innerHTML.
+function el(tag,text,cls){const e=document.createElement(tag);if(text!=null)e.textContent=String(text);if(cls)e.className=cls;return e}
+function kv(box,pairs){box.replaceChildren();for(const[k,v]of pairs){box.append(el("span",k),el("span",v==null?"–":v))}}
+async function getJ(u){const r=await fetch(u,{cache:"no-store"});if(!r.ok)throw new Error(r.status);return r.json()}
+const t1=v=>v==null?null:v.toFixed(1)+" °C";
+
+const TABS=[["state","Status"],["settings","Settings"],["log","Log"],["diag","Diagnostics"],["update","Update"]];
+let cur="state";
+for(const[id,name]of TABS){const b=el("button",name);b.onclick=()=>show(id);b.id="t-"+id;$("tabs").append(b)}
+function show(id){cur=id;for(const[t]of TABS){$("s-"+t).classList.toggle("on",t===id);$("t-"+t).classList.toggle("on",t===id)}
+ if(id==="settings")loadSettings();if(id==="log")loadLog();if(id==="diag")loadDiag()}
+
+let lastState=null;
+async function loadState(){
+ try{const s=await getJ("/api/state");lastState=s;
+  $("title").textContent=s.ssid||"HVAC";
+  $("link").textContent=s.link?"Node online":"Node offline";$("link").className=s.link?"ok":"bad";
+  kv($("state"),[["Mode",s.mode],["Fan",s.fan+" ("+s.blower_pct+" %)"],["Setpoint",t1(s.setpoint)],["Cabin",t1(s.cabin)],
+   ["Humidity",s.humidity==null?null:s.humidity+" %"],["Duct",t1(s.duct)],["Outside",t1(s.outside)],["Coolant",t1(s.coolant)],
+   ["A/C",(s.ac?"On":"Off")+(s.ac_on?" (running)":"")],["A/C reason",s.ac_reason||null],["Preset",s.preset||null],
+   ["Defog",s.defog?"Active":"Off"],["Heater delay",s.heater_delay?"Active":"Off"],
+   ["Faults",(s.sensor_fault?"sensor ":"")+(s.valve_fault?"valve":"")||"None"]]);
+  kv($("conn"),[["Phones connected",s.clients],["Wi-Fi turns off in",s.ap_left_s?Math.ceil(s.ap_left_s/60)+" min":null],
+   ["Display firmware",s.ver_display+(s.ota_pending?" (validating)":"")],["Node firmware",s.ver_node]]);
+  $("otawhy").textContent=s.ota_allowed?"Updates allowed (system is OFF, blower stopped).":"Updates blocked: "+s.ota_why;
+  $("otawhy").className=s.ota_allowed?"ok":"bad";
+ }catch(e){$("link").textContent="Not reachable";$("link").className="bad"}
+}
+
+const GROUPS=["Display","Climate","Fan","Comfort","Control","Valves","Connectivity","System"];
+async function save(key,value,msg){
+ msg.textContent="Saving…";msg.className="mut";
+ try{const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key,value})});
+  const j=await r.json();msg.textContent=j.msg;msg.className=j.ok?"ok":"bad"}catch(e){msg.textContent="Failed";msg.className="bad"}
+}
+async function loadSettings(){
+ let rows;try{rows=await getJ("/api/settings")}catch(e){$("settings").replaceChildren(el("p","Could not load settings","bad"));return}
+ const box=$("settings");box.replaceChildren();
+ GROUPS.forEach((g,gi)=>{const card=el("div",null,"card");card.append(el("h3",g));
+  for(const r of rows.filter(r=>r.group===gi)){
+   const row=el("div",null,"row"),lab=el("label",r.label),msg=el("small",r.formatted);lab.append(msg);row.append(lab);
+   let inp;
+   if(r.type==="action"){msg.textContent="Run from the display";}
+   else if(r.type==="bool"){inp=el("input");inp.type="checkbox";inp.checked=!!r.value;inp.onchange=()=>save(r.key,inp.checked,msg)}
+   else if(r.type==="enum"){inp=el("select");(r.enum||[]).forEach((t,i)=>{const o=el("option",t);o.value=i;inp.append(o)});inp.value=r.value;inp.onchange=()=>save(r.key,+inp.value,msg)}
+   else if(r.type==="string"){inp=el("input");inp.type="text";inp.value=r.value;inp.minLength=r.min;inp.maxLength=r.max;inp.autocomplete="off";
+    inp.onchange=()=>{if(inp.value.length<r.min||inp.value.length>r.max){msg.textContent=r.min+".."+r.max+" characters";msg.className="bad";return}save(r.key,inp.value,msg)}}
+   else{inp=el("input");inp.type="number";inp.min=r.min;inp.max=r.max;inp.step=r.step||"any";inp.value=r.value;inp.inputMode="decimal";
+    inp.onchange=()=>{const v=parseFloat(inp.value);if(isNaN(v)){msg.textContent="Enter a number";msg.className="bad";return}save(r.key,v,msg)}}
+   if(inp)row.append(inp);card.append(row)}
+  if(card.children.length>1)box.append(card)});
+}
+async function loadLog(){
+ const box=$("log");
+ try{const ev=await getJ("/api/log");box.replaceChildren();
+  if(!ev.length)box.append(el("div","No events","mut"));
+  for(const e of ev){const d=el("div");const s=Math.floor(e.t/1000);
+   d.append(el("span",String(Math.floor(s/3600)).padStart(2,"0")+":"+String(Math.floor(s/60)%60).padStart(2,"0")+":"+String(s%60).padStart(2,"0")+" ","mut"),
+    el("b",e.cls+" "),el("span",e.text));box.append(d)}
+ }catch(e){box.replaceChildren(el("div","Could not load the log","bad"))}
+}
+async function loadDiag(){
+ try{const d=await getJ("/api/diag"),l=d.link;
+  $("stsum").textContent=d.selftest_summary||"Self-test";
+  kv($("selftest"),d.selftest.map(i=>[i.name,i.result.toUpperCase()+(i.detail?" – "+i.detail:"")]));
+  kv($("linkdiag"),[["Connected",l.connected?"Yes":"No"],["RTT last / p95",(l.rtt_last_us/1000).toFixed(1)+" / "+(l.rtt_p95_us/1000).toFixed(1)+" ms"],
+   ["Timeouts last min",l.timeouts_last_min],["Frames tx / rx",l.tx+" / "+l.rx],["CRC errors",l.crc_errors],["Timeouts",l.timeouts],
+   ["Mismatches",l.mismatches],["Node",l.node_version+" (proto "+l.node_proto+")"],["Node uptime",Math.floor(l.node_uptime_s/60)+" min"],
+   ["Node restarts",l.node_restarts],["Free internal RAM",Math.round(d.heap_internal/1024)+" KB"],["Free PSRAM",Math.round(d.heap_psram/1024)+" KB"]]);
+ }catch(e){$("stsum").textContent="Could not load diagnostics"}
+}
+
+let poll=null;
+function upload(target){
+ const f=$("f-"+target).files[0],m=$("m-"+target),p=$("p-"+target),b=$("b-"+target);
+ if(!f){m.textContent="Choose a .bin file first";m.className="bad";return}
+ if(target==="node"&&f.size>1048576){m.textContent="Node image is larger than 1 MB";m.className="bad";return}
+ b.disabled=true;m.className="mut";m.textContent="Uploading…";
+ const x=new XMLHttpRequest();x.open("POST","/api/ota/"+target);
+ x.upload.onprogress=e=>{if(e.lengthComputable){p.max=e.total;p.value=e.loaded}};
+ x.onload=()=>{let j={msg:"HTTP "+x.status};try{j=JSON.parse(x.responseText)}catch(e){}
+  m.textContent=j.msg;m.className=j.ok?"ok":"bad";
+  if(j.ok&&target==="node")pollNode();else b.disabled=false};
+ x.onerror=()=>{m.textContent=target==="display"?"Connection lost (the display may be restarting)":"Upload failed";m.className="bad";b.disabled=false};
+ x.send(f);
+}
+function pollNode(){
+ clearInterval(poll);
+ poll=setInterval(async()=>{try{const s=(await getJ("/api/ota/status")).node,p=$("p-node"),m=$("m-node");
+  p.max=s.total||1;p.value=s.done;m.textContent=s.msg+(s.total?" ("+Math.round(100*s.done/s.total)+" %)":"");
+  if(s.state==="done"||s.state==="error"){clearInterval(poll);m.className=s.state==="done"?"ok":"bad";$("b-node").disabled=false}}catch(e){}},1000);
+}
+$("b-display").onclick=()=>upload("display");
+$("b-node").onclick=()=>upload("node");
+
+show("state");loadState();setInterval(()=>{if(cur==="state"||cur==="update")loadState()},2000);
+</script>
+</body>
+</html>
