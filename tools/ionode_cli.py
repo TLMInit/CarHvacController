@@ -22,6 +22,8 @@ Examples:
   ionode_cli.py -p COM7 valve foot stop
   ionode_cli.py -p COM7 blower 80               # blower duty 80/255 (motor spins!)
   ionode_cli.py -p COM7 relay 1                 # A/C clutch relay on (compressor!)
+  ionode_cli.py -p COM7 pwm-hz 10 20000 8       # compressor output GPIO10: 20 kHz, 8 bit (analog_rc)
+  ionode_cli.py -p COM7 pwm-set16 10 128        # raw counts: 128 of 256 = 50 %, 256 = full on
   ionode_cli.py -p COM7 stress 200              # 200 pings, round-trip statistics
   ionode_cli.py -p COM7 safe                    # everything off
 """
@@ -40,7 +42,7 @@ except ImportError:  # pragma: no cover - only matters on the PC
 # --- protocol constants (cobs_protocol.h) ---------------------------------
 MSG_PING, MSG_VERSION, MSG_HELLO = 0x01, 0x02, 0x03
 MSG_GPIO_SET, MSG_GPIO_GET, MSG_GPIO_MODE = 0x10, 0x11, 0x12
-MSG_PWM_SET, MSG_PWM_INIT = 0x20, 0x21
+MSG_PWM_SET, MSG_PWM_INIT, MSG_PWM_INIT_HZ = 0x20, 0x21, 0x22
 MSG_I2C_WRITE, MSG_I2C_READ = 0x30, 0x31
 MSG_ADS_READ = 0x40
 MSG_DS18B20_START, MSG_DS18B20_READ, MSG_ONEWIRE_SEARCH = 0x50, 0x51, 0x52
@@ -204,6 +206,12 @@ class Node:
     def pwm_set(self, pin, duty):
         self.expect(MSG_PWM_SET, bytes([pin, duty]))
 
+    def pwm_init_hz(self, pin, freq_hz, bits):
+        self.expect(MSG_PWM_INIT_HZ, bytes([pin]) + freq_hz.to_bytes(4, "big") + bytes([bits]))
+
+    def pwm_set16(self, pin, counts):
+        self.expect(MSG_PWM_SET, bytes([pin]) + counts.to_bytes(2, "big"))
+
     def i2c_write(self, addr, reg, data: bytes):
         self.expect(MSG_I2C_WRITE, bytes([addr, reg, len(data)]) + data)
 
@@ -356,6 +364,8 @@ def main():
     s = sub.add_parser("gpio-get"); s.add_argument("pin", type=int)
     s = sub.add_parser("pwm-init"); s.add_argument("pin", type=int); s.add_argument("khz", type=int)
     s = sub.add_parser("pwm-set"); s.add_argument("pin", type=int); s.add_argument("duty", type=int)
+    s = sub.add_parser("pwm-hz", help="PWM_INIT_HZ: 1..40000 Hz, 1..14 bits"); s.add_argument("pin", type=int); s.add_argument("freq", type=int); s.add_argument("bits", type=int)
+    s = sub.add_parser("pwm-set16", help="PWM_SET in raw counts, 0..2^bits"); s.add_argument("pin", type=int); s.add_argument("counts", type=int)
     s = sub.add_parser("i2c-write"); s.add_argument("addr", type=lambda x: int(x, 0)); s.add_argument("reg", type=lambda x: int(x, 0)); s.add_argument("data", nargs="*", type=lambda x: int(x, 0))
     s = sub.add_parser("i2c-read"); s.add_argument("addr", type=lambda x: int(x, 0)); s.add_argument("reg", type=lambda x: int(x, 0)); s.add_argument("len", type=int)
     s = sub.add_parser("ads"); s.add_argument("addr", type=lambda x: int(x, 0)); s.add_argument("ch", type=int)
@@ -379,7 +389,7 @@ def main():
     elif c == "hello":
         ver, caps, text = node.hello()
         print("protocol %d, caps 0x%02X (%s), %s" % (ver, caps, " ".join(
-            n for b, n in ((1, "search"), (2, "ota")) if caps & b) or "-", text))
+            n for b, n in ((1, "search"), (2, "ota"), (4, "pwm_hz")) if caps & b) or "-", text))
     elif c == "search":
         roms = node.search()
         print("%d ROM(s)" % len(roms))
@@ -400,6 +410,10 @@ def main():
         node.pwm_init(args.pin, args.khz); print("OK")
     elif c == "pwm-set":
         node.pwm_set(args.pin, args.duty); print("OK")
+    elif c == "pwm-hz":
+        node.pwm_init_hz(args.pin, args.freq, args.bits); print("OK")
+    elif c == "pwm-set16":
+        node.pwm_set16(args.pin, max(0, min(0xFFFF, args.counts))); print("OK")
     elif c == "i2c-write":
         node.i2c_write(args.addr, args.reg, bytes(args.data)); print("OK")
     elif c == "i2c-read":

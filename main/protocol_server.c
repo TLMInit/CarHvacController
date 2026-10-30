@@ -186,7 +186,7 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
         /* version(1) caps(1) string NUL: the string gets at most 60 bytes */
         uint8_t resp[COBS_MAX_PAYLOAD_SIZE - 1];
         resp[0] = PROTOCOL_VERSION;
-        resp[1] = NODE_CAP_SEARCH | (io_ota_supported() ? NODE_CAP_OTA : 0);
+        resp[1] = NODE_CAP_SEARCH | NODE_CAP_PWM_HZ | (io_ota_supported() ? NODE_CAP_OTA : 0);
         int n = snprintf((char *)&resp[2], sizeof(resp) - 2, "%s (%.20s)", NODE_VERSION_STRING,
                          esp_app_get_description()->version);
         if (n >= (int)sizeof(resp) - 2) {
@@ -242,9 +242,24 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
         send_ok();
         return;
 
+    case MSG_PWM_INIT_HZ:
+        /* pin, freq_hz u32 BE, bits; ERR_INVALID_ARGS for freq/bits, ERR_OVERFLOW when no timer/channel is left */
+        if (len != 6) { send_error(ERR_INVALID_ARGS); return; }
+        err = io_pwm_init_hz(p[0], be32(&p[1]), p[5]);
+        if (err != ESP_OK) { send_error(map_err(err, ERR_INVALID_ARGS, ERR_INVALID_PIN)); return; }
+        send_ok();
+        return;
+
     case MSG_PWM_SET:
-        if (len != 2) { send_error(ERR_INVALID_ARGS); return; }
-        err = io_pwm_set(p[0], p[1]);
+        /* pin, duty(1) scaled from 8 bit; or pin, duty u16 BE in raw counts */
+        if (len == 2) {
+            err = io_pwm_set(p[0], p[1]);
+        } else if (len == 3) {
+            err = io_pwm_set_counts(p[0], (uint16_t)((p[1] << 8) | p[2]));
+        } else {
+            send_error(ERR_INVALID_ARGS);
+            return;
+        }
         if (err != ESP_OK) { send_error(map_err(err, ERR_INVALID_ARGS, ERR_INVALID_PIN)); return; }
         send_ok();
         return;

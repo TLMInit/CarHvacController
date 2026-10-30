@@ -54,8 +54,10 @@
  * TB6612 #2: AIN1 38, AIN2 39, BIN1 41, BIN2 42    (foot, windscreen)
  * TB6612 #3: AIN1 12, AIN2 14                      (coolant)
  * A/C clutch relay: 6 (active high)
+ * Electric compressor output: 10 (display ac_out_pin; low until the display sends
+ * GPIO_SET or PWM_INIT_HZ, e.g. 20000 Hz 8 bit for the analog_rc filter)
  */
-#define NODE_BOOT_OUTPUT_PINS   { 4, 16, 5, 18, 38, 39, 41, 42, 12, 14, 6 }
+#define NODE_BOOT_OUTPUT_PINS   { 4, 16, 5, 18, 38, 39, 41, 42, 12, 14, 6, 10 }
 
 /* PWM outputs, {pin, kHz}: TB6612 PWMA/PWMB at 20 kHz, BTS7960 RPWM at 25 kHz.
  * 8-bit duty, as the link protocol carries one duty byte.
@@ -85,11 +87,13 @@
  * Exactly the carrier's outputs: the boot output pins and the boot PWM pins above.
  * Everything else is refused with ERR_INVALID_PIN, including strapping pins
  * (0, 3, 45, 46), USB (19, 20), flash/PSRAM (26-37), console (43, 44), the link
- * itself (2, 21), the I2C and 1-Wire pins (7, 8, 9) and unused pins (1, 10, 11).
+ * itself (2, 21), the I2C and 1-Wire pins (7, 8, 9) and unused pins (1, 11).
+ * 10 (compressor) is a plain GPIO on the N16R8 module: quad flash uses 26-32 and the
+ * octal PSRAM 33-37; 10 is no strapping pin. (The display's own GPIO10 is its link TX.)
  * On the DevKitC-1 the RGB LED data line is GPIO48 (v1.0) or GPIO38 (v1.1):
  * check the board revision before reading anything into LED flicker.
  */
-#define NODE_ALLOWED_PINS       { 4, 5, 6, 12, 13, 14, 15, 16, 17, 18, \
+#define NODE_ALLOWED_PINS       { 4, 5, 6, 10, 12, 13, 14, 15, 16, 17, 18, \
                                   38, 39, 40, 41, 42, 47, 48 }
 
 #endif /* NODE_CONFIG_H */

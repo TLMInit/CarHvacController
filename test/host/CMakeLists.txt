@@ -18,6 +18,12 @@ foreach(pad 1 0)
   add_test(NAME test_cobs_node_pad${pad} COMMAND test_cobs_node_pad${pad})
 endforeach()
 
+# PWM_INIT_HZ / 16-bit PWM_SET framing and io_pwm_calc.c (padding off, as after HELLO)
+add_executable(test_pwm_node test_pwm_node.c ${MAIN}/cobs_protocol.c ${MAIN}/io_pwm_calc.c)
+target_include_directories(test_pwm_node PRIVATE ${MAIN} .)
+target_compile_definitions(test_pwm_node PRIVATE LINK_PAD_TRAILING_ZERO=0)
+add_test(NAME test_pwm_node COMMAND test_pwm_node)
+
 # OTA image header check (shared with the display repo)
 add_executable(test_ota_image test_ota_image.c ${MAIN}/ota_image.c)
 target_include_directories(test_ota_image PRIVATE ${MAIN} .)
