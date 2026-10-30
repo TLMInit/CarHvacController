@@ -31,7 +31,11 @@
 #define LINK_RX_BUF_SIZE        512
 #define LINK_TX_BUF_SIZE        256
 #define LINK_FRAME_TIMEOUT_MS   20      /* partial frame discarded after this much silence */
-#define LINK_WATCHDOG_MS        3000    /* outputs forced to safe state after this much silence; 0 = off */
+#define LINK_WATCHDOG_MS        3000    /* outputs forced to safe state after this much silence; 0 = off.
+                                           Default until a HELLO carries the display's link window, which
+                                           then replaces it (coupled: display REMOTE_IO_LINK_WINDOW_MS) */
+#define LINK_WATCHDOG_MIN_MS    2000    /* HELLO value clamped here: above the display's 1 s re-assert */
+#define LINK_WATCHDOG_MAX_MS    10000
 #define LINK_REPLY_ON_CRC_ERROR 0       /* 1 = answer a corrupt frame with ERROR 6 instead of staying silent */
 #define LINK_PAD_TRAILING_ZERO  1       /* 1 = pad replies whose CRC ends in 0x00 until a HELLO arrives (protocol 1 displays strip one trailing zero); 0 = never pad */
 

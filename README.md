@@ -107,7 +107,7 @@ at most 63 bytes. The node answers every command with exactly one frame.
 | --- | --- | --- |
 | PING 0x01 | — | PONG 0x82 |
 | VERSION 0x02 | — | 0x83, version string, NUL |
-| HELLO 0x03 | display protocol version | 0x88 protocol version (2), capabilities (0x01 search, 0x02 OTA), version string, NUL |
+| HELLO 0x03 | display protocol version, optional link window ms u16 BE | 0x88 protocol version (2), capabilities (0x01 search, 0x02 OTA), version string, NUL |
 | GPIO_SET 0x10 | pin, level | OK 0x80 |
 | GPIO_GET 0x11 | pin | 0x84 pin, level |
 | GPIO_MODE 0x12 | pin, mode (0 in, 1 out, 2 in-pullup, 3 in-pulldown, 4 out-od) | OK |
@@ -187,9 +187,13 @@ and PWM pins, blower PWM, relay); every other pin is refused with code 3.
   driver do is not yet measured, so assume they do not.
 - **GPIO_SET on an unconfigured pin** makes it an output; **PWM_SET on a pin without
   PWM_INIT** attaches a 20 kHz channel. Both exist for the same reason.
-- **Link watchdog.** After 3 s without a valid frame (only once a frame has been
-  seen), every PWM goes to 0 and every output pin low. `LINK_WATCHDOG_MS` in
-  `node_config.h`, 0 disables it. The check runs from an esp_timer, so it still fires
+- **Link watchdog.** After the link window without a valid frame (only once a frame
+  has been seen), every PWM goes to 0 and every output pin low. A display from v2.3 on
+  sends its link window (the time it calls the link "connected", 3000 ms) in HELLO and
+  the node uses that value, clamped to 2000..10000 ms, so both ends share one number.
+  Before any HELLO, or with an older display, it is `LINK_WATCHDOG_MS` (3000) in
+  `node_config.h`; 0 disables the watchdog. A 2.3 node answers the 3-byte HELLO with
+  error 2 and the display repeats HELLO without the window. The check runs from an esp_timer, so it still fires
   if the link task hangs; the task watchdog then restarts the node (5 s, panic on).
   When the link returns, the display (from its Phase 1 build on) re-sends the relay and
   blower every second and the direction and duty of any valve it is moving; an idle

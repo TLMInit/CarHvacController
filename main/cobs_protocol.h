@@ -52,7 +52,7 @@ extern "C" {
 typedef enum {
     MSG_PING            = 0x01,     // No data, expects PONG response
     MSG_VERSION         = 0x02,     // No data, expects version string
-    MSG_HELLO           = 0x03,     // display PROTOCOL_VERSION(1), expects HELLO_RESP
+    MSG_HELLO           = 0x03,     // display PROTOCOL_VERSION(1) [, link window ms u16 BE], expects HELLO_RESP
     MSG_GPIO_SET        = 0x10,     // pin(1), level(1)
     MSG_GPIO_GET        = 0x11,     // pin(1), expects GPIO_VALUE response
     MSG_GPIO_MODE       = 0x12,     // pin(1), mode(1)

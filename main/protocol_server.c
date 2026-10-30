@@ -48,6 +48,9 @@ extern bool cobs_pad_trailing_zero;     /* cobs_protocol.c; cobs_protocol.h is s
 static QueueHandle_t s_uart_queue;
 static cobs_receiver_t s_rx;
 static protocol_stats_t s_stats;
+/* The display's link window from HELLO, else LINK_WATCHDOG_MS; one source for both ends */
+static volatile uint32_t s_watchdog_ms = LINK_WATCHDOG_MS;
+
 /* Written by the link task, read by the watchdog timer */
 static volatile uint32_t s_last_valid_ms;
 static volatile bool s_seen_any_frame;
@@ -157,11 +160,21 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
         return;
 
     case MSG_HELLO: {
-        if (len != 1) { send_error(ERR_INVALID_ARGS); return; }
+        if (len != 1 && len != 3) { send_error(ERR_INVALID_ARGS); return; }
         if (cobs_pad_trailing_zero) {
             ESP_LOGI(TAG, "HELLO from display protocol %u: reply padding off", p[0]);
         }
         cobs_pad_trailing_zero = false;
+#if LINK_WATCHDOG_MS > 0
+        if (len == 3) {
+            uint32_t w = ((uint32_t)p[1] << 8) | p[2];
+            w = w < LINK_WATCHDOG_MIN_MS ? LINK_WATCHDOG_MIN_MS : w > LINK_WATCHDOG_MAX_MS ? LINK_WATCHDOG_MAX_MS : w;
+            if (w != s_watchdog_ms) {
+                ESP_LOGI(TAG, "Link watchdog %u ms (display's link window)", (unsigned)w);
+                s_watchdog_ms = w;
+            }
+        }
+#endif
         /* version(1) caps(1) string NUL: the string gets at most 60 bytes */
         uint8_t resp[COBS_MAX_PAYLOAD_SIZE - 1];
         resp[0] = PROTOCOL_VERSION;
@@ -373,12 +386,12 @@ static void watchdog_timer_cb(void *arg)
     if (!s_seen_any_frame || s_safe_state_applied) {
         return;
     }
-    if (now_ms() - s_last_valid_ms > LINK_WATCHDOG_MS) {
+    if (now_ms() - s_last_valid_ms > s_watchdog_ms) {
         io_outputs_safe_state();
         s_safe_state_applied = true;
         s_stats.link_up = false;
         s_stats.watchdog_trips++;
-        ESP_LOGW(TAG, "No frames for %u ms: outputs forced to safe state", (unsigned)LINK_WATCHDOG_MS);
+        ESP_LOGW(TAG, "No frames for %u ms: outputs forced to safe state", (unsigned)s_watchdog_ms);
     }
 #endif
 }

@@ -16,7 +16,7 @@ typedef struct {
     uint32_t bad_frames;        /* CRC or COBS failures */
     uint32_t errors_sent;       /* MSG_ERROR replies */
     uint32_t watchdog_trips;    /* times the outputs were forced safe */
-    bool link_up;               /* a valid frame arrived within LINK_WATCHDOG_MS */
+    bool link_up;               /* a valid frame arrived within the link watchdog time */
 } protocol_stats_t;
 
 /** Install the UART driver and start the link task (pinned to the second core). */
