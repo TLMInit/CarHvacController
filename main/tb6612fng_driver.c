@@ -480,7 +480,6 @@ static bool valve_service_tick(int i, uint32_t now_ms, uint32_t *recal_mask, uin
         valve_svc_learn_ms[i] = now_ms;
         valve_svc_learn_prev[i] = adc;
         valve_svc_learn_net[i] = 0;
-        hvac_sensors_set_calibration_mode(true);    // fast position reads for the short move
         queue_motor(i, TB6612_DIR_FORWARD, VALVE_MOTOR_SPEED);
         return true;
     }
@@ -494,9 +493,6 @@ static bool valve_service_tick(int i, uint32_t now_ms, uint32_t *recal_mask, uin
             int net = valve_svc_learn_net[i];
             queue_motor(i, TB6612_DIR_BRAKE, 0);
             valve_svc_learn_run[i] = false;
-            if (!any_valve_calibrating()) {
-                hvac_sensors_set_calibration_mode(false);
-            }
             if (valve_feedback_fault[i]) {
                 event_log_add(EVT_CAL, "V%d dir learn failed: feedback lost", i);
             } else if (abs(net) < VALVE_MOVEMENT_THRESHOLD) {
@@ -1451,11 +1447,6 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
             // Valve will now seek to its target_position
             valve_calibrating[valve_id] = false;
             prog->state = CALIB_STATE_IDLE;
-            
-            // Check if all calibrations are done
-            if (!any_valve_calibrating()) {
-                hvac_sensors_set_calibration_mode(false);
-            }
             break;
         }
         
@@ -1470,11 +1461,6 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
             event_log_add(EVT_CAL, "V%d calibration FAILED", valve_id);
             valve_calibrating[valve_id] = false;
             prog->state = CALIB_STATE_IDLE;
-            
-            // Check if all calibrations are done
-            if (!any_valve_calibrating()) {
-                hvac_sensors_set_calibration_mode(false);
-            }
             break;
         }
         
@@ -1483,13 +1469,21 @@ static void calibrate_valve_tick(hvac_valve_id_t valve_id)
     }
 }
 
-// Called from valve task to process all calibrating valves
+// Called from valve task to process all calibrating valves. It alone switches the sensors'
+// fast position reads: on while any valve calibrates or learns its direction (finding 5).
 void tb6612fng_calibration_tick(void)
 {
+    static bool fast_reads;
+    bool want_fast = false;
     for (int i = 0; i < HVAC_VALVE_MAX; i++) {
         if (valve_calibrating[i]) {
             calibrate_valve_tick((hvac_valve_id_t)i);
         }
+        want_fast |= valve_calibrating[i] || valve_svc_learn_run[i];
+    }
+    if (want_fast != fast_reads) {
+        fast_reads = want_fast;
+        hvac_sensors_set_calibration_mode(want_fast);   // logs the change
     }
 }
 
@@ -1511,9 +1505,6 @@ esp_err_t tb6612fng_start_calibration(hvac_valve_id_t valve_id)
         ESP_LOGW(TAG, "V%d: Already calibrating", valve_id);
         return ESP_ERR_INVALID_STATE;
     }
-    
-    // Enable fast valve position reads during calibration
-    hvac_sensors_set_calibration_mode(true);
     
     // Initialize calibration progress
     valve_calib_progress_t *prog = &valve_calib_progress[valve_id];
@@ -1565,10 +1556,6 @@ esp_err_t tb6612fng_start_calibration_all(void)
 {
     ESP_LOGI(TAG, "====== STARTING INDEPENDENT CALIBRATION FOR ENABLED VALVES ======");
     
-    // Enable fast valve position reads during calibration
-    hvac_sensors_set_calibration_mode(true);
-    
-    bool any_started = false;
     esp_err_t result = ESP_OK;
     for (int i = 0; i < HVAC_VALVE_MAX; i++) {
         if (i == HVAC_VALVE_COOLANT) continue;  // Skip coolant (linear)
@@ -1578,18 +1565,10 @@ esp_err_t tb6612fng_start_calibration_all(void)
         }
         
         esp_err_t ret = tb6612fng_start_calibration((hvac_valve_id_t)i);
-        if (ret == ESP_OK) {
-            any_started = true;
-        } else if (ret != ESP_ERR_INVALID_STATE) {
+        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
             result = ret;
         }
     }
-    
-    // If no valves to calibrate, disable calibration mode immediately
-    if (!any_started) {
-        hvac_sensors_set_calibration_mode(false);
-    }
-    
     return result;
 }
 
@@ -1604,15 +1583,10 @@ static bool any_valve_calibrating(void)
     return false;
 }
 
-// Check if any valve is still calibrating
+// Check if any valve is still calibrating (no side effects: any task may poll it)
 bool tb6612fng_is_calibrating(void)
 {
-    bool calibrating = any_valve_calibrating();
-    if (!calibrating) {
-        // If no valves calibrating, disable calibration mode
-        hvac_sensors_set_calibration_mode(false);
-    }
-    return calibrating;
+    return any_valve_calibrating();
 }
 
 // Check if a specific valve is calibrating
