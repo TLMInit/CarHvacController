@@ -1508,27 +1508,6 @@ static bool is_valve_enabled(hvac_valve_id_t valve_id)
     }
 }
 
-// Start background calibration for all butterfly valves (non-blocking)
-esp_err_t tb6612fng_start_calibration_all(void)
-{
-    ESP_LOGI(TAG, "====== STARTING INDEPENDENT CALIBRATION FOR ENABLED VALVES ======");
-    
-    esp_err_t result = ESP_OK;
-    for (int i = 0; i < HVAC_VALVE_MAX; i++) {
-        if (i == HVAC_VALVE_COOLANT) continue;  // Skip coolant (linear)
-        if (!is_valve_enabled((hvac_valve_id_t)i)) {
-            ESP_LOGI(TAG, "V%d: Skipping calibration (disabled in config)", i);
-            continue;
-        }
-        
-        esp_err_t ret = tb6612fng_start_calibration((hvac_valve_id_t)i);
-        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
-            result = ret;
-        }
-    }
-    return result;
-}
-
 // Helper to check if any valve is calibrating (internal, no side effects)
 static bool any_valve_calibrating(void)
 {
@@ -1544,15 +1523,6 @@ static bool any_valve_calibrating(void)
 bool tb6612fng_is_calibrating(void)
 {
     return any_valve_calibrating();
-}
-
-// Check if a specific valve is calibrating
-bool tb6612fng_is_valve_calibrating(hvac_valve_id_t valve_id)
-{
-    if (valve_id >= HVAC_VALVE_MAX) {
-        return false;
-    }
-    return valve_calibrating[valve_id];
 }
 
 esp_err_t tb6612fng_start_task(void)
