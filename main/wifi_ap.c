@@ -25,9 +25,7 @@
 
 static const char *TAG = "WIFI_AP";
 
-#define AP_CHANNEL          1
 #define AP_MAX_CLIENTS      2
-#define AP_IDLE_TIMEOUT_US  (10LL * 60 * 1000000)
 #define AP_ERR_LOG_US       (10LL * 1000000)    /* a failing start is retried every second, logged every 10 s */
 
 static TaskHandle_t s_task;
@@ -82,7 +80,7 @@ static esp_err_t ap_start(void)
     }
     wifi_config_t cfg = {
         .ap = {
-            .channel = AP_CHANNEL,
+            .channel = (uint8_t)settings_get_int(SET_AP_CHANNEL),   /* read at each start */
             .max_connection = AP_MAX_CLIENTS,
             .authmode = WIFI_AUTH_WPA2_PSK,
             .pmf_cfg = { .required = false },
@@ -125,6 +123,11 @@ static void ap_stop(const char *why)
     event_log_add(EVT_INFO, "AP off: %s (%s)", s_ssid, why);
 }
 
+static int64_t idle_timeout_us(void)
+{
+    return (int64_t)settings_get_int(SET_AP_IDLE_MIN) * 60 * 1000000;
+}
+
 static void ap_task(void *arg)
 {
     (void)arg;
@@ -145,8 +148,8 @@ static void ap_task(void *arg)
             }
         }
         if (s_on && s_ten_min && s_clients == 0 &&
-            esp_timer_get_time() - s_idle_since_us >= AP_IDLE_TIMEOUT_US) {
-            ap_stop("10 min without a phone");
+            esp_timer_get_time() - s_idle_since_us >= idle_timeout_us()) {
+            ap_stop("idle without a phone");
         }
     }
 }
@@ -204,6 +207,6 @@ uint32_t wifi_ap_remaining_s(void)
     if (!s_on || !s_ten_min || s_clients > 0) {
         return 0;
     }
-    int64_t left = AP_IDLE_TIMEOUT_US - (esp_timer_get_time() - s_idle_since_us);
+    int64_t left = idle_timeout_us() - (esp_timer_get_time() - s_idle_since_us);
     return left > 0 ? (uint32_t)(left / 1000000) : 0;
 }

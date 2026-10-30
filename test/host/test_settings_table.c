@@ -106,6 +106,51 @@ static void test_decision_defaults(void)
     CHECK(settings_def(SET_HUMIDITY_OFF)->def <= settings_def(SET_HUMIDITY_ON)->def - SETTINGS_HUMIDITY_GAP);
 }
 
+/* Item 11: every new row's default equals the constant or literal it replaced (now deleted). */
+static void test_old_constant_defaults(void)
+{
+    static const struct { setting_id_t id; float old; const char *was; } k[] = {
+        { SET_TEMP_DEADBAND, 0.5f, "TEMP_DEADBAND (hvac_controller.c)" },
+        { SET_FEET_FIRST_BELOW, 18, "feet-first literal 18.0f (hvac_controller.c)" },
+        { SET_AUTO_WS_RH, 70, "AUTO windscreen literal 70.0f %RH (hvac_controller.c)" },
+        { SET_SENSOR_FALLBACK_HEAT, 50, "SENSOR_FALLBACK_COOLANT_PCT" },
+        { SET_PRESET_HEAT_C, 30, "presets.c MAX_HEAT 30.0f" },
+        { SET_PRESET_COOL_C, 16, "presets.c MAX_COOL 16.0f" },
+        { SET_COLD_START_BELOW, 15, "WARMUP_COLD_CABIN_THRESHOLD" },
+        { SET_COLD_START_MIN_S, 60, "WARMUP_MIN_DURATION_MS 60000" },
+        { SET_COLD_START_MAX_MIN, 5, "WARMUP_MAX_DURATION_MS 300000" },
+        { SET_COLD_START_END_C, 18, "WARMUP_EXIT_CABIN_TEMP" },
+        { SET_COLD_START_END_RH, 60, "WARMUP_EXIT_HUMIDITY" },
+        { SET_COLD_START_DUCT_C, 40, "WARMUP_DUCT_TEMP_READY" },
+        { SET_DEFOG_RELEASE_C, 2, "DEFOG_EXIT_HYSTERESIS_C" },
+        { SET_DEFOG_WS_PCT, 50, "DEFOG_MIN_WINDSCREEN_PCT" },
+        { SET_ECO_FAN_CAP, 60, "ECO_FAN_CAP_PCT (= BTS7960_FAN_PERCENT_MEDIUM)" },
+        { SET_AUTO_FAN_FULL_C, 5, "AUTO fan knee literal 5.0f (hvac_controller.c)" },
+        { SET_FAN_LEVEL_MLOW, 45, "BTS7960_FAN_PERCENT_MEDIUM_LOW" },
+        { SET_FAN_LEVEL_MED, 60, "BTS7960_FAN_PERCENT_MEDIUM" },
+        { SET_FAN_LEVEL_MHIGH, 80, "BTS7960_FAN_PERCENT_MEDIUM_HIGH" },
+        { SET_AUTO_FAN_NO_SENSOR, 50, "BTS7960_FAN_PERCENT_AUTO_DEFAULT" },
+        { SET_COOLANT_IDLE_PCT, 10, "coolant-at-setpoint literal 10 (hvac_controller.c)" },
+        { SET_HOLD_DELAY_MS, 400, "LVGL long_press_time default" },
+        { SET_HOLD_REPEAT_MS, 100, "LVGL long_press_repeat_time default" },
+        { SET_NIGHT_OFF_S, 30, "UI_SCREEN_OFF_DEFAULT_S (hvac_ui.c)" },
+        { SET_CHART_INTERVAL_S, 10, "CHART_PERIOD_MS 10000 (hvac_ui_diag.c)" },
+        { SET_AP_IDLE_MIN, 10, "AP_IDLE_TIMEOUT_US 10 min (wifi_ap.c)" },
+        { SET_HEAT_GAIN, 20, "BASE_COOLANT_GAIN" },
+        { SET_HEAT_GAIN_MIN, 10, "MIN_COOLANT_GAIN" },
+        { SET_HEAT_GAIN_MAX, 50, "MAX_COOLANT_GAIN" },
+        { SET_AC_MIN_OFF_S, 10, "AC_MIN_OFF_MS 10000" },
+        { SET_AC_MIN_ON_S, 30, "AC_MIN_ON_MS 30000" },
+        { SET_AP_CHANNEL, 1, "AP_CHANNEL (wifi_ap.c)" },
+    };
+    for (size_t i = 0; i < sizeof(k) / sizeof(k[0]); i++) {
+        CHECKM(settings_def(k[i].id)->def == k[i].old, "%s: default %g, old %g", k[i].was,
+               (double)settings_def(k[i].id)->def, (double)k[i].old);
+    }
+    CHECK(settings_def(SET_HEAT_GAIN)->group == SET_GROUP_ADVANCED);
+    CHECK(settings_def(SET_AP_CHANNEL)->group == SET_GROUP_ADVANCED);
+}
+
 int main(void)
 {
     RUN(test_rows_in_order);
@@ -113,5 +158,6 @@ int main(void)
     RUN(test_ranges_and_steps);
     RUN(test_labels_and_enums);
     RUN(test_decision_defaults);
+    RUN(test_old_constant_defaults);
     T_DONE();
 }

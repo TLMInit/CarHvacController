@@ -89,7 +89,7 @@ async function loadState(){
  }catch(e){$("link").textContent="Not reachable";$("link").className="bad"}
 }
 
-const GROUPS=["Display","Climate","Fan","Comfort","Control","Valves","Connectivity","System"];
+const GROUPS=["Display","Climate","Fan","Comfort","Control","Valves","Connectivity","System","Service","Advanced"];
 async function save(key,value,msg){
  msg.textContent="Saving…";msg.className="mut";
  try{const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key,value})});

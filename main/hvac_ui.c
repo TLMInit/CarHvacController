@@ -31,10 +31,8 @@ static const char *TAG = "HVAC_UI";
 #define UI_DIAG_REFRESH_MS   750U
 #define UI_STATS_LOG_MS      5000U
 #define UI_TAP_SLOP          10
-/* Main + debug + modal cells + the largest settings group (17 rows) with margin. */
-#define UI_BUTTON_CONTEXTS   64U
-/* "Night: screen off" without an auto-dim time uses this idle time. */
-#define UI_SCREEN_OFF_DEFAULT_S 30U
+/* Main + debug + modal cells + the largest settings view (air distribution grid: 41) with margin. */
+#define UI_BUTTON_CONTEXTS   96U
 
 #define UI_MAIN_TOP_H        48
 #define UI_MAIN_STATUS_H     24
@@ -768,7 +766,7 @@ static void night_handler(lv_event_t *e)
 
 typedef struct {
     bool night, screen_off, show_blower, recirc_fitted;
-    int day, night_level, dim_s;
+    int day, night_level, dim_s, night_off_s;
 } display_cfg_t;
 
 static display_cfg_t s_cfg;
@@ -785,6 +783,7 @@ static void cfg_reload(void)
     s_cfg.day = settings_get_int(SET_BRIGHT_DAY);
     s_cfg.night_level = settings_get_int(SET_BRIGHT_NIGHT);
     s_cfg.dim_s = settings_get_int(SET_AUTO_DIM_S);
+    s_cfg.night_off_s = settings_get_int(SET_NIGHT_OFF_S);     /* "Night: screen off" without auto-dim */
     s_lang_da = settings_get_int(SET_LANGUAGE) == SET_LANG_DA;
 }
 
@@ -795,19 +794,30 @@ static void wake_overlay_pressed(lv_event_t *e)
     if (indev) lv_indev_wait_release(indev);
 }
 
+/* LVGL task only: hold delay / repeat of every input device, and the chart period. */
+static void apply_lvgl_settings(void)
+{
+    for (lv_indev_t *in = lv_indev_get_next(NULL); in; in = lv_indev_get_next(in)) {
+        in->driver->long_press_time = (uint16_t)settings_get_int(SET_HOLD_DELAY_MS);
+        in->driver->long_press_repeat_time = (uint16_t)settings_get_int(SET_HOLD_REPEAT_MS);
+    }
+    ui_diag_apply_settings();
+}
+
 static void apply_display(void)
 {
     uint32_t seq = settings_seq();
     if (seq != s_cfg_seq) {
         s_cfg_seq = seq;
         cfg_reload();
+        apply_lvgl_settings();
     }
     const uint32_t idle_ms = lv_disp_get_inactive_time(NULL);
     int level = s_cfg.night ? s_cfg.night_level : s_cfg.day;
     if (s_cfg.dim_s > 0 && idle_ms > (uint32_t)s_cfg.dim_s * 1000U && s_cfg.night_level < level) {
         level = s_cfg.night_level;
     }
-    const uint32_t off_after_s = s_cfg.dim_s > 0 ? (uint32_t)s_cfg.dim_s : UI_SCREEN_OFF_DEFAULT_S;
+    const uint32_t off_after_s = (uint32_t)(s_cfg.dim_s > 0 ? s_cfg.dim_s : s_cfg.night_off_s);
     const bool off = s_cfg.night && s_cfg.screen_off && idle_ms > off_after_s * 1000U;
     if (off) level = 0;
 
@@ -1201,6 +1211,7 @@ esp_err_t hvac_ui_init(void)
     make_debug_screen();
     ui_settings_init(tab_settings);
     ui_diag_init();
+    apply_lvgl_settings();
 
     lv_tabview_set_act(tabview, 0, LV_ANIM_OFF);
     lv_scr_load(scr_main);

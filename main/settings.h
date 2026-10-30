@@ -56,6 +56,8 @@ typedef enum {
     SET_GROUP_VALVES,
     SET_GROUP_CONNECT,
     SET_GROUP_SYSTEM,
+    SET_GROUP_SERVICE,          /* valve service page only, mode OFF (no rows yet) */
+    SET_GROUP_ADVANCED,         /* phone page only */
     SET_GROUP_COUNT
 } setting_group_t;
 
@@ -147,6 +149,42 @@ typedef enum {
     /* System */
     SET_FACTORY_RESET,          /* action: erase hvac_cfg, hvac_cal, hvac_thermal, hvac; reboot */
     SET_NODE_REBOOT,            /* action: MSG_RESET to the IO node */
+
+    /* User rows that were constants (INVENTORY.md section 2); each group in the table */
+    SET_TEMP_DEADBAND,          /* float degC, 0.2..2.0 step 0.1, default 0.5: no heat/cool band, AUTO fan lower knee */
+    SET_FEET_FIRST_BELOW,       /* float degC, 10..25 step 0.5, default 18: AUTO heating sends air to the feet */
+    SET_AUTO_WS_RH,             /* int %RH, 50..95 step 5, default 70: AUTO adds windscreen air above */
+    SET_SENSOR_FALLBACK_HEAT,   /* int %, 0..100 step 5, default 50: coolant valve without a cabin reading */
+    SET_PRESET_HEAT_C,          /* float degC, 25..30 step 0.5, default 30: Max heat preset setpoint */
+    SET_PRESET_COOL_C,          /* float degC, 16..22 step 0.5, default 16: Max cool preset setpoint */
+    SET_COLD_START_BELOW,       /* float degC, 0..20 step 1, default 15: AUTO warm-up starts below */
+    SET_COLD_START_MIN_S,       /* int s, 0..600 step 30, default 60 */
+    SET_COLD_START_MAX_MIN,     /* int min, 1..15 step 1, default 5 */
+    SET_COLD_START_END_C,       /* float degC, 10..25 step 0.5, default 18 */
+    SET_COLD_START_END_RH,      /* int %RH, 30..90 step 5, default 60 */
+    SET_COLD_START_DUCT_C,      /* float degC, 20..70 step 1, default 40 */
+    SET_DEFOG_RELEASE_C,        /* float degC, 0.5..5 step 0.5, default 2 */
+    SET_DEFOG_WS_PCT,           /* int %, 30..100 step 10, default 50 */
+    SET_ECO_FAN_CAP,            /* int %, 30..100 step 5, default 60: AUTO fan cap under the Eco preset */
+    SET_AUTO_FAN_FULL_C,        /* float degC, 2..10 step 0.5, default 5: cabin error for 100 % AUTO fan */
+    SET_FAN_LEVEL_MLOW,         /* int %, 10..100 step 5, default 45; fan chain: min <= Med-low <= Medium <= Med-high <= max */
+    SET_FAN_LEVEL_MED,          /* int %, 10..100 step 5, default 60 */
+    SET_FAN_LEVEL_MHIGH,        /* int %, 10..100 step 5, default 80 */
+    SET_AUTO_FAN_NO_SENSOR,     /* int %, 0..100 step 5, default 50: AUTO fan without a cabin reading */
+    SET_COOLANT_IDLE_PCT,       /* int %, 0..30 step 1, default 10: classic law at the setpoint */
+    SET_HOLD_DELAY_MS,          /* int ms, 200..1000 step 50, default 400: LVGL long press */
+    SET_HOLD_REPEAT_MS,         /* int ms, 50..500 step 10, default 100: LVGL long-press repeat */
+    SET_NIGHT_OFF_S,            /* int s, 10..600 step 10, default 30: night screen-off when auto-dim is 0 */
+    SET_CHART_INTERVAL_S,       /* int s, 5..60 step 5, default 10: trend chart point (60 points) */
+    SET_AP_IDLE_MIN,            /* int min, 1..60 step 1, default 10: Wi-Fi auto-off without a phone */
+
+    /* Advanced (phone page only) */
+    SET_HEAT_GAIN,              /* float %/degC, 5..50 step 1, default 20: classic law base gain */
+    SET_HEAT_GAIN_MIN,          /* float %/degC, 5..50 step 1, default 10; <= SET_HEAT_GAIN_MAX (a chain rule) */
+    SET_HEAT_GAIN_MAX,          /* float %/degC, 10..100 step 1, default 50 */
+    SET_AC_MIN_OFF_S,           /* int s, 5..60 step 5, default 10 */
+    SET_AC_MIN_ON_S,            /* int s, 10..300 step 10, default 30: humidity-only clutch */
+    SET_AP_CHANNEL,             /* int, 1..13, default 1: used at the next AP start */
 
     SET_COUNT
 } setting_id_t;

@@ -4,10 +4,11 @@
 
 #include <stdbool.h>
 #include "hvac_controller.h"
+#include "settings.h"
 
 typedef struct {
     hvac_mode_t mode;
-    float setpoint_c;           /* 0 = leave the setpoint alone */
+    setting_id_t setpoint_id;   /* setpoint setting; SET_COUNT = leave the setpoint alone */
     hvac_fan_speed_t fan;
     bool ac;
     bool recirc_on;             /* switch recirculation on, only if SET_RECIRC_FITTED */

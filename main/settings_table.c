@@ -7,7 +7,6 @@
  */
 
 #include "settings.h"
-#include "bts7960_driver.h"
 #include "tb6612fng_driver.h"
 #include "hvac_controller.h"
 #include "wifi_ap.h"
@@ -35,8 +34,8 @@ static const char *const k_ctrl_en[]    = { "Classic", "Cascade" };
 static const char *const k_ctrl_da[]    = { "Klassisk", "Kaskade" };
 static const char *const k_vdir_en[]    = { "Auto", "Normal", "Inverted" };
 static const char *const k_vdir_da[]    = { "Auto", "Normal", "Omvendt" };
-static const char *const k_ap_en[]      = { "Off", "10 min", "Always" };
-static const char *const k_ap_da[]      = { "Fra", "10 min", "Altid" };
+static const char *const k_ap_en[]      = { "Off", "Auto off", "Always" };   /* Auto off: SET_AP_IDLE_MIN */
+static const char *const k_ap_da[]      = { "Fra", "Auto-fra", "Altid" };
 
 #define ROW(i, g, en, da, t, mn, mx, st, df, ee, ed, u, key, cb) \
     [i] = { .id = i, .group = g, .label_en = en, .label_da = da, .type = t, \
@@ -61,6 +60,7 @@ static const char *const k_ap_da[]      = { "Fra", "10 min", "Altid" };
 #define VL SET_GROUP_VALVES
 #define CN SET_GROUP_CONNECT
 #define SY SET_GROUP_SYSTEM
+#define AD SET_GROUP_ADVANCED
 
 const setting_def_t g_settings_table[SET_COUNT] = {
     /* Display: no callback, the UI polls settings_seq() */
@@ -138,6 +138,45 @@ const setting_def_t g_settings_table[SET_COUNT] = {
     /* System */
     ACTION(SET_FACTORY_RESET,  SY, "Factory reset", "Fabriksnulstil", settings_factory_reset_cb),
     ACTION(SET_NODE_REBOOT,    SY, "Restart IO node", "Genstart IO-node", apply_node_reboot),
+
+    /* User rows that were constants (INVENTORY.md section 2); defaults = the old constants */
+    FLT (SET_TEMP_DEADBAND,     CL, "Setpoint deadband", "Setpunkt dødbånd", 0.2f, 2.0f, 0.1f, 0.5f, "°C", "deadband", apply_controller),
+    FLT (SET_FEET_FIRST_BELOW,  CL, "Feet-first below", "Fod først under", 10, 25, 0.5f, 18, "°C", "feet_below", apply_controller),
+    INT (SET_AUTO_WS_RH,        CL, "Windscreen air above", "Rudeluft over", 50, 95, 5, 70, "%RH", "auto_ws_rh", apply_controller),
+    INT (SET_SENSOR_FALLBACK_HEAT, CL, "Heat w/o cabin sensor", "Varme u. kabinesensor", 0, 100, 5, 50, "%", "fallback_heat", apply_controller),
+    /* read when a preset is applied */
+    FLT (SET_PRESET_HEAT_C,     CL, "Max heat preset", "Maks varme forvalg", 25, 30, 0.5f, 30, "°C", "preset_heat", NULL),
+    FLT (SET_PRESET_COOL_C,     CL, "Max cool preset", "Maks kold forvalg", 16, 22, 0.5f, 16, "°C", "preset_cool", NULL),
+    FLT (SET_COLD_START_BELOW,  CF, "Cold start below", "Koldstart under", 0, 20, 1, 15, "°C", "cold_below", apply_controller),
+    INT (SET_COLD_START_MIN_S,  CF, "Cold start minimum", "Koldstart minimum", 0, 600, 30, 60, "s", "cold_min_s", apply_controller),
+    INT (SET_COLD_START_MAX_MIN, CF, "Cold start maximum", "Koldstart maksimum", 1, 15, 1, 5, "min", "cold_max_min", apply_controller),
+    FLT (SET_COLD_START_END_C,  CF, "Cold start ends at", "Koldstart slut ved", 10, 25, 0.5f, 18, "°C", "cold_end_c", apply_controller),
+    INT (SET_COLD_START_END_RH, CF, "Cold start ends below", "Koldstart slut under", 30, 90, 5, 60, "%RH", "cold_end_rh", apply_controller),
+    FLT (SET_COLD_START_DUCT_C, CF, "Cold start duct warm", "Koldstart kanal varm", 20, 70, 1, 40, "°C", "cold_duct_c", apply_controller),
+    FLT (SET_DEFOG_RELEASE_C,   CF, "Defog release band", "Afdug slip-bånd", 0.5f, 5, 0.5f, 2, "°C", "defog_release", apply_controller),
+    INT (SET_DEFOG_WS_PCT,      CF, "Defog windscreen air", "Afdug rudeluft", 30, 100, 10, 50, "%", "defog_ws", apply_controller),
+    INT (SET_ECO_FAN_CAP,       FN, "Eco preset fan cap", "Eco-blæsergrænse", 30, 100, 5, 60, "%", "eco_cap", apply_controller),
+    FLT (SET_AUTO_FAN_FULL_C,   FN, "AUTO full fan at", "AUTO fuld blæser ved", 2, 10, 0.5f, 5, "°C", "auto_full_c", apply_controller),
+    INT (SET_FAN_LEVEL_MLOW,    FN, "Fan level Med-low", "Blæser mellem-lav", 10, 100, 5, 45, "%", "fan_mlow", apply_controller),
+    INT (SET_FAN_LEVEL_MED,     FN, "Fan level Medium", "Blæser mellem", 10, 100, 5, 60, "%", "fan_med", apply_controller),
+    INT (SET_FAN_LEVEL_MHIGH,   FN, "Fan level Med-high", "Blæser mellem-høj", 10, 100, 5, 80, "%", "fan_mhigh", apply_controller),
+    INT (SET_AUTO_FAN_NO_SENSOR, FN, "AUTO fan, no sensor", "AUTO-blæser u. sensor", 0, 100, 5, 50, "%", "auto_fan_nosens", apply_controller),
+    INT (SET_COOLANT_IDLE_PCT,  CT, "Coolant at setpoint", "Kølevand ved setpunkt", 0, 30, 1, 10, "%", "coolant_idle", apply_controller),
+    /* Display: the UI polls settings_seq() */
+    INT (SET_HOLD_DELAY_MS,     D,  "Hold delay", "Holdeforsinkelse", 200, 1000, 50, 400, "ms", "hold_delay_ms", NULL),
+    INT (SET_HOLD_REPEAT_MS,    D,  "Hold repeat", "Holdegentagelse", 50, 500, 10, 100, "ms", "hold_rep_ms", NULL),
+    INT (SET_NIGHT_OFF_S,       D,  "Night screen off after", "Nat: skærm fra efter", 10, 600, 10, 30, "s", "night_off_s", NULL),
+    INT (SET_CHART_INTERVAL_S,  D,  "Trend point every", "Kurvepunkt hver", 5, 60, 5, 10, "s", "chart_s", NULL),
+    INT (SET_AP_IDLE_MIN,       CN, "Wi-Fi auto-off after", "Wi-Fi auto-fra efter", 1, 60, 1, 10, "min", "ap_idle_min", apply_wifi),
+
+    /* ADVANCED: phone page only */
+    FLT (SET_HEAT_GAIN,         AD, "Classic heat gain", "Klassisk varmegain", 5, 50, 1, 20, "%/°C", "heat_gain", apply_controller),
+    FLT (SET_HEAT_GAIN_MIN,     AD, "Heat gain minimum", "Varmegain minimum", 5, 50, 1, 10, "%/°C", "heat_gain_min", apply_controller),
+    FLT (SET_HEAT_GAIN_MAX,     AD, "Heat gain maximum", "Varmegain maksimum", 10, 100, 1, 50, "%/°C", "heat_gain_max", apply_controller),
+    INT (SET_AC_MIN_OFF_S,      AD, "A/C minimum off", "A/C minimum fra", 5, 60, 5, 10, "s", "ac_min_off_s", apply_controller),
+    INT (SET_AC_MIN_ON_S,       AD, "A/C min on (humidity)", "A/C min til (fugt)", 10, 300, 10, 30, "s", "ac_min_on_s", apply_controller),
+    /* used at the next AP start (like the password): wifi_ap.c reads it in ap_start() */
+    INT (SET_AP_CHANNEL,        AD, "Wi-Fi channel", "Wi-Fi-kanal", 1, 13, 1, 1, NULL, "ap_channel", NULL),
 };
 
 /* ---- Cross-field rules (see settings.h) ---- */
@@ -145,12 +184,12 @@ const setting_def_t g_settings_table[SET_COUNT] = {
 #define SETTING(i)          { .id = (i) }
 #define FIXED(v, en, da)    { .id = SET_COUNT, .k = (v), .name_en = (en), .name_da = (da) }
 
-/* Low = fan minimum, High = fan maximum; the middle levels are fixed for now. */
+/* Low = fan minimum, High = fan maximum. */
 const setting_operand_t g_fan_levels[SETTINGS_FAN_LEVELS] = {
     SETTING(SET_FAN_MIN_DUTY),
-    FIXED(BTS7960_FAN_PERCENT_MEDIUM_LOW, "Med-low", "Mellem-lav"),
-    FIXED(BTS7960_FAN_PERCENT_MEDIUM, "Medium", "Mellem"),
-    FIXED(BTS7960_FAN_PERCENT_MEDIUM_HIGH, "Med-high", "Mellem-høj"),
+    SETTING(SET_FAN_LEVEL_MLOW),
+    SETTING(SET_FAN_LEVEL_MED),
+    SETTING(SET_FAN_LEVEL_MHIGH),
     SETTING(SET_FAN_MAX_DUTY),
 };
 
@@ -168,11 +207,13 @@ const size_t g_settings_floor_count = sizeof(g_settings_floors) / sizeof(g_setti
 static const setting_operand_t k_humidity[] = { SETTING(SET_HUMIDITY_OFF), SETTING(SET_HUMIDITY_ON) };
 /* min = max made the cascade hold its last output forever (cascade.c) */
 static const setting_operand_t k_duct[] = { SETTING(SET_DUCT_MIN), SETTING(SET_DUCT_MAX) };
+static const setting_operand_t k_heat_gain[] = { SETTING(SET_HEAT_GAIN_MIN), SETTING(SET_HEAT_GAIN_MAX) };
 
 const setting_chain_t g_settings_chains[] = {
     { g_fan_levels, SETTINGS_FAN_LEVELS, 0 },
     { k_humidity, 2, SETTINGS_HUMIDITY_GAP },
     { k_duct, 2, SETTINGS_DUCT_GAP },
+    { k_heat_gain, 2, 0 },
 };
 const size_t g_settings_chain_count = sizeof(g_settings_chains) / sizeof(g_settings_chains[0]);
 
@@ -217,17 +258,23 @@ int settings_rules_fix(float vals[SET_COUNT])
     int changed = 0;
     for (size_t c = 0; c < g_settings_chain_count; c++) {
         const setting_chain_t *ch = &g_settings_chains[c];
-        for (int i = 0; i + 1 < ch->n; i++) {
-            const setting_operand_t *lo = &ch->ops[i], *hi = &ch->ops[i + 1];
-            float want_lo = op_val(hi, vals) - ch->gap;
-            if (op_val(lo, vals) <= want_lo) continue;
-            if (lo->id < SET_COUNT && want_lo >= g_settings_table[lo->id].min) {
-                vals[lo->id] = want_lo;
-                changed++;
-            } else if (hi->id < SET_COUNT) {
-                vals[hi->id] = op_val(lo, vals) + ch->gap;
-                changed++;
+        /* top pair first, so a lowered value is checked against the one below it in the same
+         * pass; repeat for the rare upward move (a lower operand fixed or at its minimum) */
+        for (int pass = 0, moved = 1; moved && pass < ch->n; pass++) {
+            moved = 0;
+            for (int i = ch->n - 2; i >= 0; i--) {
+                const setting_operand_t *lo = &ch->ops[i], *hi = &ch->ops[i + 1];
+                float want_lo = op_val(hi, vals) - ch->gap;
+                if (op_val(lo, vals) <= want_lo) continue;
+                if (lo->id < SET_COUNT && want_lo >= g_settings_table[lo->id].min) {
+                    vals[lo->id] = want_lo;
+                    moved++;
+                } else if (hi->id < SET_COUNT) {
+                    vals[hi->id] = op_val(lo, vals) + ch->gap;
+                    moved++;
+                }
             }
+            changed += moved;
         }
     }
     for (size_t f = 0; f < g_settings_floor_count; f++) {

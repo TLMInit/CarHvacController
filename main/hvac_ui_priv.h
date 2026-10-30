@@ -97,6 +97,7 @@ bool ui_settings_at_root(void);
 void ui_settings_reset_view(void);
 
 /* hvac_ui_diag.c */
-void ui_diag_init(void);                           /* starts the 10 s chart feed timer */
+void ui_diag_init(void);                           /* starts the chart feed timer (SET_CHART_INTERVAL_S) */
+void ui_diag_apply_settings(void);                 /* chart period after a settings change */
 
 #endif

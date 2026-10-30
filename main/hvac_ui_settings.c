@@ -28,6 +28,7 @@ static const name_t k_groups[SET_GROUP_COUNT] = {
     {"Display", "Visning"}, {"Climate", "Klima"}, {"Fan", "Bl\xC3\xA6ser"},
     {"Comfort", "Komfort"}, {"Control", "Regulering"}, {"Valves", "Ventiler"},
     {"Connect", "Forbindelse"}, {"System", "System"},
+    {"Service", "Service"}, {"Advanced", "Avanceret"},
 };
 
 typedef struct {
@@ -400,7 +401,8 @@ static void open_view(view_t view, int group, const ui_page_t *page)
         lv_coord_t y = 0;
         add_nav_row(y, tr("Presets", "Forindstillinger"), home_tap, (void *)(intptr_t)HOME_PRESETS);
         y += ROW_H;
-        for (int g = 0; g < SET_GROUP_COUNT; ++g, y += ROW_H) {
+        /* SERVICE goes on the valve service page, ADVANCED is on the phone page only */
+        for (int g = 0; g < SET_GROUP_SERVICE; ++g, y += ROW_H) {
             add_nav_row(y, tr(k_groups[g].en, k_groups[g].da), home_tap, (void *)(intptr_t)g);
         }
         add_nav_row(y, tr("Diagnostics", "Diagnostik"), home_tap, (void *)(intptr_t)HOME_DIAG);

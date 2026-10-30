@@ -2,10 +2,10 @@
 #include "presets_priv.h"
 
 static const preset_def_t table[HVAC_PRESET_COUNT] = {
-    [HVAC_PRESET_DEFOG]    = { HVAC_MODE_DEFROST, 0.0f,  HVAC_FAN_HIGH, true,  false },
-    [HVAC_PRESET_MAX_HEAT] = { HVAC_MODE_FOOT,    30.0f, HVAC_FAN_HIGH, false, false },
-    [HVAC_PRESET_MAX_COOL] = { HVAC_MODE_FACE,    16.0f, HVAC_FAN_HIGH, true,  true  },
-    [HVAC_PRESET_ECO]      = { HVAC_MODE_AUTO,    0.0f,  HVAC_FAN_AUTO, false, false },
+    [HVAC_PRESET_DEFOG]    = { HVAC_MODE_DEFROST, SET_COUNT,         HVAC_FAN_HIGH, true,  false },
+    [HVAC_PRESET_MAX_HEAT] = { HVAC_MODE_FOOT,    SET_PRESET_HEAT_C, HVAC_FAN_HIGH, false, false },
+    [HVAC_PRESET_MAX_COOL] = { HVAC_MODE_FACE,    SET_PRESET_COOL_C, HVAC_FAN_HIGH, true,  true  },
+    [HVAC_PRESET_ECO]      = { HVAC_MODE_AUTO,    SET_COUNT,         HVAC_FAN_AUTO, false, false },
 };
 
 const preset_def_t *preset_def(hvac_preset_t preset)

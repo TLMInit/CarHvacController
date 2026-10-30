@@ -1,8 +1,11 @@
 /* Cross-field rules (settings_table.c chains, enforced by settings.c at set time and at load). */
 #include <string.h>
 #include "settings.h"
-#include "bts7960_driver.h"
 #include "t.h"
+
+/* Old constants, now SET_FAN_LEVEL_MLOW / _MHIGH defaults (deleted from bts7960_driver.h) */
+#define OLD_MEDIUM_LOW   45     /* OLD_MEDIUM_LOW */
+#define OLD_MEDIUM_HIGH  80     /* OLD_MEDIUM_HIGH */
 
 void fake_nvs_reset(void);
 
@@ -46,14 +49,13 @@ static void boot_with_f(const char *k1, float v1, const char *k2, float v2)
 
 static void test_fan_chain_pure(void)
 {
-    float vals[SET_COUNT] = { 0 };
-    vals[SET_FAN_MIN_DUTY] = 30;
-    vals[SET_FAN_MAX_DUTY] = 100;
+    float vals[SET_COUNT];
+    for (int i = 0; i < SET_COUNT; i++) vals[i] = settings_def((setting_id_t)i)->def;
     setting_rule_hit_t hit;
     CHECK(settings_rules_clamp(SET_FAN_MIN_DUTY, 40, vals, &hit) == 40 && hit.chain == NULL);
-    CHECK(settings_rules_clamp(SET_FAN_MIN_DUTY, 70, vals, &hit) == BTS7960_FAN_PERCENT_MEDIUM_LOW);
+    CHECK(settings_rules_clamp(SET_FAN_MIN_DUTY, 70, vals, &hit) == OLD_MEDIUM_LOW);
     CHECK(hit.chain && hit.other_above && hit.other == &g_fan_levels[1]);
-    CHECK(settings_rules_clamp(SET_FAN_MAX_DUTY, 50, vals, &hit) == BTS7960_FAN_PERCENT_MEDIUM_HIGH);
+    CHECK(settings_rules_clamp(SET_FAN_MAX_DUTY, 50, vals, &hit) == OLD_MEDIUM_HIGH);
     CHECK(hit.chain && !hit.other_above && hit.other == &g_fan_levels[3]);
 }
 
@@ -68,15 +70,15 @@ static void test_fan_set_time(void)
 {
     fresh();
     CHECK(settings_set_int(SET_FAN_MIN_DUTY, 60) == ESP_OK);
-    CHECK(settings_get_int(SET_FAN_MIN_DUTY) == BTS7960_FAN_PERCENT_MEDIUM_LOW);
-    CHECKM(noted(SET_FAN_MIN_DUTY, "must not be above Med-low (45 %)"), "note '%s'", s_note);
+    CHECK(settings_get_int(SET_FAN_MIN_DUTY) == OLD_MEDIUM_LOW);
+    CHECKM(noted(SET_FAN_MIN_DUTY, "must not be above Fan level Med-low (45 %)"), "note '%s'", s_note);
     CHECK(settings_set_int(SET_FAN_MIN_DUTY, 40) == ESP_OK);
     CHECK(settings_get_int(SET_FAN_MIN_DUTY) == 40);
     CHECK(!noted(SET_FAN_MIN_DUTY, ""));                        /* a legal set clears the note */
 
     CHECK(settings_set_int(SET_FAN_MAX_DUTY, 50) == ESP_OK);
-    CHECK(settings_get_int(SET_FAN_MAX_DUTY) == BTS7960_FAN_PERCENT_MEDIUM_HIGH);
-    CHECKM(noted(SET_FAN_MAX_DUTY, "must not be below Med-high (80 %)"), "note '%s'", s_note);
+    CHECK(settings_get_int(SET_FAN_MAX_DUTY) == OLD_MEDIUM_HIGH);
+    CHECKM(noted(SET_FAN_MAX_DUTY, "must not be below Fan level Med-high (80 %)"), "note '%s'", s_note);
     CHECK(!noted(SET_FAN_MIN_DUTY, ""));                        /* the note belongs to the last set only */
 
     CHECK(settings_set_int(SET_FAN_MIN_DUTY, 0) == ESP_OK);     /* below the range: plain clamp, no rule note */
@@ -84,11 +86,43 @@ static void test_fan_set_time(void)
     CHECK(!noted(SET_FAN_MIN_DUTY, ""));
 }
 
+static void test_fan_levels_set_time(void)
+{
+    fresh();                                                    /* 30 / 45 / 60 / 80 / 100 */
+    CHECK(settings_set_int(SET_FAN_LEVEL_MED, 40) == ESP_OK);   /* below Med-low */
+    CHECK(settings_get_int(SET_FAN_LEVEL_MED) == 45);
+    CHECKM(noted(SET_FAN_LEVEL_MED, "must not be below Fan level Med-low (45 %)"), "note '%s'", s_note);
+    CHECK(settings_set_int(SET_FAN_LEVEL_MED, 85) == ESP_OK);   /* above Med-high */
+    CHECK(settings_get_int(SET_FAN_LEVEL_MED) == 80);
+    CHECKM(noted(SET_FAN_LEVEL_MED, "must not be above Fan level Med-high (80 %)"), "note '%s'", s_note);
+    CHECK(settings_set_int(SET_FAN_LEVEL_MLOW, 20) == ESP_OK);  /* below Low = fan minimum */
+    CHECK(settings_get_int(SET_FAN_LEVEL_MLOW) == 30);
+    CHECKM(noted(SET_FAN_LEVEL_MLOW, "must not be below Fan minimum (30 %)"), "note '%s'", s_note);
+    CHECK(settings_set_int(SET_FAN_MAX_DUTY, 90) == ESP_OK);
+    CHECK(settings_set_int(SET_FAN_LEVEL_MHIGH, 95) == ESP_OK); /* above High = fan maximum */
+    CHECK(settings_get_int(SET_FAN_LEVEL_MHIGH) == 90);
+    CHECKM(noted(SET_FAN_LEVEL_MHIGH, "must not be above Fan maximum (90 %)"), "note '%s'", s_note);
+}
+
 static void test_fan_load_time(void)
 {
+    /* stored by older firmware: everything follows the stored maximum down (lower moves down) */
     boot_with_i32("fan_min", 70, "fan_max", 40);
-    CHECK(settings_get_int(SET_FAN_MIN_DUTY) == BTS7960_FAN_PERCENT_MEDIUM_LOW);
-    CHECK(settings_get_int(SET_FAN_MAX_DUTY) == BTS7960_FAN_PERCENT_MEDIUM_HIGH);
+    CHECK(settings_get_int(SET_FAN_MIN_DUTY) == 40);
+    CHECK(settings_get_int(SET_FAN_LEVEL_MLOW) == 40);
+    CHECK(settings_get_int(SET_FAN_LEVEL_MED) == 40);
+    CHECK(settings_get_int(SET_FAN_LEVEL_MHIGH) == 40);
+    CHECK(settings_get_int(SET_FAN_MAX_DUTY) == 40);
+
+    boot_with_i32("fan_min", 70, NULL, 0);
+    CHECK(settings_get_int(SET_FAN_MIN_DUTY) == OLD_MEDIUM_LOW);
+    CHECK(settings_get_int(SET_FAN_MAX_DUTY) == 100);
+
+    boot_with_i32("fan_med", 30, "fan_mhigh", 20);              /* levels out of order */
+    CHECK(settings_get_int(SET_FAN_MIN_DUTY) <= settings_get_int(SET_FAN_LEVEL_MLOW));
+    CHECK(settings_get_int(SET_FAN_LEVEL_MLOW) <= settings_get_int(SET_FAN_LEVEL_MED));
+    CHECK(settings_get_int(SET_FAN_LEVEL_MED) <= settings_get_int(SET_FAN_LEVEL_MHIGH));
+    CHECK(settings_get_int(SET_FAN_LEVEL_MHIGH) == 20);
 
     boot_with_i32("fan_min", 0, NULL, 0);                      /* older firmware ran a stored 0 as 30 */
     CHECK(settings_get_int(SET_FAN_MIN_DUTY) == 30);
@@ -162,6 +196,7 @@ int main(void)
     RUN(test_fan_chain_pure);
     RUN(test_defaults_obey_rules);
     RUN(test_fan_set_time);
+    RUN(test_fan_levels_set_time);
     RUN(test_fan_load_time);
     RUN(test_valve_speed_floor);
     RUN(test_humidity_gap);

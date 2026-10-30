@@ -4,7 +4,8 @@
  *
  * INTERFACE (lead). Implemented by WP-G in wifi_ap.c.
  * OFF: radio off. 10MIN: on at boot (and when the setting is changed to it),
- * off after 10 min without a connected client. ALWAYS: on.
+ * off after SET_AP_IDLE_MIN (default 10 min) without a connected client. ALWAYS: on.
+ * SET_AP_CHANNEL and the password take effect at the next AP start.
  */
 
 #ifndef WIFI_AP_H

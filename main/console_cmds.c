@@ -19,6 +19,7 @@ static const char *TAG = "CONSOLE";
 
 static const char *const k_group_names[SET_GROUP_COUNT] = {
     "display", "climate", "fan", "comfort", "control", "valves", "connect", "system",
+    "service", "advanced",
 };
 
 static const setting_def_t *find_key(const char *key)
@@ -71,7 +72,11 @@ static int cmd_list(int argc, char **argv)
             }
         }
         if (group < 0) {
-            printf("groups: display climate fan comfort control valves connect system\n");
+            printf("groups:");
+            for (int g = 0; g < SET_GROUP_COUNT; g++) {
+                printf(" %s", k_group_names[g]);
+            }
+            printf("\n");
             return 1;
         }
     }

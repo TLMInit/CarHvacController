@@ -1,9 +1,9 @@
 /**
  * @file hvac_ui_diag.c
  * @brief Diagnostics sub-pages of the settings page: event log, link health,
- *        self-test and the 10-minute trend chart.
+ *        self-test and the trend chart (60 points, one every SET_CHART_INTERVAL_S).
  *
- * The chart ring is filled by a 10 s lv_timer that starts at UI init, so the
+ * The chart ring is filled by an lv_timer that starts at UI init, so the
  * history exists before the page is first opened. It is never fed from the
  * 100 ms update.
  */
@@ -244,7 +244,6 @@ const ui_page_t ui_page_selftest = { "Self-test", "Selvtest", st_open, st_update
 /* ================= trend chart ================= */
 
 #define CHART_POINTS     60
-#define CHART_PERIOD_MS  10000U
 
 enum { SER_CABIN, SER_DUCT, SER_SETPOINT, SER_COUNT };
 
@@ -254,6 +253,12 @@ static bool s_ring_init;
 static lv_obj_t *s_chart;
 static lv_chart_series_t *s_series[SER_COUNT];
 static ui_label_t s_chart_range[2], s_chart_now;
+static lv_timer_t *s_chart_timer;
+
+static uint32_t chart_period_ms(void)
+{
+    return (uint32_t)settings_get_int(SET_CHART_INTERVAL_S) * 1000U;
+}
 
 static void chart_refresh_view(void)
 {
@@ -313,7 +318,14 @@ void ui_diag_init(void)
             for (int i = 0; i < CHART_POINTS; ++i) s_ring[s][i] = LV_CHART_POINT_NONE;
         s_ring_init = true;
     }
-    lv_timer_create(chart_feed_timer, CHART_PERIOD_MS, NULL);
+    s_chart_timer = lv_timer_create(chart_feed_timer, chart_period_ms(), NULL);
+}
+
+void ui_diag_apply_settings(void)
+{
+    if (s_chart_timer && s_chart_timer->period != chart_period_ms()) {
+        lv_timer_set_period(s_chart_timer, chart_period_ms());
+    }
 }
 
 static void chart_open(lv_obj_t *hdr, lv_obj_t *body)
@@ -346,7 +358,9 @@ static void chart_open(lv_obj_t *hdr, lv_obj_t *body)
                         UI_COLOR_TEXT, LV_TEXT_ALIGN_LEFT);
     lv_obj_t *legend = lv_label_create(body);
     lv_label_set_recolor(legend, true);
-    lv_label_set_text_static(legend, "#F5F7FA Cabin#  #FF9A52 Duct#  #65C8F2 Setpoint#   10 min");
+    /* 60 points x N s = N min */
+    lv_label_set_text_fmt(legend, "#F5F7FA Cabin#  #FF9A52 Duct#  #65C8F2 Setpoint#   %d min",
+                          (int)settings_get_int(SET_CHART_INTERVAL_S));
     lv_obj_set_pos(legend, 8, 164);
     lv_obj_set_style_text_font(legend, UI_FONT_14, 0);
     lv_obj_set_style_text_color(legend, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
