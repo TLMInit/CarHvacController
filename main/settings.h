@@ -337,6 +337,25 @@ float settings_operand_value(const setting_operand_t *op);
  * (buf = "") when the last change of any setting was not this id or was not clamped by a rule. */
 bool settings_last_note(setting_id_t id, char *buf, size_t len);
 
+/** Pure: the first chain pair or floor that vals[] breaks. *id = the setting to name in a message,
+ * hit as for settings_rules_clamp (hit->other = the operand it conflicts with). False if none. */
+bool settings_rules_broken(const float vals[SET_COUNT], setting_rule_hit_t *hit, setting_id_t *id);
+
+/* ---- Export / import (phone page) ---- */
+#define SETTINGS_EXPORT_FORMAT "hvac-settings"
+
+/** {"format":"hvac-settings","schema":N,"firmware":"...","settings":{"<nvs_key>":value,...}} with every
+ * non-ACTION row; the AP password only when include_password. Returns the length, or -1 if len is too small. */
+int settings_export_json(char *buf, size_t len, const char *firmware, bool include_password);
+
+/** Check a whole export file, then apply all of it or nothing. Refuses (nothing changed, reason in why):
+ * not the format, another schema, unknown or repeated keys, a value of the wrong type, out of range or
+ * off the step grid, a SERVICE change while !service_ok, a cross-field rule broken by the resulting set.
+ * Keys missing from the file keep their value. ESP_OK: *changed = settings changed.
+ * Errors: ESP_ERR_INVALID_VERSION (schema), ESP_ERR_INVALID_STATE (service / changed meanwhile),
+ * ESP_ERR_NO_MEM, ESP_ERR_INVALID_ARG (everything else). */
+esp_err_t settings_import_json(const char *json, bool service_ok, int *changed, char *why, size_t why_len);
+
 /** Increments on every change; lets readers redraw only on change. */
 uint32_t settings_seq(void);
 

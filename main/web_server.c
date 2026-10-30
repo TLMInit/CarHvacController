@@ -34,6 +34,8 @@
 static const char *TAG = "WEB";
 
 #define SETTINGS_BODY_MAX   256
+#define EXPORT_MAX          8192        /* about 4 KB today */
+#define IMPORT_BODY_MAX     (16 * 1024)
 #define NODE_IMAGE_MAX      (1024 * 1024)
 #define RECV_CHUNK          4096
 #define RECV_RETRIES        3
@@ -355,6 +357,70 @@ static esp_err_t settings_post(httpd_req_t *req)
     return reply(req, "200 OK", true, msg);
 }
 
+/* ---- GET /api/settings/export[?include_password=1] ---- */
+
+static esp_err_t settings_export_get(httpd_req_t *req)
+{
+    char q[48], v[4];
+    bool pw = httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK &&
+              httpd_query_key_value(q, "include_password", v, sizeof(v)) == ESP_OK && strcmp(v, "1") == 0;
+    const char *ver = esp_app_get_description()->version;
+    char *buf = malloc(EXPORT_MAX);
+    int n = buf ? settings_export_json(buf, EXPORT_MAX, ver, pw) : -1;
+    if (n < 0) {
+        const char *msg = buf ? "Export larger than its buffer" : "Out of memory";
+        free(buf);
+        return reply(req, "500 Internal Server Error", false, msg);
+    }
+    char name[32], cd[80];
+    size_t i = 0;
+    for (; ver[i] && i + 1 < sizeof(name); i++) {      /* header-safe file name */
+        char c = ver[i];
+        name[i] = (c == '.' || c == '-' || c == '_' || (c >= '0' && c <= '9') || ((c | 0x20) >= 'a' && (c | 0x20) <= 'z')) ? c : '_';
+    }
+    name[i] = '\0';
+    snprintf(cd, sizeof(cd), "attachment; filename=\"hvac-settings-%s.json\"", name);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Content-Disposition", cd);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    esp_err_t err = httpd_resp_send(req, buf, n);
+    free(buf);
+    return err;
+}
+
+/* ---- POST /api/settings/import (body = an export file) ---- */
+
+static esp_err_t settings_import_post(httpd_req_t *req)
+{
+    if (req->content_len == 0 || req->content_len > IMPORT_BODY_MAX) {
+        return reply(req, "413 Content Too Large", false, "Settings file must be 1 byte .. 16 KB");
+    }
+    char *body = malloc(req->content_len + 1);
+    if (!body) {
+        return reply(req, "500 Internal Server Error", false, "Out of memory");
+    }
+    size_t got = 0;
+    while (got < req->content_len) {
+        int r = recv_some(req, body + got, req->content_len - got);
+        if (r <= 0) {
+            free(body);
+            return reply(req, "400 Bad Request", false, "File not received");
+        }
+        got += r;
+    }
+    body[got] = '\0';
+    char why[160];
+    int changed = 0;
+    esp_err_t err = settings_import_json(body, hvac_controller_get_mode() == HVAC_MODE_OFF, &changed, why, sizeof(why));
+    free(body);
+    if (err == ESP_OK) {
+        snprintf(why, sizeof(why), "Imported: %d setting%s changed", changed, changed == 1 ? "" : "s");
+        event_log_add(EVT_INFO, "Settings imported, %d changed", changed);
+    }
+    return reply(req, err == ESP_OK ? "200 OK" : err == ESP_ERR_INVALID_STATE ? "409 Conflict"
+                 : err == ESP_ERR_NO_MEM ? "500 Internal Server Error" : "400 Bad Request", err == ESP_OK, why);
+}
+
 /* ---- GET /api/log ---- */
 
 static bool log_row_cb(const event_t *e, void *ctx)
@@ -596,7 +662,7 @@ esp_err_t web_server_start(void)
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.stack_size = 6144;
     cfg.max_open_sockets = 4;
-    cfg.max_uri_handlers = 10;
+    cfg.max_uri_handlers = 12;
     cfg.lru_purge_enable = true;
     cfg.recv_wait_timeout = 10;
     esp_err_t err = httpd_start(&s_server, &cfg);
@@ -610,6 +676,8 @@ esp_err_t web_server_start(void)
         { .uri = "/api/state",       .method = HTTP_GET,  .handler = state_get },
         { .uri = "/api/settings",    .method = HTTP_GET,  .handler = settings_get },
         { .uri = "/api/settings",    .method = HTTP_POST, .handler = settings_post },
+        { .uri = "/api/settings/export", .method = HTTP_GET, .handler = settings_export_get },
+        { .uri = "/api/settings/import", .method = HTTP_POST, .handler = settings_import_post },
         { .uri = "/api/log",         .method = HTTP_GET,  .handler = log_get },
         { .uri = "/api/diag",        .method = HTTP_GET,  .handler = diag_get },
         { .uri = "/api/ota/display", .method = HTTP_POST, .handler = ota_display_post },

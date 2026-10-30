@@ -357,3 +357,31 @@ int settings_rules_fix(float vals[SET_COUNT])
     }
     return changed;
 }
+
+bool settings_rules_broken(const float vals[SET_COUNT], setting_rule_hit_t *hit, setting_id_t *id)
+{
+    setting_rule_hit_t h = { 0 };
+    setting_id_t who = SET_COUNT;
+    for (size_t c = 0; c < g_settings_chain_count && who == SET_COUNT; c++) {
+        const setting_chain_t *ch = &g_settings_chains[c];
+        for (int i = 0; i + 1 < ch->n; i++) {
+            const setting_operand_t *lo = &ch->ops[i], *hi = &ch->ops[i + 1];
+            if (op_val(lo, vals) + ch->gap <= op_val(hi, vals)) continue;
+            bool lo_is_setting = lo->id < SET_COUNT;
+            who = lo_is_setting ? lo->id : hi->id;
+            h = (setting_rule_hit_t){ .chain = ch, .other = lo_is_setting ? hi : lo, .other_above = lo_is_setting };
+            break;
+        }
+    }
+    for (size_t f = 0; f < g_settings_floor_count && who == SET_COUNT; f++) {
+        const setting_floor_t *fl = &g_settings_floors[f];
+        if (vals[fl->id] != 0.0f && vals[fl->id] < vals[fl->floor_id]) {
+            who = fl->id;
+            h = (setting_rule_hit_t){ .floor = fl };
+        }
+    }
+    if (who == SET_COUNT) return false;
+    if (hit) *hit = h;
+    if (id) *id = who;
+    return true;
+}

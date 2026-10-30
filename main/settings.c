@@ -12,7 +12,9 @@
  */
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -703,4 +705,391 @@ esp_err_t settings_init(void)
     ESP_LOGI(TAG, "%s schema %u: %d keys loaded, %d rejected, %d rows total", SETTINGS_NAMESPACE, SETTINGS_SCHEMA,
              loaded, rejected, SET_COUNT);
     return ESP_OK;
+}
+
+/* ---- export / import ---- */
+
+typedef struct {
+    char *buf;
+    size_t len, o;
+    bool full;
+} out_t;
+
+static void outf(out_t *w, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+static void outf(out_t *w, const char *fmt, ...)
+{
+    if (w->full) {
+        return;
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(w->buf + w->o, w->len - w->o, fmt, ap);
+    va_end(ap);
+    if (n < 0 || (size_t)n >= w->len - w->o) {
+        w->full = true;
+    } else {
+        w->o += (size_t)n;
+    }
+}
+
+static void out_str(out_t *w, const char *s)
+{
+    outf(w, "\"");
+    for (; s && *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c == '"' || c == '\\') {
+            outf(w, "\\%c", c);
+        } else if (c < 0x20) {
+            outf(w, "\\u%04x", c);
+        } else {
+            outf(w, "%c", c);
+        }
+    }
+    outf(w, "\"");
+}
+
+int settings_export_json(char *buf, size_t len, const char *firmware, bool include_password)
+{
+    out_t w = { .buf = buf, .len = len, .full = !buf || len == 0 };
+    outf(&w, "{\"format\":\"%s\",\"schema\":%d,\"firmware\":", SETTINGS_EXPORT_FORMAT, SETTINGS_SCHEMA);
+    out_str(&w, firmware);
+    outf(&w, ",\"settings\":{");
+    int n = 0;
+    for (int i = 0; i < SET_COUNT; i++) {
+        const setting_def_t *d = &g_settings_table[i];
+        if (d->type == SET_TYPE_ACTION || (i == SET_AP_PASSWORD && !include_password)) {
+            continue;
+        }
+        outf(&w, "%s\n\"%s\":", n++ ? "," : "", d->nvs_key);
+        if (d->type == SET_TYPE_STRING) {
+            char s[SETTINGS_STR_MAX];
+            settings_get_str((setting_id_t)i, s, sizeof(s));
+            out_str(&w, s);
+        } else if (d->type == SET_TYPE_BOOL) {
+            outf(&w, "%s", settings_get_bool((setting_id_t)i) ? "true" : "false");
+        } else if (d->type == SET_TYPE_FLOAT) {
+            outf(&w, "%g", (double)settings_get_float((setting_id_t)i));
+        } else {
+            outf(&w, "%ld", (long)settings_get_int((setting_id_t)i));
+        }
+    }
+    outf(&w, "\n}}\n");
+    return w.full ? -1 : (int)w.o;
+}
+
+/* Minimal JSON reader for the export file: objects, strings with \" \\ \/ escapes, numbers,
+ * true/false. Anything else (arrays, null, \u, text over 63 chars) makes the file unreadable. */
+enum { JV_NUM, JV_BOOL, JV_STR };
+typedef struct {
+    int kind;
+    float num;
+    char str[64];
+} jval_t;
+
+typedef struct {
+    float vals[SET_COUNT];          /* the would-be result: file values over current values */
+    bool in_file[SET_COUNT];        /* after apply: the row changed */
+    char pass[SETTINGS_STR_MAX];
+    char bad[128];                  /* first wrong value */
+    char unknown[128];
+    int n_unknown, schema;
+    bool format_ok, have_settings;
+} import_t;
+
+static const char *jws(const char *p)
+{
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+    return p;
+}
+
+static const char *jstr(const char *p, char *out, size_t n)
+{
+    if (*p++ != '"') {
+        return NULL;
+    }
+    size_t o = 0;
+    for (; *p != '"'; p++) {
+        if ((unsigned char)*p < 0x20) {
+            return NULL;    /* includes the end of the text */
+        }
+        if (*p == '\\' && *++p != '"' && *p != '\\' && *p != '/') {
+            return NULL;
+        }
+        if (o + 1 >= n) {
+            return NULL;
+        }
+        out[o++] = *p;
+    }
+    out[o] = '\0';
+    return p + 1;
+}
+
+static const char *jval(const char *p, jval_t *v)
+{
+    v->str[0] = '\0';
+    if (*p == '"') {
+        v->kind = JV_STR;
+        return jstr(p, v->str, sizeof(v->str));
+    }
+    if (strncmp(p, "true", 4) == 0 || strncmp(p, "false", 5) == 0) {
+        v->kind = JV_BOOL;
+        v->num = *p == 't';
+        return p + (*p == 't' ? 4 : 5);
+    }
+    if (*p != '-' && (*p < '0' || *p > '9')) {
+        return NULL;
+    }
+    char *end;
+    v->kind = JV_NUM;
+    v->num = strtof(p, &end);
+    for (const char *q = p; q < end; q++) {
+        if (!strchr("+-.eE0123456789", *q)) {
+            return NULL;    /* strtof also reads hex, inf, nan */
+        }
+    }
+    return isfinite(v->num) ? end : NULL;
+}
+
+static void import_item(import_t *im, const char *key, const jval_t *v)
+{
+    int id = -1;
+    for (int i = 0; i < SET_COUNT && id < 0; i++) {
+        const setting_def_t *r = &g_settings_table[i];
+        if (r->type != SET_TYPE_ACTION && strcmp(r->nvs_key, key) == 0) {
+            id = i;
+        }
+    }
+    if (id < 0) {
+        size_t o = strlen(im->unknown);
+        snprintf(im->unknown + o, sizeof(im->unknown) - o, "%s%s", im->n_unknown++ ? ", " : "", key);
+        return;
+    }
+    const setting_def_t *d = &g_settings_table[id];
+    bool twice = im->in_file[id];
+    im->in_file[id] = true;
+    if (im->bad[0]) {
+        return;
+    }
+    if (twice) {
+        snprintf(im->bad, sizeof(im->bad), "%.15s: listed twice", key);
+    } else if (d->type == SET_TYPE_STRING) {
+        size_t n = strlen(v->str);
+        bool ok = v->kind == JV_STR && (n == 0 || (n >= (size_t)d->min && n <= (size_t)d->max));
+        for (size_t i = 0; ok && i < n; i++) {
+            ok = v->str[i] >= 0x20 && v->str[i] <= 0x7e;
+        }
+        if (!ok) {
+            snprintf(im->bad, sizeof(im->bad), "%.15s: %g..%g printable characters, or empty for the built-in one",
+                     key, (double)d->min, (double)d->max);
+        } else {
+            memcpy(im->pass, v->str, n + 1);
+        }
+    } else if ((d->type == SET_TYPE_BOOL) != (v->kind == JV_BOOL) || v->kind == JV_STR) {
+        snprintf(im->bad, sizeof(im->bad), "%.15s: expected %s", key, d->type == SET_TYPE_BOOL ? "true or false" : "a number");
+    } else if (v->num < d->min || v->num > d->max ||
+               (d->step > 0.0f && fabsf(v->num / d->step - roundf(v->num / d->step)) > 0.001f)) {
+        snprintf(im->bad, sizeof(im->bad), "%.15s: %g is not allowed (%g..%g in steps of %g)",
+                 key, (double)v->num, (double)d->min, (double)d->max, (double)d->step);
+    } else {
+        im->vals[id] = sanitize(d, v->num);     /* on the grid already: only removes float noise */
+    }
+}
+
+static void import_top(import_t *im, const char *key, const jval_t *v)
+{
+    if (strcmp(key, "format") == 0) {
+        im->format_ok = v->kind == JV_STR && strcmp(v->str, SETTINGS_EXPORT_FORMAT) == 0;
+    } else if (strcmp(key, "schema") == 0 && v->kind == JV_NUM) {
+        im->schema = (int)v->num;
+    }
+    /* "firmware" and any other field: information only */
+}
+
+/* One object; top = the file itself, else its "settings" object. */
+static const char *import_obj(const char *p, import_t *im, bool top)
+{
+    if (*p++ != '{') {
+        return NULL;
+    }
+    p = jws(p);
+    if (*p == '}') {
+        return p + 1;
+    }
+    for (;;) {
+        char key[64];
+        jval_t v;
+        p = jstr(jws(p), key, sizeof(key));
+        if (!p || *(p = jws(p)) != ':') {
+            return NULL;
+        }
+        p = jws(p + 1);
+        if (top && *p == '{' && strcmp(key, "settings") == 0) {
+            im->have_settings = true;
+            p = import_obj(p, im, false);
+        } else if ((p = jval(p, &v)) != NULL) {
+            if (top) {
+                import_top(im, key, &v);
+            } else {
+                import_item(im, key, &v);
+            }
+        }
+        if (!p) {
+            return NULL;
+        }
+        p = jws(p);
+        if (*p == '}') {
+            return p + 1;
+        }
+        if (*p++ != ',') {
+            return NULL;
+        }
+    }
+}
+
+/* "Humidity A/C off (64 %RH) must be at least 2 %RH below Humidity A/C on (65 %RH)" */
+static void import_rule_note(const float vals[SET_COUNT], setting_id_t id, const setting_rule_hit_t *h, char *buf, size_t len)
+{
+    const setting_def_t *d = settings_def(id);
+    char v[24], ov[24], gap[24];
+    fmt_amount(d, vals[id], false, v, sizeof(v));
+    if (h->floor) {
+        const setting_def_t *fd = settings_def(h->floor->floor_id);
+        fmt_amount(fd, vals[fd->id], false, ov, sizeof(ov));
+        snprintf(buf, len, "%s (%s): 0 = default, else at least %s (%s)", d->label_en, v, fd->label_en, ov);
+        return;
+    }
+    const setting_operand_t *o = h->other;
+    fmt_amount(d, o->id < SET_COUNT ? vals[o->id] : o->k, false, ov, sizeof(ov));
+    const char *other = o->id < SET_COUNT ? settings_def(o->id)->label_en : o->name_en;
+    if (h->chain->gap > 0.0f) {
+        fmt_amount(d, h->chain->gap, true, gap, sizeof(gap));
+        snprintf(buf, len, "%s (%s) must be at least %s %s %s (%s)", d->label_en, v, gap,
+                 h->other_above ? "below" : "above", other, ov);
+    } else {
+        snprintf(buf, len, "%s (%s) must not be %s %s (%s)", d->label_en, v,
+                 h->other_above ? "above" : "below", other, ov);
+    }
+}
+
+/* Validation order: JSON, format, schema, unknown keys, each value (first wrong one), SERVICE gate, rules. */
+static esp_err_t import_check(const char *json, bool service_ok, import_t *im, char *why, size_t why_len)
+{
+    for (int i = 0; i < SET_COUNT; i++) {
+        im->vals[i] = s_val[i];
+    }
+    const char *end = import_obj(jws(json), im, true);
+    if (!end || *jws(end) != '\0') {
+        snprintf(why, why_len, "Not a settings file (the JSON could not be read)");
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!im->format_ok) {
+        snprintf(why, why_len, "Not a settings file (format is not \"%s\")", SETTINGS_EXPORT_FORMAT);
+        return ESP_ERR_INVALID_ARG;
+    }
+    /* A schema bump adds its migration of the file's values here; none exist yet. */
+    if (im->schema != SETTINGS_SCHEMA) {
+        snprintf(why, why_len, im->schema > SETTINGS_SCHEMA
+                 ? "File is from newer firmware (settings schema %d, this firmware has %d): update the firmware first"
+                 : "File has settings schema %d; this firmware (schema %d) cannot convert it",
+                 im->schema, SETTINGS_SCHEMA);
+        return ESP_ERR_INVALID_VERSION;
+    }
+    if (!im->have_settings) {
+        snprintf(why, why_len, "Not a settings file (no \"settings\" object)");
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (im->n_unknown) {
+        snprintf(why, why_len, "Unknown setting%s: %s", im->n_unknown > 1 ? "s" : "", im->unknown);
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (im->bad[0]) {
+        snprintf(why, why_len, "%s", im->bad);
+        return ESP_ERR_INVALID_ARG;
+    }
+    for (int i = 0; i < SET_COUNT && !service_ok; i++) {
+        if (g_settings_table[i].group == SET_GROUP_SERVICE && im->vals[i] != s_val[i]) {
+            snprintf(why, why_len, "Service settings change only with mode OFF (%s)", g_settings_table[i].nvs_key);
+            return ESP_ERR_INVALID_STATE;
+        }
+    }
+    setting_rule_hit_t hit;
+    setting_id_t id;
+    if (settings_rules_broken(im->vals, &hit, &id)) {
+        import_rule_note(im->vals, id, &hit, why, why_len);
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
+esp_err_t settings_import_json(const char *json, bool service_ok, int *changed, char *why, size_t why_len)
+{
+    char dummy[1];
+    if (!why || why_len == 0) {
+        why = dummy;
+        why_len = sizeof(dummy);
+    }
+    why[0] = '\0';
+    *changed = 0;
+    import_t *im = calloc(1, sizeof(*im));      /* ~1 KB: kept off the caller's (httpd) stack */
+    if (!im || !json) {
+        free(im);
+        snprintf(why, why_len, "Out of memory");
+        return ESP_ERR_NO_MEM;
+    }
+    esp_err_t err = import_check(json, service_ok, im, why, why_len);
+    bool pass_in_file = im->in_file[SET_AP_PASSWORD];
+    im->in_file[SET_AP_PASSWORD] = false;       /* set below through settings_set_str */
+
+    if (err == ESP_OK) {
+        /* Write the checked set as a whole, no per-value rule clamp: one at a time could trip a rule
+         * half-way (e.g. lowering both humidity values). Rows not in the file are re-read here, so a
+         * change made since the check is checked again. */
+        taskENTER_CRITICAL(&s_lock);
+        for (int i = 0; i < SET_COUNT; i++) {
+            if (!im->in_file[i]) {
+                im->vals[i] = s_val[i];
+            }
+        }
+        bool ok = !settings_rules_broken(im->vals, NULL, NULL);
+        for (int i = 0; i < SET_COUNT; i++) {
+            im->in_file[i] = ok && im->in_file[i] && store_locked((setting_id_t)i, im->vals[i]);
+        }
+        taskEXIT_CRITICAL(&s_lock);
+        if (!ok) {
+            snprintf(why, why_len, "A setting changed during the import; nothing imported, try again");
+            err = ESP_ERR_INVALID_STATE;
+        }
+    }
+    if (err == ESP_OK) {
+        setting_apply_cb_t done[8];     /* each callback once: the value rows' callbacks ignore the id */
+        size_t n_done = 0;
+        for (int i = 0; i < SET_COUNT; i++) {
+            setting_apply_cb_t cb = g_settings_table[i].apply_cb;
+            if (!im->in_file[i]) {
+                continue;
+            }
+            (*changed)++;
+            size_t k = 0;
+            while (k < n_done && done[k] != cb) k++;
+            if (cb && k == n_done) {
+                if (n_done < sizeof(done) / sizeof(done[0])) {
+                    done[n_done++] = cb;
+                }
+                cb((setting_id_t)i);
+            }
+        }
+        if (*changed && s_persist_task) {
+            xTaskNotifyGive(s_persist_task);
+        }
+        char cur[SETTINGS_STR_MAX];
+        settings_get_str(SET_AP_PASSWORD, cur, sizeof(cur));    /* the generated one when none is set */
+        uint32_t seq = s_seq;
+        if (pass_in_file && strcmp(cur, im->pass) != 0 && settings_set_str(SET_AP_PASSWORD, im->pass) == ESP_OK &&
+            s_seq != seq) {
+            (*changed)++;
+        }
+        ESP_LOGI(TAG, "import: %d settings changed", *changed);
+    }
+    free(im);
+    return err;
 }

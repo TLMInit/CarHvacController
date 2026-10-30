@@ -41,7 +41,14 @@ progress{width:100%;height:14px}
  <div class="card"><h3>Climate</h3><div class="kv" id="state"></div></div>
  <div class="card"><h3>Connection</h3><div class="kv" id="conn"></div></div>
 </section>
-<section id="s-settings"><div id="settings"></div></section>
+<section id="s-settings"><div id="settings"></div>
+ <div id="backup"><h3>Settings file</h3>
+  <p class="mut">Export saves every setting to a file. The Wi-Fi password is left out unless ticked below (the file may travel). Import checks the whole file first: if any value is refused, nothing changes.</p>
+  <label><input type="checkbox" id="x-pw"> Include the Wi-Fi password</label>
+  <p><button class="go" id="b-export">Export</button></p>
+  <input type="file" id="f-import" accept=".json,application/json"><p><button class="go" id="b-import">Import</button></p>
+  <p id="m-import" class="mut"></p></div>
+</section>
 <section id="s-log"><div class="card log" id="log"></div></section>
 <section id="s-diag">
  <div class="card"><h3 id="stsum">Self-test</h3><div class="kv" id="selftest"></div></div>
@@ -110,8 +117,18 @@ async function loadSettings(){
    else{inp=el("input");inp.type="number";inp.min=r.min;inp.max=r.max;inp.step=r.step||"any";inp.value=r.value;inp.inputMode="decimal";
     inp.onchange=()=>{const v=parseFloat(inp.value);if(isNaN(v)){msg.textContent="Enter a number";msg.className="bad";return}save(r.key,v,msg)}}
    if(inp)row.append(inp);card.append(row)}
+  if(gi===7)card.append(backup);// next to Factory reset
   if(card.children.length>1)box.append(card)});
 }
+const backup=$("backup");
+$("b-export").onclick=()=>{location.href="/api/settings/export"+($("x-pw").checked?"?include_password=1":"")};
+$("b-import").onclick=async()=>{const f=$("f-import").files[0],m=$("m-import");
+ if(!f){m.textContent="Choose a settings file first";m.className="bad";return}
+ if(f.size>16384){m.textContent="File is larger than 16 KB";m.className="bad";return}
+ m.textContent="Importing…";m.className="mut";
+ try{const r=await fetch("/api/settings/import",{method:"POST",headers:{"Content-Type":"application/json"},body:await f.text()});
+  const j=await r.json();m.textContent=j.ok?j.msg:"Not imported: "+j.msg;m.className=j.ok?"ok":"bad";if(j.ok)loadSettings()}
+ catch(e){m.textContent="Import failed";m.className="bad"}};
 async function loadLog(){
  const box=$("log");
  try{const ev=await getJ("/api/log");box.replaceChildren();
