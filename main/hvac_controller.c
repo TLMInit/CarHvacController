@@ -1158,7 +1158,7 @@ static void set_mode_locked(hvac_mode_t mode)
 
     if (mode == HVAC_MODE_OFF) {
         // Turn off everything
-        bts7960_stop();
+        bts7960_stop(cfg.soft_start_ms);
         tb6612fng_stop_all_valves();
         set_ac_compressor(false);  // Turn off A/C when system is OFF
         hvac_state.blower_speed = 0;

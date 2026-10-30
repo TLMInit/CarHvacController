@@ -81,9 +81,10 @@ uint8_t bts7960_get_target_speed(void);
 bool bts7960_is_ramping(void);
 
 /**
- * @brief Stop blower motor immediately
+ * @brief Ramp the blower to 0
+ * @param ramp_time_ms Ramp time (the controller passes SET_SOFT_START_MS, like every other ramp)
  */
-void bts7960_stop(void);
+void bts7960_stop(uint32_t ramp_time_ms);
 
 /**
  * @brief Re-send the current duty to the node (restores it after a node reset)

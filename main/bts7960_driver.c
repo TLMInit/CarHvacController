@@ -33,7 +33,6 @@ static int16_t ramp_step_size = 0;
 
 // Task timing
 #define BLOWER_TASK_PERIOD_MS   20      // 50Hz update rate
-#define DEFAULT_RAMP_TIME_MS    500     // Default speed ramp time
 
 /*******************************************************************************
  * Private Functions
@@ -182,10 +181,10 @@ bool bts7960_is_ramping(void)
     return ramping;
 }
 
-void bts7960_stop(void)
+void bts7960_stop(uint32_t ramp_time_ms)
 {
     ESP_LOGI(TAG, "Stopping blower");
-    bts7960_set_speed_ramp(0, DEFAULT_RAMP_TIME_MS);
+    bts7960_set_speed_ramp(0, ramp_time_ms);
 }
 
 void bts7960_refresh(void)
