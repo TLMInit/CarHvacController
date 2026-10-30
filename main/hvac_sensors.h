@@ -60,11 +60,11 @@ typedef struct {
     float cabin_temp_c;         // Cabin temperature in °C
     float cabin_humidity;       // Cabin humidity in %RH
     float duct_temp_c;          // Duct air temperature in °C
-    uint8_t center_valve_pos;   // Center valve 1 position (0-100%)
-    uint8_t center2_valve_pos;  // Center valve 2 position (0-100%)
-    uint8_t foot_valve_pos;     // Foot valve position (0-100%)
-    uint8_t windscreen_valve_pos;  // Windscreen valve position (0-100%)
-    uint8_t coolant_valve_pos;  // Coolant control valve position (0-100%)
+    uint8_t center_valve_pos;   // Center valve 1, open % (same unit as the target)
+    uint8_t center2_valve_pos;  // Center valve 2, open %
+    uint8_t foot_valve_pos;     // Foot valve, open %
+    uint8_t windscreen_valve_pos;  // Windscreen valve, open %
+    uint8_t coolant_valve_pos;  // Coolant valve, open %
     sensor_status_t cabin_status;
     sensor_status_t duct_status;
 } hvac_sensor_readings_t;
@@ -128,36 +128,6 @@ float hvac_sensors_get_cabin_humidity(void);
  * @return Temperature in °C (NAN if error)
  */
 float hvac_sensors_get_duct_temp(void);
-
-/**
- * @brief Get center valve 1 position feedback
- * @return Position in percent (0-100)
- */
-uint8_t hvac_sensors_get_center_valve_pos(void);
-
-/**
- * @brief Get center valve 2 position feedback
- * @return Position in percent (0-100)
- */
-uint8_t hvac_sensors_get_center2_valve_pos(void);
-
-/**
- * @brief Get foot valve position feedback
- * @return Position in percent (0-100)
- */
-uint8_t hvac_sensors_get_foot_valve_pos(void);
-
-/**
- * @brief Get windscreen valve position feedback
- * @return Position in percent (0-100)
- */
-uint8_t hvac_sensors_get_windscreen_valve_pos(void);
-
-/**
- * @brief Get coolant control valve position feedback
- * @return Position in percent (0-100)
- */
-uint8_t hvac_sensors_get_coolant_valve_pos(void);
 
 /**
  * @brief Check if sensors are healthy

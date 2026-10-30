@@ -9,7 +9,7 @@ Use the 320×240 panel in landscape. Photograph the full active area straight-on
 5. **Main / sensor fault:** unplug the selected sensor safely with ignition/vehicle in a safe test state; capture the main SENSOR badge.
 6. **Main / valve fault:** under a controlled test, trigger a known valve stall; capture the main VALVE/FAULT badge.
 7. **Main / link lost:** safely stop/disconnect remote IO communication; capture LINK LOST on the main header.
-8. **Diagnostics / normal:** show temperatures, mode, fan, blower %, the five named actual/target valve rows and thermal state.
+8. **Diagnostics / normal:** show temperatures, mode, fan, blower %, the five named valve rows and thermal state. `ACT` and `TARGET` are both open % (0 = closed, 100 = fully open), so a settled valve shows them within a few percent of each other; before v2.2 `ACT` was the raw pot reading and did not match.
 9. **Diagnostics / link loss:** capture the plain-language LINK LOST explanation and TX/RX/CRC/timeout counters.
 10. **Diagnostics / DAY:** photograph the button in DAY state; then tap it, photograph NIGHT and power-cycle to verify persistence.
 11. **Airflow picker:** open MODE and photograph all seven modes plus Cancel; confirm all cells are visible and tappable.

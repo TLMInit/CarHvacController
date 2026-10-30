@@ -60,8 +60,6 @@ static SemaphoreHandle_t sensor_mutex = NULL;
 static TaskHandle_t sensor_task_handle = NULL;
 
 // Valve position storage (5 valves: center1, center2, foot, windscreen, coolant)
-static uint8_t valve_positions[5] = {0, 0, 0, 0, 0};
-static SemaphoreHandle_t valve_mutex = NULL;
 
 // Configuration
 static uint32_t sensor_interval_ms = 100;   // Default 100ms for responsive valve control
@@ -954,10 +952,6 @@ static void read_valve_positions(void)
         if (ok_streak[i] < VALVE_FEEDBACK_FAIL_LIMIT && ++ok_streak[i] == VALVE_FEEDBACK_FAIL_LIMIT) {
             tb6612fng_set_feedback_fault((hvac_valve_id_t)i, false);
         }
-        if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            valve_positions[i] = pos;
-            xSemaphoreGive(valve_mutex);
-        }
         tb6612fng_update_feedback((hvac_valve_id_t)i, pos);
     }
 }
@@ -979,12 +973,6 @@ esp_err_t hvac_sensors_init(i2c_master_bus_handle_t i2c_bus)
     sensor_mutex = xSemaphoreCreateMutex();
     if (sensor_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create sensor mutex");
-        return ESP_ERR_NO_MEM;
-    }
-    
-    valve_mutex = xSemaphoreCreateMutex();
-    if (valve_mutex == NULL) {
-        ESP_LOGE(TAG, "Failed to create valve mutex");
         return ESP_ERR_NO_MEM;
     }
     
@@ -1034,10 +1022,6 @@ void hvac_sensors_deinit(void)
     if (sensor_mutex) {
         vSemaphoreDelete(sensor_mutex);
         sensor_mutex = NULL;
-    }
-    if (valve_mutex) {
-        vSemaphoreDelete(valve_mutex);
-        valve_mutex = NULL;
     }
 }
 
@@ -1128,16 +1112,13 @@ void hvac_sensors_get_all(hvac_sensor_readings_t *readings)
         xSemaphoreGive(sensor_mutex);
     }
     
-    // Get valve positions separately with valve_mutex
-    // Note: indices are 0=center1, 1=center2, 2=foot, 3=windscreen, 4=coolant
-    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        readings->center_valve_pos = valve_positions[0];   // Center 1
-        readings->center2_valve_pos = valve_positions[1];  // Center 2
-        readings->foot_valve_pos = valve_positions[2];
-        readings->windscreen_valve_pos = valve_positions[3];
-        readings->coolant_valve_pos = valve_positions[4];
-        xSemaphoreGive(valve_mutex);
-    }
+    // Open % from the valve driver: the same unit as the targets (finding 4). The raw pot
+    // reading of a butterfly valve is not a position: 0-100 % of the pot is a full turn.
+    readings->center_valve_pos = tb6612fng_get_valve_position(HVAC_VALVE_CENTER_1);
+    readings->center2_valve_pos = tb6612fng_get_valve_position(HVAC_VALVE_CENTER_2);
+    readings->foot_valve_pos = tb6612fng_get_valve_position(HVAC_VALVE_FOOT);
+    readings->windscreen_valve_pos = tb6612fng_get_valve_position(HVAC_VALVE_WINDSCREEN);
+    readings->coolant_valve_pos = tb6612fng_get_valve_position(HVAC_VALVE_COOLANT);
 }
 
 float hvac_sensors_get_cabin_temp(void)
@@ -1153,56 +1134,6 @@ float hvac_sensors_get_cabin_humidity(void)
 float hvac_sensors_get_duct_temp(void)
 {
     return hvac_sensors_get_value(SENSOR_DUCT_TEMP);
-}
-
-uint8_t hvac_sensors_get_center_valve_pos(void)
-{
-    uint8_t pos = 0;
-    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        pos = valve_positions[0];  // Center 1
-        xSemaphoreGive(valve_mutex);
-    }
-    return pos;
-}
-
-uint8_t hvac_sensors_get_center2_valve_pos(void)
-{
-    uint8_t pos = 0;
-    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        pos = valve_positions[1];  // Center 2
-        xSemaphoreGive(valve_mutex);
-    }
-    return pos;
-}
-
-uint8_t hvac_sensors_get_foot_valve_pos(void)
-{
-    uint8_t pos = 0;
-    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        pos = valve_positions[2];  // Foot
-        xSemaphoreGive(valve_mutex);
-    }
-    return pos;
-}
-
-uint8_t hvac_sensors_get_windscreen_valve_pos(void)
-{
-    uint8_t pos = 0;
-    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        pos = valve_positions[3];  // Windscreen
-        xSemaphoreGive(valve_mutex);
-    }
-    return pos;
-}
-
-uint8_t hvac_sensors_get_coolant_valve_pos(void)
-{
-    uint8_t pos = 0;
-    if (xSemaphoreTake(valve_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        pos = valve_positions[4];  // Coolant
-        xSemaphoreGive(valve_mutex);
-    }
-    return pos;
 }
 
 bool hvac_sensors_all_healthy(void)
