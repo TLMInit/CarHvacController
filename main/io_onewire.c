@@ -6,10 +6,13 @@
  * Read Scratchpad, 750 ms apart, so the node never blocks on a conversion.
  */
 
+#include <string.h>
 #include "io_onewire.h"
 #include "node_config.h"
 #include "onewire_bus.h"
 #include "onewire_bus_impl_rmt.h"
+#include "onewire_device.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -17,6 +20,9 @@
 static const char *TAG = "IO_1W";
 
 #define DS18B20_READ_ATTEMPTS   3       /* the original node retried scratchpad reads too */
+/* One ROM takes ~200 RMT bit slots (~20-30 ms); no new ROM is started after this,
+ * so the reply stays inside the display's 200 ms timeout. */
+#define ONEWIRE_SEARCH_BUDGET_US 100000
 
 #define OW_CMD_SKIP_ROM         0xCC
 #define OW_CMD_MATCH_ROM        0x55
@@ -141,4 +147,31 @@ esp_err_t io_ds18b20_read(const uint8_t *rom, int16_t *temp_x100)
         vTaskDelay(pdMS_TO_TICKS(2));
     }
     return err;
+}
+
+esp_err_t io_onewire_search(uint8_t roms[][8], size_t max_roms, size_t *count)
+{
+    *count = 0;
+    if (s_bus == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    onewire_device_iter_handle_t iter;
+    esp_err_t err = onewire_new_device_iter(s_bus, &iter);
+    if (err != ESP_OK) {
+        return err;
+    }
+    int64_t t0 = esp_timer_get_time();
+    while (*count < max_roms && esp_timer_get_time() - t0 < ONEWIRE_SEARCH_BUDGET_US) {
+        onewire_device_t dev;
+        err = onewire_device_iter_get_next(iter, &dev);
+        if (err != ESP_OK) {
+            break;
+        }
+        /* address holds the ROM bytes in bus order (family code first) on this little-endian CPU */
+        memcpy(roms[(*count)++], &dev.address, 8);
+    }
+    onewire_del_device_iter(iter);
+    ESP_LOGI(TAG, "Search: %u ROM(s) in %lld us", (unsigned)*count, (long long)(esp_timer_get_time() - t0));
+    /* NOT_FOUND = search finished (or nothing on the bus); a later failure keeps what was found */
+    return (err == ESP_ERR_NOT_FOUND || *count > 0) ? ESP_OK : err;
 }

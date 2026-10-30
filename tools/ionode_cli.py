@@ -12,6 +12,9 @@ will not work.
 Examples:
   ionode_cli.py -p COM7 ping
   ionode_cli.py -p COM7 version
+  ionode_cli.py -p COM7 hello                   # protocol 2 handshake: version, capabilities
+  ionode_cli.py -p COM7 search                  # 1-Wire ROM codes on the bus
+  ionode_cli.py -p COM7 ota build/CarHvacIoNode.bin   # flash the inactive slot over the link, reboot, confirm
   ionode_cli.py -p COM7 ads-all                 # all 8 ADS1115 inputs in raw, mV and %
   ionode_cli.py -p COM7 ds18b20                 # duct temperature
   ionode_cli.py -p COM7 bme280                  # chip id of the cabin sensor
@@ -24,6 +27,7 @@ Examples:
 """
 
 import argparse
+import hashlib
 import statistics
 import sys
 import time
@@ -34,21 +38,27 @@ except ImportError:  # pragma: no cover - only matters on the PC
     serial = None
 
 # --- protocol constants (cobs_protocol.h) ---------------------------------
-MSG_PING, MSG_VERSION = 0x01, 0x02
+MSG_PING, MSG_VERSION, MSG_HELLO = 0x01, 0x02, 0x03
 MSG_GPIO_SET, MSG_GPIO_GET, MSG_GPIO_MODE = 0x10, 0x11, 0x12
 MSG_PWM_SET, MSG_PWM_INIT = 0x20, 0x21
 MSG_I2C_WRITE, MSG_I2C_READ = 0x30, 0x31
 MSG_ADS_READ = 0x40
-MSG_DS18B20_START, MSG_DS18B20_READ = 0x50, 0x51
+MSG_DS18B20_START, MSG_DS18B20_READ, MSG_ONEWIRE_SEARCH = 0x50, 0x51, 0x52
+MSG_OTA_BEGIN, MSG_OTA_DATA, MSG_OTA_END, MSG_OTA_STATUS = 0x60, 0x61, 0x62, 0x63
+PROTOCOL_VERSION = 2
+OTA_DATA_MAX = 56
+OTA_STATES = {0: "IDLE", 1: "RECEIVING", 2: "READY", 3: "ERROR", 4: "PENDING"}
 MSG_RESET = 0xF0
 
 RESP_NAMES = {
     0x80: "OK", 0x81: "ERROR", 0x82: "PONG", 0x83: "VERSION", 0x84: "GPIO_VALUE",
     0x85: "I2C_DATA", 0x86: "ADS_VALUE", 0x87: "TEMP_VALUE",
+    0x88: "HELLO_RESP", 0x89: "ROM_LIST", 0x8A: "OTA_ACK",
 }
 ERR_NAMES = {
     0: "none", 1: "invalid command", 2: "invalid arguments", 3: "invalid pin",
     4: "I2C failure", 5: "timeout / no device", 6: "CRC mismatch", 7: "frame error", 8: "overflow",
+    9: "OTA state", 10: "OTA write", 11: "OTA verify",
 }
 
 # Carrier pin map (hvac_hw_config.h / node_config.h): name -> (IN1, IN2, PWM, ADS address, ADS channel)
@@ -120,20 +130,18 @@ def build_frame(msg_type: int, payload: bytes = b"") -> bytes:
 def parse_frame(frame: bytes):
     """frame without the 0x00 delimiter -> (type, payload) or None.
 
-    Mirrors the display's parser: it strips one trailing 0x00 before checking
-    the CRC, and the node pads replies whose CRC ends in 0x00 to survive that
-    (LINK_PAD_TRAILING_ZERO). A node built without padding is handled by the
-    second attempt.
+    Until it sees a HELLO the node pads replies whose CRC ends in 0x00 with one
+    more 0x00 (for the protocol 1 display's decoder). Trying the CRC both ways
+    cannot tell padded from unpadded: with this CRC both pass, one byte apart.
+    A frame ending in 00 00 is padded (unpadded only if the CRC is 0x0000, 1 in 65536).
     """
     raw = cobs_decode(frame)
     if raw is None or len(raw) < 3:
         return None
-    candidates = [raw]
-    if raw[-1] == 0 and len(raw) >= 4:
-        candidates.insert(0, raw[:-1])
-    for r in candidates:
-        if crc16_ccitt(r[:-2]) == int.from_bytes(r[-2:], "big"):
-            return r[0], r[1:-2]
+    if len(raw) >= 4 and raw[-1] == 0 and raw[-2] == 0:
+        raw = raw[:-1]
+    if crc16_ccitt(raw[:-2]) == int.from_bytes(raw[-2:], "big"):
+        return raw[0], raw[1:-2]
     return None
 
 
@@ -207,6 +215,18 @@ class Node:
         d = self.expect(MSG_ADS_READ, bytes([addr, ch]), want=0x86)
         return int.from_bytes(d[1:3], "big", signed=True)
 
+    def hello(self):
+        d = self.expect(MSG_HELLO, bytes([PROTOCOL_VERSION]), want=0x88)
+        return d[0], d[1], d[2:].split(b"\x00")[0].decode(errors="replace")
+
+    def search(self):
+        d = self.expect(MSG_ONEWIRE_SEARCH, want=0x89)
+        return [d[1 + 8 * i:9 + 8 * i] for i in range(d[0])]
+
+    def ota_ack(self, msg_type, payload=b""):
+        d = self.expect(msg_type, payload, want=0x8A)
+        return d[0], int.from_bytes(d[1:5], "big")
+
     def ds18b20(self) -> float:
         self.expect(MSG_DS18B20_START)
         time.sleep(0.8)
@@ -270,6 +290,45 @@ def cmd_stress(node: Node, count: int):
         print("no successful pings (%d failures)" % failures)
 
 
+def cmd_ota(node: Node, path: str):
+    image = open(path, "rb").read()
+    print("%s: %d bytes, sha256 %s" % (path, len(image), hashlib.sha256(image).hexdigest()))
+    node.ota_ack(MSG_OTA_BEGIN, len(image).to_bytes(4, "big") + hashlib.sha256(image).digest())
+    off, t0, retries = 0, time.monotonic(), 0
+    while off < len(image):
+        chunk = image[off:off + OTA_DATA_MAX]
+        try:
+            _, off = node.ota_ack(MSG_OTA_DATA, off.to_bytes(4, "big") + chunk)
+        except (TimeoutError, IOError) as e:
+            # a lost reply or a rejected offset: ask the node where it is and resume there
+            retries += 1
+            if retries > 20:
+                raise
+            state, off = node.ota_ack(MSG_OTA_STATUS)
+            print("\n%s, node %s at %d, resuming" % (e, OTA_STATES.get(state, state), off))
+            if state != 1:
+                raise IOError("transfer aborted by the node")
+        if off % 16384 < OTA_DATA_MAX or off == len(image):
+            print("\r%6.1f %%  %d bytes  %.1f s" % (100.0 * off / len(image), off, time.monotonic() - t0), end="", flush=True)
+    print()
+    state, n = node.ota_ack(MSG_OTA_END)
+    print("END: %s, %d bytes" % (OTA_STATES.get(state, state), n))
+    node.expect(MSG_RESET)
+    print("RESET sent, waiting for the new image")
+    deadline = time.monotonic() + 15
+    while True:
+        time.sleep(0.25)
+        try:
+            node.ping()
+            break
+        except (TimeoutError, IOError):
+            if time.monotonic() > deadline:
+                raise TimeoutError("node did not come back within 15 s")
+    print("PONG, " + node.version())
+    state, _ = node.ota_ack(MSG_OTA_STATUS)
+    print("OTA state %s (IDLE = new image confirmed)" % OTA_STATES.get(state, state))
+
+
 def cmd_bme280(node: Node):
     for addr in (0x76, 0x77):
         try:
@@ -288,6 +347,10 @@ def main():
 
     sub.add_parser("ping")
     sub.add_parser("version")
+    sub.add_parser("hello")
+    sub.add_parser("search")
+    sub.add_parser("ota-status")
+    s = sub.add_parser("ota"); s.add_argument("file")
     s = sub.add_parser("gpio-mode"); s.add_argument("pin", type=int); s.add_argument("mode", type=int, help="0 in, 1 out, 2 in-pullup, 3 in-pulldown, 4 out-od")
     s = sub.add_parser("gpio-set"); s.add_argument("pin", type=int); s.add_argument("level", type=int)
     s = sub.add_parser("gpio-get"); s.add_argument("pin", type=int)
@@ -313,6 +376,20 @@ def main():
         node.ping(); print("PONG")
     elif c == "version":
         print(node.version())
+    elif c == "hello":
+        ver, caps, text = node.hello()
+        print("protocol %d, caps 0x%02X (%s), %s" % (ver, caps, " ".join(
+            n for b, n in ((1, "search"), (2, "ota")) if caps & b) or "-", text))
+    elif c == "search":
+        roms = node.search()
+        print("%d ROM(s)" % len(roms))
+        for r in roms:
+            print("  " + r.hex(" "))
+    elif c == "ota-status":
+        state, n = node.ota_ack(MSG_OTA_STATUS)
+        print("%s, %d bytes" % (OTA_STATES.get(state, state), n))
+    elif c == "ota":
+        cmd_ota(node, args.file)
     elif c == "gpio-mode":
         node.gpio_mode(args.pin, args.mode); print("OK")
     elif c == "gpio-set":

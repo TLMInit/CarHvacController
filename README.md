@@ -44,6 +44,23 @@ Use the DevKitC's **UART** USB-C port (CP2102) for flashing and the console; the
 boot log should end with `Ready, waiting for the display`. If flashing does not
 start, hold BOOT while pressing RST, then retry.
 
+From 2.2 on the node uses its own partition table (`partitions.csv`, two OTA app
+slots) and a bootloader with rollback. The first time a 2.2 build goes onto a board
+that ran 2.1 or older, flash everything over USB with `idf.py -p COM7 flash`
+(bootloader, partition table, otadata, app); `app-flash` alone is not enough. After
+that, updates can go over the link (see [Node OTA](#node-ota)).
+
+| Partition | Offset | Size |
+| --- | --- | --- |
+| nvs | 0x9000 | 16 KB |
+| otadata | 0xD000 | 8 KB |
+| phy_init | 0xF000 | 4 KB |
+| ota_0 | 0x10000 | 960 KB |
+| ota_1 | 0x100000 | 960 KB |
+
+The map ends at 1.94 MB, so the same image boots on 2, 8 and 16 MB modules (the
+N16R8 simply leaves the rest unused). The app is about 300 KB.
+
 `dependencies.lock` is committed on purpose so the `onewire_bus` component stays at
 the version that was built and tested.
 
@@ -54,7 +71,11 @@ GPIO21, adapter RX ← node GPIO2, GND ↔ GND. `pip install pyserial`, then:
 
 ```
 python tools/ionode_cli.py -p COM8 ping           # PONG
-python tools/ionode_cli.py -p COM8 version        # ionode 2.0 (<git describe>) up=<s> rst=<reason>
+python tools/ionode_cli.py -p COM8 version        # ionode 2.2 (<git describe>) up=<s> rst=<reason>
+python tools/ionode_cli.py -p COM8 hello          # protocol 2, caps 0x03 (search ota), ionode 2.2 (<git describe>)
+python tools/ionode_cli.py -p COM8 search         # 1 ROM(s), then e.g. 28 ff 64 1e 0f 21 03 5a
+python tools/ionode_cli.py -p COM8 ota-status     # IDLE, 0 bytes
+python tools/ionode_cli.py -p COM8 ota build/CarHvacIoNode.bin   # ~15 s, then reboot and confirm
 python tools/ionode_cli.py -p COM8 stress 200     # round trip; expect ~1 ms median
 python tools/ionode_cli.py -p COM8 ads-all        # 8 pot readings, raw / mV / %
 python tools/ionode_cli.py -p COM8 ds18b20        # duct temperature
@@ -86,6 +107,7 @@ at most 63 bytes. The node answers every command with exactly one frame.
 | --- | --- | --- |
 | PING 0x01 | — | PONG 0x82 |
 | VERSION 0x02 | — | 0x83, version string, NUL |
+| HELLO 0x03 | display protocol version | 0x88 protocol version (2), capabilities (0x01 search, 0x02 OTA), version string, NUL |
 | GPIO_SET 0x10 | pin, level | OK 0x80 |
 | GPIO_GET 0x11 | pin | 0x84 pin, level |
 | GPIO_MODE 0x12 | pin, mode (0 in, 1 out, 2 in-pullup, 3 in-pulldown, 4 out-od) | OK |
@@ -96,10 +118,53 @@ at most 63 bytes. The node answers every command with exactly one frame.
 | ADS_READ 0x40 | i2c addr, channel 0–3 | 0x86 channel, hi, lo (raw int16, PGA ±4.096 V) |
 | DS18B20_START 0x50 | optional 8-byte ROM | OK |
 | DS18B20_READ 0x51 | optional 8-byte ROM | 0x87 temperature × 100, int16 big-endian |
+| ONEWIRE_SEARCH 0x52 | — | 0x89 count, count × 8-byte ROM (family code first), at most 4 |
+| OTA_BEGIN 0x60 | size u32 BE, sha256 (32) | 0x8A OTA_ACK: state, bytes received u32 BE |
+| OTA_DATA 0x61 | offset u32 BE, 1–56 bytes | OTA_ACK |
+| OTA_END 0x62 | — | OTA_ACK (READY) |
+| OTA_STATUS 0x63 | — | OTA_ACK |
 | RESET 0xF0 | — | OK, then the node restarts |
 
 Errors come back as `0x81` with one code byte: 1 invalid command, 2 invalid
-arguments, 3 invalid pin, 4 I2C failure, 5 timeout or no device, 6 CRC mismatch.
+arguments, 3 invalid pin, 4 I2C failure, 5 timeout or no device, 6 CRC mismatch,
+9 OTA command out of order, 10 OTA write failed or offset not contiguous, 11 OTA
+size or sha256 mismatch.
+
+### Protocol 2
+
+- **Handshake.** A protocol 2 display sends HELLO with its protocol version on every
+  connect. HELLO_RESP carries the node's protocol version, the capability bits and
+  the same `ionode 2.2 (<git describe>)` text as VERSION. A 2.1 node answers HELLO
+  with error 1, which tells the display it is talking to protocol 1.
+- **Pad rule.** Until the first HELLO since boot, replies whose CRC ends in 0x00
+  get the compatibility pad described below. From that HELLO on (HELLO_RESP
+  included) nothing is padded. `LINK_PAD_TRAILING_ZERO 0` turns the pad off entirely.
+- **ONEWIRE_SEARCH** runs the 1-Wire ROM search on GPIO7. One ROM takes roughly
+  20–30 ms; no new ROM is started after 100 ms, so the reply comes well inside the
+  display's 200 ms timeout. An empty bus gives count 0; error 5 if the bus driver
+  never started.
+
+### Node OTA
+
+1. `OTA_BEGIN` size + sha256: all outputs go to their safe state, the inactive slot
+   is opened without an up-front erase. Reply OTA_ACK(RECEIVING, 0). BEGIN in any
+   state except PENDING starts over.
+2. `OTA_DATA` offset + up to 56 bytes, offsets contiguous from 0. Each 4 KB sector is
+   erased when the write first reaches it. Reply OTA_ACK(RECEIVING, bytes so far). A
+   wrong offset gets error 10 and leaves the transfer intact: ask OTA_STATUS and
+   resume from its byte count. A flash failure gets error 10 and state ERROR.
+3. `OTA_END`: byte count and sha256 must match (else error 11, state ERROR), then
+   the image is checked (`esp_ota_end`) and made the boot slot. Reply OTA_ACK(READY, size).
+4. `RESET`: the node reboots into the new image.
+5. **Confirmation and rollback.** The new image boots unconfirmed; OTA_STATUS
+   reports PENDING. It confirms itself once it has answered at least one PING and
+   one VERSION. If that has not happened 60 s after boot, it marks itself invalid
+   and reboots into the previous image. A crash or reset before confirmation rolls
+   back too (bootloader). OTA_BEGIN is refused (error 9) while PENDING.
+
+The link watchdog keeps running during a transfer; the outputs are already safe.
+Worst-case reply times: DATA with a sector erase ~50 ms (typical flash), END
+~100 ms (image check plus otadata write), BEGIN ~50 ms (otadata sector erase).
 Only the carrier's outputs are on the allow-list in `node_config.h` (valve direction
 and PWM pins, blower PWM, relay); every other pin is refused with code 3.
 
@@ -130,20 +195,22 @@ and PWM pins, blower PWM, relay); every other pin is refused with code 3.
 
 ### The display's trailing-zero bug and the compatibility pad
 
-`cobs_decode()` in the display firmware strips one trailing 0x00 from every decoded
-message. That is wrong whenever the CRC's low byte is 0x00 (1 frame in 256): the
-display then loses a CRC byte and rejects the frame, and waits out its 200 ms
-timeout. Two measures in this node keep the pair working:
+`cobs_decode()` in the protocol 1 display firmware strips one trailing 0x00 from
+every decoded message. That is wrong whenever the CRC's low byte is 0x00 (1 frame
+in 256). Worse than a rejection: with this CRC (no final XOR) the shortened frame
+still passes the CRC check, so the display sees a payload one byte short. Two
+measures in this node keep the pair working:
 
 1. The node's own `cobs_decode()` does not strip, so commands from the display with
    a CRC ending in 0x00 are parsed correctly.
-2. With `LINK_PAD_TRAILING_ZERO 1` (default) the node appends one extra 0x00 to a
-   reply whose CRC ends in 0x00. The display strips the pad, not the CRC.
+2. Until a HELLO arrives, the node appends one extra 0x00 to a reply whose CRC ends
+   in 0x00 (`LINK_PAD_TRAILING_ZERO 1`, the default). The display strips the pad,
+   not the CRC.
 
-`tools/ionode_cli.py` understands both. To fix the display properly, delete the
-"Remove the trailing zero" block at the end of its `cobs_decode()`, rebuild it, and
-set `LINK_PAD_TRAILING_ZERO` to 0 here. Until then leave the pad on; a fixed display
-with a padding node would reject 1 reply in 256.
+The mirror case matters for protocol 2 displays: a padded frame decoded without
+stripping also passes the CRC, one byte too long. So a decoder must know whether
+the sender pads; a frame that decodes to `... 00 00` is padded (unpadded only when
+the CRC is 0x0000, 1 in 65536). `tools/ionode_cli.py` uses that rule.
 
 ## What the original node had, and what this one does with it
 
@@ -177,7 +244,9 @@ main/main.c             bring-up order and the 10 s status line
 main/protocol_server.c  UART task, frame parsing, command dispatch, watchdog
 main/io_hw.c            GPIO and LEDC PWM (timer/channel allocation, safe state)
 main/io_i2c.c           I2C bus, register access, ADS1115 single-shot reads
-main/io_onewire.c       DS18B20 over the RMT 1-Wire bus, 3-attempt scratchpad retry
+main/io_onewire.c       DS18B20 over the RMT 1-Wire bus, 3-attempt scratchpad retry, ROM search
+main/io_ota.c           node OTA into the inactive slot, sha256 check, confirm/rollback
+partitions.csv          nvs, otadata, phy_init, ota_0, ota_1 (2 MB map)
 main/io_status_led.c    WS2812 status LED, optional, yields its pin to the display
 main/cobs_protocol.*    copied from the display repo; two marked changes
 tools/ionode_cli.py     PC-side tester speaking the same protocol

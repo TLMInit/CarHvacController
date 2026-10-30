@@ -25,6 +25,7 @@
 #include "io_hw.h"
 #include "io_i2c.h"
 #include "io_onewire.h"
+#include "io_ota.h"
 #include "io_status_led.h"
 #include "protocol_server.h"
 
@@ -45,6 +46,9 @@ void app_main(void)
     if (io_onewire_init() != ESP_OK) {
         ESP_LOGW(TAG, "1-Wire unavailable; DS18B20 commands will return errors");
     }
+
+    /* Not fatal: a failure only loses the 60 s rollback timer, the bootloader still rolls back */
+    io_ota_init();
 
     ESP_ERROR_CHECK(protocol_server_start());
     ESP_LOGI(TAG, "Ready, waiting for the display");

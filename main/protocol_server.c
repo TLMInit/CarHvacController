@@ -10,6 +10,9 @@
  * Link watchdog: when LINK_WATCHDOG_MS passes without a valid frame after at
  * least one has been seen, every PWM goes to 0 and every output pin low. The
  * display re-commands everything when it returns, so recovery is automatic.
+ *
+ * Protocol 2: a display that sends HELLO decodes standard COBS, so from then on
+ * replies are no longer padded for the protocol 1 trailing-zero strip.
  */
 
 #include <stdio.h>
@@ -20,6 +23,7 @@
 #include "io_hw.h"
 #include "io_i2c.h"
 #include "io_onewire.h"
+#include "io_ota.h"
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -31,6 +35,8 @@
 #include "freertos/queue.h"
 
 static const char *TAG = "LINK";
+
+extern bool cobs_pad_trailing_zero;     /* cobs_protocol.c; cobs_protocol.h is shared and unchanged */
 
 #define LINK_TASK_STACK         6144
 #define LINK_TASK_PRIORITY      10
@@ -110,6 +116,30 @@ static cobs_error_t map_err(esp_err_t err, cobs_error_t fallback, cobs_error_t i
     }
 }
 
+static void send_ota_ack(void)
+{
+    ota_state_t state;
+    uint32_t bytes;
+    io_ota_status(&state, &bytes);
+    uint8_t resp[5] = { (uint8_t)state, (uint8_t)(bytes >> 24), (uint8_t)(bytes >> 16),
+                        (uint8_t)(bytes >> 8), (uint8_t)bytes };
+    send_frame(MSG_OTA_ACK, resp, sizeof(resp));
+}
+
+static void send_ota_result(cobs_error_t e)
+{
+    if (e != ERR_NONE) {
+        send_error(e);
+    } else {
+        send_ota_ack();
+    }
+}
+
+static uint32_t be32(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+}
+
 /* ------------------------------------------------------------------------- */
 /* Command handlers                                                          */
 
@@ -121,7 +151,27 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
 
     case MSG_PING:
         send_frame(MSG_PONG, NULL, 0);
+        io_ota_link_answered(type);
         return;
+
+    case MSG_HELLO: {
+        if (len != 1) { send_error(ERR_INVALID_ARGS); return; }
+        if (cobs_pad_trailing_zero) {
+            ESP_LOGI(TAG, "HELLO from display protocol %u: reply padding off", p[0]);
+        }
+        cobs_pad_trailing_zero = false;
+        /* version(1) caps(1) string NUL: the string gets at most 60 bytes */
+        uint8_t resp[COBS_MAX_PAYLOAD_SIZE - 1];
+        resp[0] = PROTOCOL_VERSION;
+        resp[1] = NODE_CAP_SEARCH | (io_ota_supported() ? NODE_CAP_OTA : 0);
+        int n = snprintf((char *)&resp[2], sizeof(resp) - 2, "%s (%.20s)", NODE_VERSION_STRING,
+                         esp_app_get_description()->version);
+        if (n >= (int)sizeof(resp) - 2) {
+            n = sizeof(resp) - 3;
+        }
+        send_frame(MSG_HELLO_RESP, resp, (size_t)n + 3);
+        return;
+    }
 
     case MSG_VERSION: {
         /* Uptime and reset reason let the display tell a node reset (e.g. brown-out
@@ -134,6 +184,7 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
             n = sizeof(v) - 1;
         }
         send_frame(MSG_VERSION_RESP, (const uint8_t *)v, (size_t)n + 1);
+        io_ota_link_answered(type);
         return;
     }
 
@@ -226,6 +277,37 @@ static void handle_command(uint8_t type, const uint8_t *p, size_t len)
         return;
     }
 
+    case MSG_ONEWIRE_SEARCH: {
+        if (len != 0) { send_error(ERR_INVALID_ARGS); return; }
+        uint8_t resp[1 + ONEWIRE_SEARCH_MAX_ROMS * 8];
+        size_t count = 0;
+        err = io_onewire_search((uint8_t (*)[8])&resp[1], ONEWIRE_SEARCH_MAX_ROMS, &count);
+        if (err != ESP_OK) { send_error(map_err(err, ERR_TIMEOUT, ERR_INVALID_ARGS)); return; }
+        resp[0] = (uint8_t)count;
+        send_frame(MSG_ROM_LIST, resp, 1 + count * 8);
+        return;
+    }
+
+    case MSG_OTA_BEGIN:
+        if (len != 4 + 32) { send_error(ERR_INVALID_ARGS); return; }
+        send_ota_result(io_ota_begin(be32(p), &p[4]));
+        return;
+
+    case MSG_OTA_DATA:
+        if (len < 5 || len > 4 + OTA_DATA_MAX) { send_error(ERR_INVALID_ARGS); return; }
+        send_ota_result(io_ota_data(be32(p), &p[4], len - 4));
+        return;
+
+    case MSG_OTA_END:
+        if (len != 0) { send_error(ERR_INVALID_ARGS); return; }
+        send_ota_result(io_ota_end());
+        return;
+
+    case MSG_OTA_STATUS:
+        if (len != 0) { send_error(ERR_INVALID_ARGS); return; }
+        send_ota_ack();
+        return;
+
     case MSG_RESET:
         send_ok();
         uart_wait_tx_done(LINK_UART_NUM, pdMS_TO_TICKS(100));
@@ -277,6 +359,8 @@ static void process_frame(void)
 
     ESP_LOGD(TAG, "Cmd 0x%02X, %u bytes", type, (unsigned)payload_len);
     handle_command(type, payload, payload_len);
+    /* An OTA stream is one frame after another; feed per frame, not only per idle loop */
+    esp_task_wdt_reset();
 }
 
 /* Runs from an esp_timer, not from link_task: if link_task hangs inside a driver

@@ -16,7 +16,10 @@
 #include "driver/uart.h"
 #include "driver/i2c_master.h"
 
-#define NODE_VERSION_STRING     "ionode 2.1"   /* protocol_server.c appends the build's git describe */
+#define NODE_VERSION_STRING     "ionode 2.2"   /* protocol_server.c appends the build's git describe */
+
+/* A new OTA image must answer PING and VERSION within this time, or it rolls back */
+#define OTA_CONFIRM_TIMEOUT_MS  60000
 
 /* ---- UART link to the display -------------------------------------------
  * Display side: UART1, TX GPIO10 -> node RX, RX GPIO11 <- node TX, 921600 8N1.
@@ -30,7 +33,7 @@
 #define LINK_FRAME_TIMEOUT_MS   20      /* partial frame discarded after this much silence */
 #define LINK_WATCHDOG_MS        3000    /* outputs forced to safe state after this much silence; 0 = off */
 #define LINK_REPLY_ON_CRC_ERROR 0       /* 1 = answer a corrupt frame with ERROR 6 instead of staying silent */
-#define LINK_PAD_TRAILING_ZERO  1       /* 1 = pad replies whose CRC ends in 0x00 (display's cobs_decode strips one trailing zero) */
+#define LINK_PAD_TRAILING_ZERO  1       /* 1 = pad replies whose CRC ends in 0x00 until a HELLO arrives (protocol 1 displays strip one trailing zero); 0 = never pad */
 
 /* ---- I2C bus: 2x ADS1115 (0x48, 0x49) and the BME280 (0x76/0x77) ---------- */
 #define NODE_I2C_PORT           I2C_NUM_0

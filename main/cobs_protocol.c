@@ -12,9 +12,10 @@
  *    0x00 (1 in 256). The node must parse those commands correctly.
  *
  * 2. cobs_build_frame() appends one extra 0x00 when the CRC low byte is 0x00
- *    (LINK_PAD_TRAILING_ZERO in node_config.h). The display's decoder then
- *    strips the pad instead of the CRC and sees a correct frame. Set the flag
- *    to 0 once the display's cobs_decode() is fixed the same way as here.
+ *    and cobs_pad_trailing_zero is set (LINK_PAD_TRAILING_ZERO in node_config.h
+ *    is the master switch). The display's decoder then strips the pad instead
+ *    of the CRC and sees a correct frame. protocol_server.c clears the flag on
+ *    HELLO: only protocol 2 displays send it, and their decoder does not strip.
  *
  * Everything else (CRC16-CCITT, COBS encoding, receiver state machine) is
  * byte-identical to the display, which is what makes the two ends compatible.
@@ -25,6 +26,10 @@
 #include "node_config.h"     /* host-side tests pass -DLINK_PAD_TRAILING_ZERO instead */
 #endif
 #include <string.h>
+
+/* Not in cobs_protocol.h, which must stay identical to the display's copy;
+ * protocol_server.c declares it extern. */
+bool cobs_pad_trailing_zero = LINK_PAD_TRAILING_ZERO;
 
 /*******************************************************************************
  * CRC16-CCITT Implementation (polynomial 0x1021, init 0xFFFF)
@@ -197,7 +202,7 @@ size_t cobs_build_frame(uint8_t msg_type, const uint8_t *payload, size_t payload
 
 #if LINK_PAD_TRAILING_ZERO
     /* NODE CHANGE: compatibility pad for the display's trailing-zero strip. */
-    if (raw[raw_len - 1] == 0x00 && raw_len < sizeof(raw)) {
+    if (cobs_pad_trailing_zero && raw[raw_len - 1] == 0x00 && raw_len < sizeof(raw)) {
         raw[raw_len++] = 0x00;
     }
 #endif
