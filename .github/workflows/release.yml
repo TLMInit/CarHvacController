@@ -1,0 +1,125 @@
+name: Release
+
+# A version tag publishes that board's firmware as a GitHub Release:
+#   <app>.bin                     Wi-Fi update: upload on the phone page (display or IO node box)
+#   <tag>-usb-flash-set.zip       USB flash: bootloader, partition table, OTA data, app, flash_args
+# Tags: v*-display* builds the display (repo root), v*-node* the IO node (CarHvacIoNode/).
+on:
+  push:
+    tags: ['v*-display*', 'v*-node*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)publish, e.g. v2.5.1-display
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container: espressif/idf:v6.1
+    outputs:
+      tag: ${{ steps.board.outputs.tag }}
+      app: ${{ steps.board.outputs.app }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0          # tags: the image's version string is git describe of this board's tags
+      - name: Pick the board from the tag
+        id: board
+        shell: bash
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          case "$tag" in
+            *-display*) dir=.;             app=CarHvacController ;;
+            *-node*)    dir=CarHvacIoNode; app=CarHvacIoNode ;;
+            *) echo "::error::tag $tag is neither a display nor a node tag"; exit 1 ;;
+          esac
+          { echo "tag=$tag"; echo "dir=$dir"; echo "app=$app"; } >> "$GITHUB_OUTPUT"
+      - name: Build
+        shell: bash
+        working-directory: ${{ steps.board.outputs.dir }}
+        run: |
+          set -eo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          . "$IDF_PATH/export.sh"
+          idf.py set-target esp32s3
+          idf.py build 2>&1 | tee build.log
+          if grep -E "^(${GITHUB_WORKSPACE}/)?(CarHvacIoNode/)?main/[^ :]+:[0-9]+(:[0-9]+)?: warning:" build.log; then
+            echo "::error::warnings in main/ (listed above)"; exit 1
+          fi
+      - name: The image must report exactly the tag
+        shell: bash
+        working-directory: ${{ steps.board.outputs.dir }}
+        run: |
+          tag="${{ steps.board.outputs.tag }}"
+          ver=$(head -c 512 "build/${{ steps.board.outputs.app }}.bin" | tr -c '[:print:]' '\n' | grep -m1 -E '^v[0-9]' || true)
+          echo "image version: $ver"
+          [ "$ver" = "$tag" ] || { echo "::error::image reports '$ver', expected '$tag'"; exit 1; }
+      - name: Package
+        shell: bash
+        working-directory: ${{ steps.board.outputs.dir }}
+        run: |
+          set -e
+          tag="${{ steps.board.outputs.tag }}"; app="${{ steps.board.outputs.app }}"
+          out="$GITHUB_WORKSPACE/dist"; set_dir="$out/$tag-usb-flash-set"
+          mkdir -p "$set_dir"
+          cp build/bootloader/bootloader.bin build/partition_table/partition-table.bin \
+             build/ota_data_initial.bin "build/$app.bin" sdkconfig "$set_dir/"
+          # flat archive: flash_args names the files without build sub-folders
+          sed -E 's#^(0x[0-9a-fA-F]+ )[^ ]*/#\1#' build/flash_args > "$set_dir/flash_args"
+          (cd "$set_dir" && sha256sum * > SHA256SUMS.txt)
+          (cd "$out" && python -m zipfile -c "$tag-usb-flash-set.zip" "$tag-usb-flash-set")
+          cp "build/$app.bin" "$out/$app.bin"
+          (cd "$out" && sha256sum "$app.bin" "$tag-usb-flash-set.zip" > SHA256SUMS.txt)
+          cat "$out/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-files
+          path: |
+            dist/*.bin
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-files
+          path: dist
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          APP: ${{ needs.build.outputs.app }}
+        run: |
+          set -e
+          case "$TAG" in *-node*) box="IO node firmware"; port=COM_NODE;; *) box="Display firmware"; port=COM_DISPLAY;; esac
+          cat > notes.md <<EOF
+          **Wi-Fi update:** download \`$APP.bin\`. Phone page (\`http://192.168.4.1\`) → Update → **$box** box.
+          Allowed only with the system OFF and the blower stopped. The new image rolls back unless it proves itself
+          (display: 30 s with the IO-node link up; node: answers PING and VERSION within 60 s).
+
+          **USB flash:** unzip \`$TAG-usb-flash-set.zip\`, then in that folder:
+          \`\`\`
+          python -m esptool --chip esp32s3 -p $port -b 921600 write_flash "@flash_args"
+          \`\`\`
+          Writes bootloader, partition table, OTA data and app at the right addresses; settings (NVS) are kept.
+
+          SHA-256 of the assets: \`SHA256SUMS.txt\`; of every file in the flash set: the \`SHA256SUMS.txt\` inside the zip.
+          EOF
+          sed -i 's/^          //' notes.md
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber -R "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --notes-file notes.md -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" dist/* --title "$TAG" --notes-file notes.md --verify-tag -R "$GITHUB_REPOSITORY"
+          fi
