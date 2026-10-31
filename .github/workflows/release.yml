@@ -47,7 +47,8 @@ jobs:
           set -eo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           . "$IDF_PATH/export.sh"
-          idf.py set-target esp32s3
+          # no set-target: the target is in sdkconfig(.defaults), and set-target would rewrite the
+          # display's tracked sdkconfig, making the image's version '-dirty'
           idf.py build 2>&1 | tee build.log
           if grep -E "^(${GITHUB_WORKSPACE}/)?(CarHvacIoNode/)?main/[^ :]+:[0-9]+(:[0-9]+)?: warning:" build.log; then
             echo "::error::warnings in main/ (listed above)"; exit 1
@@ -59,7 +60,7 @@ jobs:
           tag="${{ steps.board.outputs.tag }}"
           ver=$(head -c 512 "build/${{ steps.board.outputs.app }}.bin" | tr -c '[:print:]' '\n' | grep -m1 -E '^v[0-9]' || true)
           echo "image version: $ver"
-          [ "$ver" = "$tag" ] || { echo "::error::image reports '$ver', expected '$tag'"; exit 1; }
+          [ "$ver" = "$tag" ] || { echo "::error::image reports '$ver', expected '$tag'"; git status --porcelain; exit 1; }
       - name: Package
         shell: bash
         working-directory: ${{ steps.board.outputs.dir }}
