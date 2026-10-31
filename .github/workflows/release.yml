@@ -35,7 +35,8 @@ jobs:
           tag="${{ inputs.tag || github.ref_name }}"
           case "$tag" in
             *-display*) dir=.;             app=CarHvacController ;;
-            *-node*)    dir=CarHvacIoNode; app=CarHvacIoNode ;;
+            # node tags made before the repos were merged hold the node project at the root
+            *-node*)    app=CarHvacIoNode; if [ -d CarHvacIoNode ]; then dir=CarHvacIoNode; else dir=.; fi ;;
             *) echo "::error::tag $tag is neither a display nor a node tag"; exit 1 ;;
           esac
           { echo "tag=$tag"; echo "dir=$dir"; echo "app=$app"; } >> "$GITHUB_OUTPUT"
