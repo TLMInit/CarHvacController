@@ -1,0 +1,8 @@
+# Name,   Type, SubType, Offset,   Size
+# Two 960 KB app slots on a 2 MB map, so the same image boots on 2, 8 and 16 MB modules.
+# Slot size = the display's remote_io.h NODE_OTA_SLOT_SIZE (it refuses larger node images).
+nvs,      data, nvs,     0x9000,   0x4000
+otadata,  data, ota,     0xd000,   0x2000
+phy_init, data, phy,     0xf000,   0x1000
+ota_0,    app,  ota_0,   0x10000,  0xF0000
+ota_1,    app,  ota_1,   0x100000, 0xF0000

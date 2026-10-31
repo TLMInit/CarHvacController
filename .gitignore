@@ -45,4 +45,3 @@ __pycache__/
 Thumbs.db
 
 # IO node firmware is its own repository
-/CarHvacIoNode/

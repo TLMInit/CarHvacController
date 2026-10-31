@@ -1,0 +1,31 @@
+#
+# CarHvacIoNode - ESP32-S3 DevKitC-1 on the HVAC carrier PCB
+#
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# 1 ms tick so short delays in the IO paths are real milliseconds
+CONFIG_FREERTOS_HZ=1000
+
+# Flash size is left at the ESP-IDF default (2 MB) so the same binary boots on
+# N8R2, N8R8 and N16R8 modules. The app is small; no PSRAM is used.
+
+# Two OTA slots (partitions.csv) and bootloader rollback: a new image that never
+# confirms itself (io_ota.c) is replaced by the previous one.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Console on the USB-to-UART bridge (the "UART" USB-C port of the DevKitC)
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+# Reboot after a panic
+CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
+
+# A link task stuck for 5 s (default timeout) restarts the node into its safe boot state
+CONFIG_ESP_TASK_WDT_PANIC=y
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096
+
+# Release build at -O2 (finding 10); assertions stay enabled
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
