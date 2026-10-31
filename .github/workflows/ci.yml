@@ -10,7 +10,7 @@ permissions:
 # One repo, two boards: the display project at the root, the IO node in CarHvacIoNode/.
 jobs:
   host-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         project: [".", "CarHvacIoNode"]
@@ -18,7 +18,7 @@ jobs:
       run:
         working-directory: ${{ matrix.project }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure
         run: cmake -S test/host -B build-host
       - name: Build
@@ -27,9 +27,9 @@ jobs:
         run: ctest --test-dir build-host --output-on-failure
 
   shared-files:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Files both boards compile must be byte-identical
         run: |
           for f in cobs_protocol.h ota_image.h ota_image.c; do
@@ -37,7 +37,7 @@ jobs:
           done
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: espressif/idf:v6.1
     strategy:
       matrix:
@@ -50,7 +50,7 @@ jobs:
       run:
         working-directory: ${{ matrix.project }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0          # tags: each project takes its version from its own tags
       - name: Build for esp32s3
@@ -69,7 +69,7 @@ jobs:
             echo "::error::warnings in main/ (listed above)"
             exit 1
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: firmware-${{ matrix.name }}
           path: |
