@@ -2,8 +2,8 @@
 
 Touch display and controller for a retrofitted car HVAC. Runs on a Waveshare
 ESP32-S3-Touch-LCD-2 (320×240, 16 MB flash, 8 MB PSRAM) with ESP-IDF 6.1 and LVGL 8.4.
-All actuators and the 1-Wire sensors sit on the IO node (`CarHvacIoNode/`, its own repo
-and README), reached over UART at 921600 baud with COBS + CRC16 frames.
+All actuators and the 1-Wire sensors sit on the IO node, whose firmware lives in this repo under
+`CarHvacIoNode/` (own ESP-IDF project and README; the two boards are released together), reached over UART at 921600 baud with COBS + CRC16 frames.
 
 | Doc | What is in it |
 |---|---|

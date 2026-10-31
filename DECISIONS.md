@@ -165,5 +165,11 @@ Display wiring (output driver, controller, UI):
 
 - Bench, v2.5: with a healthy supply V3 stalled 6-7 % short of its target at 39-41 PWM (the control loop slows a valve to its minimum near the target); with the minimum at 60 it started at 66 PWM and reached the target in 1.2 s. These motors do not start below roughly 40-50 PWM, so the old stiction floor of 30 left valves short of their targets. Default of `SET_VALVE_MIN_PWM` 30 -> 60. It is also the floor of the per-valve speed overrides (0 or >= 60) and must stay <= the calibration speed (75): both rules follow the setting. An earlier test at 70 was invalid because the motor supply's PDM channel had tripped.
 
+## One repository for both boards (2026-10-31)
+
+- Owner: the node belongs under the display repo, because the two are only used together. The node repo was subtree-merged into `CarHvacIoNode/` with its full history (31 commits) and tags (`v2.1-node` .. `v2.5-node`); the standalone repo is kept as a backup next to this one (`..\CarHvacIoNode-standalone`). Chosen over a git submodule: one checkout, one commit can change both boards (protocol changes), and no second remote to keep in step.
+- Each project takes its version only from its own tags (`git describe --match v*-display*` / `v*-node*` as `PROJECT_VER` in its CMakeLists.txt); otherwise either board could report the other's tag.
+- CI: one root workflow with a matrix over both projects (host tests, build, no warnings in `main/`) and a job that checks `cobs_protocol.h` and `ota_image.h/.c` are byte-identical in both boards; the node's own workflow is removed (GitHub only runs the root's).
+
 ## Models
 - Strongest available model (Opus) for WP-A, WP-B, WP-C, WP-G, WP-H; faster model (Sonnet) for WP-D, WP-E, WP-F, WP-T. WP-A is not named in the brief; it is the framework every package depends on, so it gets the stronger model.

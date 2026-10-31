@@ -5,6 +5,11 @@
 cmake_minimum_required(VERSION 3.16)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+# One repo holds both boards: take the version only from this board's tags (git describe would
+# otherwise pick the nearest tag of either board)
+execute_process(COMMAND git describe --tags --dirty --always --match "v*-display*"
+                WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
+                OUTPUT_VARIABLE PROJECT_VER OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
 
 # LVGL's 128 KB object pool goes to PSRAM instead of internal RAM, which Wi-Fi needs.
 # LVGL 8 has no Kconfig entry for this, only lv_conf macros, and CMake cannot pass a
